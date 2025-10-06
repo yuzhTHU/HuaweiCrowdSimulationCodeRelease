@@ -13,12 +13,12 @@ class DDPM:
     def __init__(self, args: Namespace):
         self.args = args
         if args.beta_schedule == "cosine":
-            beta = self.cosine_beta_schedule(args.T).to(self.args.device)
+            beta = self.cosine_beta_schedule(args.T)
         elif args.beta_schedule == "linear":
-            beta = self.linear_beta_schedule(args.T).to(self.args.device)
+            beta = self.linear_beta_schedule(args.T)
         else:
             raise ValueError(f"Unknown beta_schedule: {args.beta_schedule}")
-        self.beta = beta
+        self.beta = torch.concatenate([torch.tensor([0.0], device=args.device), beta.to(args.device)])  # (T+1,)
         self.alpha = 1 - self.beta
         self.alpha_bar = self.alpha.cumprod(dim=0)
 
@@ -26,25 +26,28 @@ class DDPM:
         """ DDPM forward: 给未来轨迹加噪 """
         if denoise_t is not None:
             raise NotImplementedError("指定 denoise_t 的功能尚未实现")
+            if (denoise_t == 0).any():
+                raise ValueError("denoise_t 不能为 0")
         batch_size = x0.shape[0]
         denoise_t = torch.randint(
-            0, self.args.T, (batch_size,), device=self.args.device
+            1, self.args.T+1, (batch_size,), device=self.args.device
         ).long()  # (batch_size,)
         a_t = self.alpha_bar[denoise_t].view(batch_size, 1, 1, 1)
         noise = torch.randn_like(x0, device=self.args.device)
         xt = torch.sqrt(a_t) * x0 + torch.sqrt(1 - a_t) * noise
         return xt, noise, denoise_t
 
-    def denoise(self, xt, t, x0_pred, flexibility=0.0):
+    def denoise(self, xt, denoise_t, x0_pred, flexibility=0.0):
         """ DDPM backward: 预测噪声并去噪 """
-        # coef1 = 1 / torch.sqrt(self.alpha[t])
-        coef1 = (1 - self.alpha[t]) * torch.sqrt(self.alpha_bar[t-1]) / (1 - self.alpha_bar[t])
-        coef2 = (1 - self.alpha_bar[t-1]) * torch.sqrt(self.alpha[t]) / (1 - self.alpha_bar[t])
+        if denoise_t == 0:
+            raise ValueError("denoise_t 不能为 0")
+        coef1 = (1 - self.alpha[denoise_t]) * torch.sqrt(self.alpha_bar[denoise_t-1]) / (1 - self.alpha_bar[denoise_t])
+        coef2 = (1 - self.alpha_bar[denoise_t-1]) * torch.sqrt(self.alpha[denoise_t]) / (1 - self.alpha_bar[denoise_t])
         mean = coef1 * x0_pred + coef2 * xt
-        if t > 0:
+        if denoise_t > 1:
             noise = torch.randn_like(xt)
-            var1 = self.beta[t]
-            var2 = (1 - self.alpha_bar[t - 1]) / (1 - self.alpha_bar[t]) * self.beta[t]
+            var1 = self.beta[denoise_t]
+            var2 = (1 - self.alpha_bar[denoise_t - 1]) / (1 - self.alpha_bar[denoise_t]) * self.beta[denoise_t]
             var = (1 - flexibility) * var1 + flexibility * var2
             mean = mean + var.sqrt() * noise
         return mean

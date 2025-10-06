@@ -24,11 +24,14 @@ def main(args):
     dataset_list = [
         # SDDDataset.load_data(args, "./data/SDD/annotations/bookstore/video1/annotations.txt"),
         # SDDDataset.load_data(args, "./data/SDD/annotations/bookstore/video2/annotations.txt"),
+        # UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp"),
         *UCYDataset.load_data_batch(args, "./data/UCY/data/"),
         *ETHDataset.load_data_batch(args, "./data/ETH/"),
     ]
-    train_dataset = [d for d in dataset_list if 'zara01' not in d.name]
-    test_dataset = [d for d in dataset_list if 'zara01' in d.name]
+    # train_dataset = [d for d in dataset_list if 'zara01' not in d.name]
+    # test_dataset = [d for d in dataset_list if 'zara01' in d.name]
+    train_dataset = dataset_list
+    test_dataset = dataset_list
     train_loaders = [
         D.DataLoader(
             dataset,
@@ -60,10 +63,16 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = torch.nn.MSELoss()
     ddim = DDIM(args)
+    _logger.note(
+        "Trainable Parameters: "
+        f"{sum(p.numel() for p in model.parameters() if p.requires_grad):,}"
+        f" ({sum(p.numel() for p in model.parameters()):,} in total)"
+        f" on {args.device}"
+    )
 
     # Train
-    for epoch in range(args.epochs):
-        if not (epoch == 0 and args.test_before_train):
+    for epoch in range(args.epochs+1):
+        if epoch > 0:
             torch.set_grad_enabled(True)
             model.train()
             for loader in train_loaders:
@@ -82,7 +91,8 @@ def main(args):
                     veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
 
                     # DDPM forward
-                    noisy_acc, noise_true, denoise_t = ddim.add_noise(acc)
+                    acc_true = acc # (B, #pedestrian, pred_step, 2)
+                    noisy_acc, noise_true, denoise_t = ddim.add_noise(acc_true)
 
                     # DDPM backward
                     model.set_map_embedding(
@@ -95,24 +105,24 @@ def main(args):
                     model.set_veh_embedding(veh=veh)
                     model.set_ped_embedding(pos=pos, vel=vel, hst=hst, des=des, spd=spd)
                     model.set_sur_info()
-                    noise_pred = model(
+                    acc_pred = model(
                         noisy_acc=noisy_acc, denoise_t=denoise_t,
                         ped_length=ped_length, veh_length=veh_length
                     )  # (B, #pedestrian, pred_step, 2)
 
                     # Compute Loss & Backpropagate
-                    loss = criterion(noise_pred, noise_true)
+                    loss = criterion(acc_pred, acc_true)
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                    total_loss += loss.item() * acc.shape[0]
-                _logger.info(f"[Epoch {epoch+1}/{args.epochs}] Loss={total_loss/len(loader.dataset):.4f} on {loader.dataset.name} dataset")
+                    total_loss += loss.item() * acc_true.shape[0]
+                _logger.info(f"[Epoch {epoch}/{args.epochs}] Loss={total_loss/len(loader.dataset):.4f} on {loader.dataset.name} dataset")
         
-        if not (epoch + 1) % 10:
+        if not (epoch % 200) or (epoch == 0 and args.test_before_train):
             torch.set_grad_enabled(False)
             model.eval()
             for loader in test_loaders:
-                _logger.info(f"[Epoch {epoch+1}/{args.epochs}] Start evaluating on {loader.dataset.name} dataset")
+                _logger.info(f"[Epoch {epoch}/{args.epochs}] Start evaluating on {loader.dataset.name} dataset")
                 map_data = loader.dataset.map_data
                 map = torch.from_numpy(map_data.map).to(args.device).float()
                 model.set_map_embedding(
@@ -142,43 +152,85 @@ def main(args):
                     model.set_ped_embedding(pos=pos, vel=vel, hst=hst, des=des, spd=spd)
                     model.set_sur_info()
 
-                    x_t = torch.randn(acc.shape, device=args.device)  # 从噪声开始
-                    assert args.T % 50 == 0, f"试图使用 {50} 步采样，然而训练步数 {args.T} % {50} 不等于 0!"
-                    stride = args.T // 50
-                    for t in tqdm(reversed(range(0, args.T, stride)), disable=True, leave=False):
-                        noisy_acc = x_t
-                        denoise_t = torch.full((x_t.shape[0],), t, device=args.device, dtype=torch.long)
-                        noise_pred = model(
-                            noisy_acc=noisy_acc, denoise_t=denoise_t,
-                            ped_length=ped_length, veh_length=veh_length,
-                        )  # (B, #pedestrian, 2)
-                        x_t = ddim.denoise(x_t, t, noise_pred, stride=stride)
-                    
-                    acc_pred = x_t
+                    S = 20  # 采样次数
+                    N = 10  # 采样步数
+                    acc_pred = []
+                    for_plot = []
+                    for _ in range(S):
+                        xt = torch.randn(acc.shape, device=args.device)  # 从噪声开始
+                        for_plot.append([xt])
+                        assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} % {N} 不等于 0!"
+                        stride = args.T // N
+                        for t in tqdm(range(args.T, 0, -stride), disable=True, leave=False):
+                            noisy_acc = xt
+                            denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
+                            x0_pred = model(
+                                noisy_acc=noisy_acc, denoise_t=denoise_t,
+                                ped_length=ped_length, veh_length=veh_length,
+                            )  # (B, #pedestrian, 2)
+                            xt = ddim.denoise(xt, t, x0_pred, stride=stride)
+                            for_plot[-1].append(xt)
+                        acc_pred.append(xt)
+                    # 获取有效的行人掩模
+                    batch_size, ped_num, _ = pos.shape
+                    mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
+                    # 计算 pos_true 和 vel_true
                     acc_true = acc # (B, #pedestrian, pred_step, 2)
                     vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, pred_step, 2)
                     pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, pred_step, 2)
-
-                    _logger.debug(f"{np.nanmax((pos_true - future).cpu().abs().numpy()):.4f}")
-
-                    loss = criterion(acc_pred, acc_true) # float
+                    _logger.debug(f"pos_true 和 future 差距：{np.nanmax((pos_true - future).cpu().abs().numpy()):.4f}")
+                    # 计算 loss
+                    acc_pred = torch.stack(acc_pred, dim=0)  # (S, B, #pedestrian, pred_step, 2)
+                    loss = criterion(acc_pred[0], acc_true) # float
                     loss_list.extend([loss.item()] * acc.shape[0]) # List[float]
-
-                    vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps
-                    pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps
-                    dis_err = (pos_pred - pos_true).norm(dim=-1) # (B, #pedestrian, pred_step)
-                    ade = dis_err.mean(dim=-1) # (B, #pedestrian)
-                    fde = dis_err[..., -1] # (B, #pedestrian)
-                    ade_list.extend(ade.cpu().tolist()) # List[List[float]]
-                    fde_list.extend(fde.cpu().tolist()) # List[List[float]]
-                    trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1) # (B, #pedestrian)
-                    trajlen_list.extend(trajlen.cpu().tolist()) # List[List[float]]
+                    # 计算 distance error
+                    vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
+                    pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
+                    dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, pred_step)
+                    # 可视化
+                    import matplotlib.pyplot as plt
+                    from src.utils.plot import get_fig
+                    for_plot = torch.stack([torch.stack(fp, dim=0) for fp in for_plot], dim=0)  # (S, N+1, B, #pedestrian, pred_step, 2)
+                    for_plot = vel.unsqueeze(-2) + for_plot.cumsum(dim=-2) / args.fps  # (S, N+1, B, #pedestrian, pred_step, 2)
+                    for_plot = pos.unsqueeze(-2) + for_plot.cumsum(dim=-2) / args.fps  # (S, N+1, B, #pedestrian, pred_step, 2)
+                    fi, fig, axes = get_fig(3, 4, AW=6, AH=6, dpi=300)
+                    pid = 0
+                    for idx, n in enumerate(range(N+1)):
+                        ax = axes[idx]
+                        ax.plot(*hst[mask, :, :][pid].T.cpu().numpy(), color='blue') # 历史轨迹
+                        ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
+                        ax.plot(*pos_true[mask, :, :][pid].T.cpu().numpy(), 'r:') # 未来轨迹
+                        for line in for_plot[:, n, mask, :, :][:, pid]: # 逐步的扩散结果
+                            ax.plot(*line.T.cpu().numpy())
+                    ax = axes[11]
+                    ax.plot(*hst[mask, :, :][pid].T.cpu().numpy(), color='blue') # 历史轨迹
+                    ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
+                    ax.plot(*pos_true[mask, :, :][pid].T.cpu().numpy(), 'r:') # 未来轨迹
+                    for line in pos_pred[:, mask, :, :][:, pid]: # 最终的采样结果
+                        ax.plot(*line.T.cpu().numpy())
+                    fig.savefig(f"{args.save_path}/eval_epoch{epoch}_{loader.dataset.name}_pid{pid}.png")
+                    plt.close(fig)
+                    del fi, fig, axes
+                    # 移除 padding 的行人                    
+                    dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, pred_step)
+                    # 选择 ade 最佳的 sample
+                    sample_idx = dis_err.mean(dim=-1).argmin(dim=0)  # (valid{B*#pedestrian},)
+                    batch_idx = torch.arange(dis_err.shape[1], device=args.device)  # (valid{B*#pedestrian},)
+                    dis_err = dis_err[sample_idx, batch_idx, :]  # (valid{B*#pedestrian}, pred_step)
+                    # 计算 ade, fde
+                    ade = dis_err.mean(dim=-1) # (valid{B*#pedestrian})
+                    fde = dis_err[..., -1] # (valid{B*#pedestrian})
+                    ade_list.extend(ade.cpu().tolist()) # List[float]
+                    fde_list.extend(fde.cpu().tolist()) # List[float]
+                    # 计算轨迹长度
+                    trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1)[mask] # (valid{B*#pedestrian})
+                    trajlen_list.extend(trajlen.cpu().tolist()) # List[float]
                 _logger.info(
-                    f"[Epoch {epoch+1}/{args.epochs}] Eval "
+                    f"[Epoch {epoch}/{args.epochs}] Eval "
                     f"Loss={np.mean(loss_list):.4f} "
-                    f"ADE={np.mean(sum(ade_list, [])):.4f} "
-                    f"FDE={np.mean(sum(fde_list, [])):.4f} "
-                    f"AvgLen={np.mean(sum(trajlen_list, [])):.4f} "
+                    f"ADE={np.mean(ade_list):.4f} "
+                    f"FDE={np.mean(fde_list):.4f} "
+                    f"AvgLen={np.mean(trajlen_list):.4f} "
                 )
 
     _logger.note("Training finished.")
@@ -205,7 +257,7 @@ if __name__ == "__main__":
     parser.add_argument('--head_num', type=int, default=4)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--latent_token_num', type=int, default=16)
-    parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
+    parser.add_argument('--beta_schedule', type=str, default='cosine', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument('--no_cache_dataset', dest='cache_dataset', action='store_false', default=True)
     parser.add_argument('--test_before_train', action='store_true')
