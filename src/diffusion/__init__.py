@@ -1,2 +1,2 @@
-from ddpm import DDPM
-from ddim import DDIM
+from .ddpm import DDPM
+from .ddim import DDIM
