@@ -79,10 +79,9 @@ class SDDDataset(BaseDataset):
         dataset = cls(name=name, args=args, df_data=df_data, map_data=map_data)
 
         ## 保存缓存
-        if args.cache_dataset:
-            cache_path = cls._make_cache_path(args, str(data_path), name)
-            _logger.info(f"Caching dataset to {cache_path}")
-            cls.save_cache(dataset, cache_path)
+        cache_path = cls._make_cache_path(args, str(data_path), name)
+        _logger.info(f"Caching dataset to {cache_path}")
+        cls.save_cache(dataset, cache_path)
 
         return dataset
 

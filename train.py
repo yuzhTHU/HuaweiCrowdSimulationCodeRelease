@@ -63,49 +63,50 @@ def main(args):
 
     # Train
     for epoch in range(args.epochs):
-        torch.set_grad_enabled(True)
-        model.train()
-        for loader in train_loaders:
-            map_data = loader.dataset.map_data
-            map = torch.from_numpy(map_data.map).to(args.device).float()
-            total_loss = 0.0
-            for batch in tqdm(loader, total=len(loader), disable=False, leave=False):
-                pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
-                vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
-                hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
-                des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
-                spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian)
-                veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
-                acc = batch['acc'].to(args.device)  # (batch_size, #pedestrian, pred_step, 2)
-                ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
-                veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
+        if not (epoch == 0 and args.test_before_train):
+            torch.set_grad_enabled(True)
+            model.train()
+            for loader in train_loaders:
+                map_data = loader.dataset.map_data
+                map = torch.from_numpy(map_data.map).to(args.device).float()
+                total_loss = 0.0
+                for batch in tqdm(loader, total=len(loader), disable=False, leave=False):
+                    pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
+                    vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
+                    hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
+                    des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
+                    spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian)
+                    veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
+                    acc = batch['acc'].to(args.device)  # (batch_size, #pedestrian, pred_step, 2)
+                    ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
+                    veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
 
-                # DDPM forward
-                noisy_acc, noise_true, denoise_t = ddim.add_noise(acc)
+                    # DDPM forward
+                    noisy_acc, noise_true, denoise_t = ddim.add_noise(acc)
 
-                # DDPM backward
-                model.set_map_embedding(
-                    map=map,
-                    xmin=map_data.xmin,
-                    xmax=map_data.xmax,
-                    ymin=map_data.ymin,
-                    ymax=map_data.ymax,
-                )
-                model.set_veh_embedding(veh=veh)
-                model.set_ped_embedding(pos=pos, vel=vel, hst=hst, des=des, spd=spd)
-                model.set_sur_info()
-                noise_pred = model(
-                    noisy_acc=noisy_acc, denoise_t=denoise_t,
-                    ped_length=ped_length, veh_length=veh_length
-                )  # (B, #pedestrian, pred_step, 2)
+                    # DDPM backward
+                    model.set_map_embedding(
+                        map=map,
+                        xmin=map_data.xmin,
+                        xmax=map_data.xmax,
+                        ymin=map_data.ymin,
+                        ymax=map_data.ymax,
+                    )
+                    model.set_veh_embedding(veh=veh)
+                    model.set_ped_embedding(pos=pos, vel=vel, hst=hst, des=des, spd=spd)
+                    model.set_sur_info()
+                    noise_pred = model(
+                        noisy_acc=noisy_acc, denoise_t=denoise_t,
+                        ped_length=ped_length, veh_length=veh_length
+                    )  # (B, #pedestrian, pred_step, 2)
 
-                # Compute Loss & Backpropagate
-                loss = criterion(noise_pred, noise_true)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item() * acc.shape[0]
-            _logger.info(f"[Epoch {epoch+1}/{args.epochs}] Loss={total_loss/len(loader.dataset):.4f} on {loader.dataset.name} dataset")
+                    # Compute Loss & Backpropagate
+                    loss = criterion(noise_pred, noise_true)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    total_loss += loss.item() * acc.shape[0]
+                _logger.info(f"[Epoch {epoch+1}/{args.epochs}] Loss={total_loss/len(loader.dataset):.4f} on {loader.dataset.name} dataset")
         
         if not (epoch + 1) % 10:
             torch.set_grad_enabled(False)
@@ -207,6 +208,7 @@ if __name__ == "__main__":
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument('--no_cache_dataset', dest='cache_dataset', action='store_false', default=True)
+    parser.add_argument('--test_before_train', action='store_true')
     args, unknown = parser.parse_known_args()
 
     # Build Save Path

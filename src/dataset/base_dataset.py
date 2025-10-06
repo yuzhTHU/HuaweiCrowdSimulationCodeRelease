@@ -8,6 +8,7 @@ import pandas as pd
 import torch.utils.data as D
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from pathlib import Path
 from functools import reduce
 from argparse import Namespace
 from dataclasses import dataclass
@@ -276,14 +277,15 @@ class BaseDataset(D.Dataset):
         return df_data, map_data
 
     @staticmethod
-    def _make_cache_path(args, data_path, name: str, cache_dir: str = "./data/.cache"):
+    def _make_cache_path(args, data_path, name: str, cache_dir: str = "./data/.cache") -> Path:
         """根据参数和数据路径生成唯一缓存文件名"""
-        os.makedirs(cache_dir, exist_ok=True)
-        name = f"{name}_{args.fps}_{args.hist_step}_{args.pred_step}_{args.skip_step}.pkl"
+        cache_dir = Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_name = f"{name}_{args.fps}_{args.hist_step}_{args.pred_step}_{args.skip_step}.pkl"
         # key = f"{data_path}_{args.fps}_{args.hist_step}_{args.pred_step}_{args.skip_step}.pkl"
         # hash_key = hashlib.md5(key.encode()).hexdigest()[:10]
-        # name = f"{name}_{hash_key}.pkl"
-        cache_path = os.path.join(cache_dir, name)
+        # cache_name = f"{name}_{hash_key}.pkl"
+        cache_path = cache_dir / cache_name
         return cache_path
 
     @staticmethod

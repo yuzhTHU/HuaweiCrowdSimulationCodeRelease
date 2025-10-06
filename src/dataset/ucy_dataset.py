@@ -58,12 +58,12 @@ class UCYDataset(BaseDataset):
         df_data['x'] += 360
         df_data['y'] += 288
 
-        ## 数据重采样
-        df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
-
         ## 仿射变换
         H = cls.get_homography_mat(mat_name=data_path.stem)
         df_data[['x', 'y']] = affine_transformation(df_data[['x', 'y']].values, H)
+
+        ## 数据重采样
+        df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
 
         ## 创建地图
         image_path = data_path.parent / f"{data_path.stem}.png"
@@ -87,10 +87,9 @@ class UCYDataset(BaseDataset):
         dataset = cls(name=name, args=args, df_data=df_data, map_data=map_data)
 
         ## 保存缓存
-        if args.cache_dataset:
-            cache_path = cls._make_cache_path(args, str(data_path), name)
-            _logger.info(f"Caching dataset to {cache_path}")
-            cls.save_cache(dataset, cache_path)
+        cache_path = cls._make_cache_path(args, str(data_path), name)
+        _logger.info(f"Caching dataset to {cache_path}")
+        cls.save_cache(dataset, cache_path)
 
         return dataset
 
@@ -130,54 +129,3 @@ class UCYDataset(BaseDataset):
         else:
             raise ValueError(f"Unknown mat_name: {mat_name}")
         return H
-
-if False:
-    data_path = Path('data/UCY/data/data_zara/crowds_zara01.vsp')
-
-    ## 读取数据
-    df_list = []
-    with open(data_path, 'r') as f:
-        P = int(f.readline().split(' ')[0])  # 行人数
-        for p in range(P):
-            S = int(f.readline().split(' ')[0])  # 控制柄数
-            csv = [f.readline().removesuffix(' - (2D point, m_id)') for _ in range(S)]
-            df = pd.read_csv(
-                StringIO('\n'.join(csv)),
-                sep=" ",
-                nrows=S,
-                usecols=[0, 1, 2, 3],
-                names=["x", "y", "f", "direction"],
-            )
-            df["id"] = p
-            df['type'] = 'pedestrian'
-            df_list.append(df)
-    df_data = pd.concat(df_list, ignore_index=True)
-    df_data = df_data[['f', 'id', 'x', 'y', 'type']]
-    df_data['x'] += 360
-    df_data['y'] += 288
-
-    ## 数据重采样
-    df_data = BaseDataset.resample_dataframe(df_data, raw_fps=25, target_fps=2.5)
-
-    ## 仿射变换
-    H = UCYDataset.get_homography_mat(mat_name=data_path.stem)
-    df_data[['raw_x', 'raw_y']] = df_data[['x', 'y']]
-    df_data[['x', 'y']] = affine_transformation(df_data[['x', 'y']].values, H)
-
-    ## 创建地图
-    image_path = data_path.parent / f"{data_path.stem}.png"
-    image = np.array(Image.open(image_path).convert('L'))  # (H, W)
-    map, xmin, xmax, ymin, ymax = image_to_world(image[::-1].T, H, dot_per_meter=5)
-
-    ## 可视化
-    fig, axes = plt.subplots(1, 2, figsize=(8, 5), dpi=300)
-    h, w = image.shape[:2]
-    axes[0].imshow(image, extent=(0, w, 0, h), cmap='gray_r')
-    for pid, group in df_data.groupby('id'):
-        cmap = plt.cm.get_cmap('viridis')
-        axes[0].plot(group['raw_x'], group['raw_y'], color=cmap(group['f'].max() / df_data['f'].max()))
-    axes[1].imshow(map, origin='lower', extent=(xmin, xmax, ymin, ymax), cmap='gray_r')
-    for pid, group in df_data.groupby('id'):
-        cmap = plt.cm.get_cmap('viridis')
-        axes[1].plot(group['x'], group['y'], color=cmap(group['f'].max() / df_data['f'].max()))
-    axes[1].set_facecolor('gray')
