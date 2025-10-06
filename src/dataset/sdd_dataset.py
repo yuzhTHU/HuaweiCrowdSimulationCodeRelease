@@ -27,6 +27,12 @@ class SDDDataset(BaseDataset):
             + data_path.parent.name.removeprefix("video")
         )
 
+        ## 检查缓存
+        cache_path = cls._make_cache_path(args, str(data_path), name)
+        if args.cache_dataset and os.path.exists(cache_path):
+            _logger.note(f"Loading cached dataset from {cache_path}")
+            return cls.load_cache(cache_path)
+
         ## 读取数据
         df_data = pd.read_csv(
             data_path,
@@ -69,8 +75,16 @@ class SDDDataset(BaseDataset):
         ## 标准化坐标
         df_data, map_data = cls.normalize_xy(df_data, map_data)
 
-        ## 返回数据集
-        return cls(name=name, args=args, df_data=df_data, map_data=map_data)
+        ## 处理数据集
+        dataset = cls(name=name, args=args, df_data=df_data, map_data=map_data)
+
+        ## 保存缓存
+        if args.cache_dataset:
+            cache_path = cls._make_cache_path(args, str(data_path), name)
+            _logger.info(f"Caching dataset to {cache_path}")
+            cls.save_cache(dataset, cache_path)
+
+        return dataset
 
     @classmethod
     def load_data_batch(self, args: Namespace, data_path: str, show_tqdm=True) -> List["SDDDataset"]:
@@ -85,7 +99,9 @@ class SDDDataset(BaseDataset):
             files = [data_path]
 
         datasets = []
-        for file in tqdm(files, disable=not show_tqdm):
+        pbar = tqdm(files, disable=not show_tqdm, desc="Loading SDD datasets")
+        for file in pbar:
+            pbar.set_postfix_str(file.parent.parent.name + "/" + file.parent.name)
             datasets.append(self.load_data(args, file))
         return datasets
 

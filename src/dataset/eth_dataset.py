@@ -27,6 +27,12 @@ class ETHDataset(BaseDataset):
             raise FileNotFoundError(f"Data path {data_path} not found.")
         name = data_path.parent.name.removeprefix("seq_")
 
+        ## 检查缓存
+        cache_path = cls._make_cache_path(args, str(data_path), name)
+        if args.cache_dataset and os.path.exists(cache_path):
+            _logger.note(f"Loading cached dataset from {cache_path}")
+            return cls.load_cache(cache_path)
+        
         ## 读取数据
         df_data = pd.read_csv(
             data_path,
@@ -46,48 +52,19 @@ class ETHDataset(BaseDataset):
         map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=args.dot_per_meter)
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
 
-        # # 转换到世界坐标系
-        # h, w = image.shape
-        # ii, jj = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
-        # image_coord = np.stack([ii, jj], axis=-1).astype(np.float32)  # (H, W, 2)
-        # xy1 = np.concatenate(
-        #     [image_coord, np.ones((*image_coord.shape[:2], 1), dtype=np.float32)],
-        #     axis=-1,
-        # )  # (H, W, 3)
-        # tmp = xy1 @ H.T  # (H, W, 3)
-        # world_coord = tmp[..., :2] / tmp[..., 2:3]  # 除以最后一维以归一化 (H, W, 2)
-        # df_map = pd.DataFrame({
-        #     "x": world_coord[..., 0].reshape(-1),  # (H*W,)
-        #     "y": world_coord[..., 1].reshape(-1),  # (H*W,)
-        #     "value": image.reshape(-1),  # (H*W,)
-        # })
-        # # 双线性插值
-        # dot_per_meter = 5  # 每米多少个点
-        # xmin, xmax = df_map["x"].min(), df_map["x"].max()
-        # ymin, ymax = df_map["y"].min(), df_map["y"].max()
-        # xx, yy = np.meshgrid(
-        #     np.linspace(xmin, xmax, dot_per_meter),
-        #     np.linspace(ymin, ymax, dot_per_meter),
-        # )
-        # map = griddata(
-        #     points=df_map[["x", "y"]].values,
-        #     values=df_map["value"].values,
-        #     xi=(xx, yy),
-        #     method="linear",  # 'linear' 对应双线性插值
-        # )
-        # map_data = RasterizedMap(
-        #     map=map,
-        #     xmin=xmin,
-        #     xmax=xmax,
-        #     ymin=ymin,
-        #     ymax=ymax,
-        # )
-
         ## 标准化坐标
         df_data, map_data = cls.normalize_xy(df_data, map_data)
 
-        ## 返回数据集
-        return cls(name=name, args=args, df_data=df_data, map_data=map_data)
+        ## 处理数据集
+        dataset = cls(name=name, args=args, df_data=df_data, map_data=map_data)
+
+        ## 保存缓存
+        if args.cache_dataset:
+            cache_path = cls._make_cache_path(args, str(data_path), name)
+            _logger.info(f"Caching dataset to {cache_path}")
+            cls.save_cache(dataset, cache_path)
+        
+        return dataset
 
     @classmethod
     def load_data_batch(self, args: Namespace, data_path: str, show_tqdm=True) -> List["ETHDataset"]:
@@ -102,7 +79,9 @@ class ETHDataset(BaseDataset):
             files = [data_path]
 
         datasets = []
-        for file in tqdm(files, disable=not show_tqdm):
+        pbar = tqdm(files, disable=not show_tqdm, desc="Loading ETH datasets")
+        for file in pbar:
+            pbar.set_postfix_str(file.parent.name)
             datasets.append(self.load_data(args, file))
         return datasets
 

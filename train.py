@@ -25,9 +25,10 @@ def main(args):
         # SDDDataset.load_data(args, "./data/SDD/annotations/bookstore/video1/annotations.txt"),
         # SDDDataset.load_data(args, "./data/SDD/annotations/bookstore/video2/annotations.txt"),
         *UCYDataset.load_data_batch(args, "./data/UCY/data/"),
+        *ETHDataset.load_data_batch(args, "./data/ETH/"),
     ]
-    train_dataset = [d for d in dataset_list if d.name != 'hotel']
-    test_dataset = [d for d in dataset_list if d.name == 'hotel']
+    train_dataset = [d for d in dataset_list if 'zara01' not in d.name]
+    test_dataset = [d for d in dataset_list if 'zara01' in d.name]
     train_loaders = [
         D.DataLoader(
             dataset,
@@ -49,8 +50,9 @@ def main(args):
         for dataset in test_dataset
     ]
     _logger.note(
-        f"Train: {[d.name for d in train_dataset]} datasets, ({sum([len(d) for d in train_dataset])} samples)"
-        f"Test: {[d.name for d in test_dataset]} datasets, ({sum([len(d) for d in test_dataset])} samples)"
+        "Datasets:"
+        f"Train on {[d.name for d in train_dataset]} datasets ({sum([len(d) for d in train_dataset])} samples in total)\n"
+        f"Test on {[d.name for d in test_dataset]} datasets ({sum([len(d) for d in test_dataset])} samples in total)"
     )
 
     # Load Model
@@ -64,11 +66,10 @@ def main(args):
         torch.set_grad_enabled(True)
         model.train()
         for loader in train_loaders:
-            # _logger.info(f"[Epoch {epoch+1}/{args.epochs}] Start training on {loader.dataset.name} dataset")
             map_data = loader.dataset.map_data
             map = torch.from_numpy(map_data.map).to(args.device).float()
             total_loss = 0.0
-            for batch in tqdm(loader, total=len(loader), disable=True):
+            for batch in tqdm(loader, total=len(loader), disable=False, leave=False):
                 pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
                 vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
                 hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
@@ -104,7 +105,7 @@ def main(args):
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item() * acc.shape[0]
-            _logger.info(f"[Epoch {epoch+1}/{args.epochs}] Loss={total_loss/len(loader.dataset):.4f}")
+            _logger.info(f"[Epoch {epoch+1}/{args.epochs}] Loss={total_loss/len(loader.dataset):.4f} on {loader.dataset.name} dataset")
         
         if not (epoch + 1) % 10:
             torch.set_grad_enabled(False)
@@ -124,7 +125,7 @@ def main(args):
                 ade_list = []
                 fde_list = []
                 trajlen_list = []
-                for batch in tqdm(loader, total=len(loader), disable=False):
+                for batch in tqdm(loader, total=len(loader), disable=False, leave=False):
                     pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
                     vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
                     hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
@@ -143,7 +144,7 @@ def main(args):
                     x_t = torch.randn(acc.shape, device=args.device)  # 从噪声开始
                     assert args.T % 50 == 0, f"试图使用 {50} 步采样，然而训练步数 {args.T} % {50} 不等于 0!"
                     stride = args.T // 50
-                    for t in tqdm(reversed(range(0, args.T, stride)), disable=True):
+                    for t in tqdm(reversed(range(0, args.T, stride)), disable=True, leave=False):
                         noisy_acc = x_t
                         denoise_t = torch.full((x_t.shape[0],), t, device=args.device, dtype=torch.long)
                         noise_pred = model(
@@ -205,6 +206,7 @@ if __name__ == "__main__":
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
+    parser.add_argument('--no_cache_dataset', dest='cache_dataset', action='store_false', default=True)
     args, unknown = parser.parse_known_args()
 
     # Build Save Path
