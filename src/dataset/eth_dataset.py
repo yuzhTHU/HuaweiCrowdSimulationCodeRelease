@@ -70,7 +70,7 @@ class ETHDataset(BaseDataset):
         data_path = Path(data_path)
         if data_path.is_dir():
             files = list(sorted(data_path.glob("**/obsmat.txt")))
-        elif "*" in data_path:
+        elif "*" in str(data_path):
             if data_path.is_absolute():
                 data_path = data_path.relative_to(".")
             files = list(sorted(Path(".").glob(data_path)))
