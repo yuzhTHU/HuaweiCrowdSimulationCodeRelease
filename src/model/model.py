@@ -175,29 +175,53 @@ class Model(nn.Module):
             nn.LayerNorm(args.model_dim),
         )
 
-        self.ped_attention = nn.MultiheadAttention(
-            args.model_dim,
-            num_heads=args.head_num,
-            batch_first=True,
-            dropout=args.dropout,
+        self.ped_attention = nn.TransformerDecoder(
+            nn.TransformerDecoderLayer(
+                d_model=args.model_dim,
+                nhead=args.head_num,
+                dim_feedforward=4*args.model_dim,
+                dropout=args.dropout,
+                activation='relu',
+                batch_first=True,
+                norm_first=True,
+            ),
+            num_layers=3,
         )
-        self.veh_attention = nn.MultiheadAttention(
-            args.model_dim,
-            num_heads=args.head_num,
-            batch_first=True,
-            dropout=args.dropout,
+        self.veh_attention = nn.TransformerDecoder(
+            nn.TransformerDecoderLayer(
+                d_model=args.model_dim,
+                nhead=args.head_num,
+                dim_feedforward=4*args.model_dim,
+                dropout=args.dropout,
+                activation='relu',
+                batch_first=True,
+                norm_first=True,
+            ),
+            num_layers=3,
         )
-        self.map_attention = nn.MultiheadAttention(
-            args.model_dim,
-            num_heads=args.head_num,
-            batch_first=True,
-            dropout=args.dropout,
+        self.map_attention = nn.TransformerDecoder(
+            nn.TransformerDecoderLayer(
+                d_model=args.model_dim,
+                nhead=args.head_num,
+                dim_feedforward=4*args.model_dim,
+                dropout=args.dropout,
+                activation='relu',
+                batch_first=True,
+                norm_first=True,
+            ),
+            num_layers=3,
         )
-        self.latent_attntn = nn.MultiheadAttention(
-            args.model_dim,
-            num_heads=args.head_num,
-            batch_first=True,
-            dropout=args.dropout,
+        self.latent_attntn = nn.TransformerDecoder(
+            nn.TransformerDecoderLayer(
+                d_model=args.model_dim,
+                nhead=args.head_num,
+                dim_feedforward=4*args.model_dim,
+                dropout=args.dropout,
+                activation='relu',
+                batch_first=True,
+                norm_first=True,
+            ),
+            num_layers=3,
         )
         self.latent_tokens = nn.Parameter(
             torch.randn(args.latent_token_num, args.model_dim)
@@ -242,6 +266,10 @@ class Model(nn.Module):
         self,
         veh: torch.FloatTensor,
     ):
+        shape = list(veh.shape)
+        if shape[1] == 0:
+            shape[1] = 1
+            veh = torch.full(shape, float('nan'), device=veh.device)
         veh_embedding = self.veh_embedder(veh) # (batch_size, #vehicle, model_dim)
         self.veh_embedding = veh_embedding
 
@@ -259,7 +287,7 @@ class Model(nn.Module):
         gridx, gridy = torch.meshgrid(xx, yy, indexing='xy')
         gridxy = torch.stack([gridx, gridy], dim=-1) # (H', W', 2)
         map_embedding = map_embedding + self.positional_encoding(gridxy) # (H', W', model_dim)
-        ltn_embedding, _ = self.latent_attntn(self.latent_tokens, map_embedding.flatten(0, 1), map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
+        ltn_embedding = self.latent_attntn(self.latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
         self.map_embedding = map_embedding
         self.ltn_embedding = ltn_embedding
         self.xmax = xmax
@@ -355,23 +383,26 @@ class Model(nn.Module):
         veh_mask = veh_mask >= veh_length.unsqueeze(1) # (batch_size, max_veh_num)
 
         # Social Attention
-        ped_info, _ = self.ped_attention(
-            ped_embedding, ped_embedding, ped_embedding,
-            key_padding_mask=ped_mask, 
+        ped_info = self.ped_attention(
+            ped_embedding, ped_embedding,
+            memory_key_padding_mask=ped_mask,
+            tgt_key_padding_mask=ped_mask,
         ) # (batch_size, #pedestrian, model_dim)
         ped_info = F.layer_norm(ped_info, ped_info.shape[-1:])
 
         # Vehicle Attention
-        veh_info, _ = self.veh_attention(
-            ped_embedding, veh_embedding, veh_embedding,
-            key_padding_mask=veh_mask,
+        veh_info = self.veh_attention(
+            ped_embedding, veh_embedding,
+            memory_key_padding_mask=veh_mask,
+            tgt_key_padding_mask=ped_mask,
         ) # (batch_size, #pedestrian, model_dim)
         veh_info = F.layer_norm(veh_info, veh_info.shape[-1:])
 
         # Map Attention
         pe = self.pe
-        map_info, _ = self.map_attention(
-            ped_embedding + pe, ltn_embedding, ltn_embedding
+        map_info = self.map_attention(
+            ped_embedding + pe, ltn_embedding,
+            tgt_key_padding_mask=ped_mask,
         ) # (batch_size, #pedestrian, model_dim)
         map_info = F.layer_norm(map_info, map_info.shape[-1:])
 

@@ -87,7 +87,7 @@ class BaseDataset(D.Dataset):
             ped_list = ped_list[ped_list].index.tolist()
             ped_table = ped_table[ped_list]
             if len(ped_list) == 0:
-                _logger.warning(f"No pedestrian at frame {f} in dataset {self.name}, skip.")
+                _logger.debug(f"No pedestrian at frame {f} in dataset {self.name}, skip.")
                 continue
 
             # 当前状态
@@ -222,14 +222,53 @@ class BaseDataset(D.Dataset):
 
     @staticmethod
     def resample_dataframe(df_data, raw_fps=30, target_fps=2.5):
-        t_raw = df_data['f'] / raw_fps
-        t_new = np.arange(t_raw.min(), t_raw.max(), 1/target_fps)
-        x_new = np.interp(t_new, t_raw, df_data['x'])
-        y_new = np.interp(t_new, t_raw, df_data['y'])
-        f_new = (t_new * target_fps).astype(int)
-        df_new = pd.DataFrame({
-            'f': f_new,
-            'x': x_new,
-            'y': y_new
-        })
-        return df_new
+        """
+        对单个行人/车辆的数据进行重采样
+        Args:
+            df_data: 包含单个行人/车辆数据的 DataFrame，列包括 ['f', 'id', 'x', 'y', 'type']
+            raw_fps: 原始数据帧率
+            target_fps: 目标数据帧率
+        """
+        if raw_fps == target_fps:
+            return df_data.copy()
+
+        new_df_data = []
+        for id, group in df_data.groupby('id'):
+            if group['type'].nunique() > 1:
+                _logger.warning(f"ID {id} has multiple types: {group['type'].unique()}, use the first one.")
+            t_raw = group['f'] / raw_fps
+            t_new = np.arange(t_raw.min(), t_raw.max(), 1 / target_fps)
+            x_new = np.interp(t_new, t_raw, group['x'])
+            y_new = np.interp(t_new, t_raw, group['y'])
+            f_new = (t_new * target_fps).astype(int)
+            new_group = pd.DataFrame({
+                'f': f_new,
+                'x': x_new,
+                'y': y_new
+            })
+            new_group['id'] = id
+            new_group['type'] = group['type'].iloc[0]
+            new_df_data.append(new_group)
+        new_df_data = pd.concat(new_df_data, ignore_index=True)
+        return new_df_data
+
+
+    @staticmethod
+    def normalize_xy(df_data, map_data):
+        x_mean = df_data['x'].mean()
+        x_std = 1.0 # df_data['x'].std()
+        df_data['x'] = (df_data['x'] - x_mean) / x_std
+        _logger.info(f"Normalized x with mean={x_mean:.4f}, std={x_std:.4f}")
+        y_mean = df_data['y'].mean()
+        y_std = 1.0 # df_data['y'].std()
+        df_data['y'] = (df_data['y'] - y_mean) / y_std
+        _logger.info(f"Normalized y with mean={y_mean:.4f}, std={y_std:.4f}")
+        map_data.xmin = (map_data.xmin - x_mean) / x_std
+        map_data.xmax = (map_data.xmax - x_mean) / x_std
+        map_data.ymin = (map_data.ymin - y_mean) / y_std
+        map_data.ymax = (map_data.ymax - y_mean) / y_std
+        _logger.info(
+            f"Normalized map into xmin={map_data.xmin:.4f}, xmax={map_data.xmax:.4f}, "
+            f"ymin={map_data.ymin:.4f}, ymax={map_data.ymax:.4f}"
+        )
+        return df_data, map_data
