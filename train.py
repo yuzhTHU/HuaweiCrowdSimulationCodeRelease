@@ -132,7 +132,7 @@ def main(args):
                 f"{train_timer}"
             )
         
-        if not (epoch % args.test_per_epoch) or (epoch == 0 and args.test_before_train):
+        if (epoch > 0 and not epoch % args.test_per_epoch) or (epoch == 0 and args.test_before_train):
             test_timer.add('drop')
             torch.set_grad_enabled(False)
             model.eval()
@@ -153,7 +153,7 @@ def main(args):
                 ade_list = []
                 fde_list = []
                 trajlen_list = []
-                for idx, batch in tqdm(enumerate(loader), total=len(loader), disable=False, leave=False):
+                for batch_idx, batch in tqdm(enumerate(loader), total=len(loader), disable=False, leave=False):
                     pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
                     vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
                     hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
@@ -176,9 +176,6 @@ def main(args):
                     veh_length_repeat = veh_length.repeat(S)  # (S*B,)
                     test_timer.add('prepare data', n=0)
 
-                    S = 1  # 采样次数
-                    N = 5  # 采样步数
-                    assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
                     for_plot = []
                     acc_pred = []
                     for step in range(args.roll_step):
@@ -224,7 +221,12 @@ def main(args):
                     acc_true = acc # (B, #pedestrian, roll_step*pred_step, 2)
                     vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
                     pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
-                    _logger.debug(f"pos_true 和 future 差距：{np.nanmax((pos_true - future_pos).cpu().abs().numpy()):.4f}")
+                    max_err = np.nanmax((pos_true - future_pos).abs().cpu().numpy(), axis=(-2, -1))
+                    _logger.debug(
+                        f"pos_true 和 future 最大差距 > 1: {(max_err > 1).mean():.2%}, "
+                        f"pos_true 和 future 最大差距 > 1e-6: {(max_err > 1e-6).mean():.2%}"
+                    )
+                    # pos_true = future_pos # (B, #pedestrian, roll_step*pred_step, 2)
                     # 计算 loss
                     loss = criterion(acc_pred, acc_true.expand(acc_pred.shape)) # float
                     loss_list.extend([loss.item()] * acc.shape[0]) # List[float]
@@ -256,7 +258,7 @@ def main(args):
                         ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
                         for line in pos_pred[:, mask, :, :][:, pid]: # 最终的采样结果
                             ax.plot(*line.cpu().numpy().T)
-                        fig.savefig(f"{args.save_path}/eval_epoch{epoch}_{loader.dataset.name}_idx{idx}_pid{pid}.png")
+                        fig.savefig(f"{args.save_path}/eval_epoch{epoch}_{loader.dataset.name}_idx{batch_idx}_pid{pid}.png")
                         plt.close(fig)
                         del fi, fig, axes
                         test_timer.add('visualize')
@@ -295,6 +297,8 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--epochs", type=int, default=10000)
     parser.add_argument("--T", type=int, default=100)
+    parser.add_argument('--sample_num', type=int, default=1)
+    parser.add_argument('--denoise_step', type=int, default=5)
     parser.add_argument("--hist_step", type=int, default=8)
     parser.add_argument("--pred_step", type=int, default=1)
     parser.add_argument("--skip_step", type=int, default=1)
