@@ -21,7 +21,7 @@ class GCDataset(BaseDataset):
     raw_fps = 25
 
     @classmethod
-    def load_data(cls, args: Namespace, data_path: str, start_time:int, end_time: int) -> "GCDataset":
+    def load_data(cls, args: Namespace, data_path: str) -> "GCDataset":
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
