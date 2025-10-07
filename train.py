@@ -24,6 +24,7 @@ def main(args):
     dataset_list = [
         # SDDDataset.load_data(args, "./data/SDD/annotations/bookstore/video1/annotations.txt"),
         # SDDDataset.load_data(args, "./data/SDD/annotations/bookstore/video2/annotations.txt"),
+        # UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp"),
         *UCYDataset.load_data_batch(args, "./data/UCY/data/"),
         *ETHDataset.load_data_batch(args, "./data/ETH/"),
     ]
@@ -52,7 +53,7 @@ def main(args):
         for dataset in test_dataset
     ]
     _logger.note(
-        "Datasets:"
+        "Datasets:\n"
         f"Train on {[d.name for d in train_dataset]} datasets ({sum([len(d) for d in train_dataset])} samples in total)\n"
         f"Test on {[d.name for d in test_dataset]} datasets ({sum([len(d) for d in test_dataset])} samples in total)"
     )
@@ -63,10 +64,9 @@ def main(args):
     criterion = torch.nn.MSELoss()
     ddim = DDIM(args)
     _logger.note(
-        "Trainable Parameters: "
-        f"{sum(p.numel() for p in model.parameters() if p.requires_grad):,}"
-        f" ({sum(p.numel() for p in model.parameters()):,} in total)"
-        f" on {args.device}"
+        "Model Parameters:\n"
+        f"Trainable: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}\n"
+        f"Total: {sum(p.numel() for p in model.parameters()):,}"
     )
 
     # Train
@@ -89,14 +89,14 @@ def main(args):
                     des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
                     spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian)
                     veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
-                    acc = batch['acc'].to(args.device)  # (batch_size, #pedestrian, pred_step, 2)
+                    acc = batch['acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
                     ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
                     veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
                     train_timer.add('prepare data')
 
                     # DDPM forward
-                    acc_true = acc # (B, #pedestrian, pred_step, 2)
-                    noisy_acc, noise_true, denoise_t = ddim.add_noise(acc_true)
+                    acc_true = acc[:, :, :args.pred_step, :] # (B, #pedestrian, pred_step, 2)
+                    noisy_acc, noise, denoise_t = ddim.add_noise(acc_true)
                     train_timer.add('DDPM forward')
 
                     # DDPM backward
@@ -153,55 +153,80 @@ def main(args):
                 ade_list = []
                 fde_list = []
                 trajlen_list = []
-                for batch in tqdm(loader, total=len(loader), disable=False, leave=False):
+                for idx, batch in tqdm(enumerate(loader), total=len(loader), disable=False, leave=False):
                     pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
                     vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
                     hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
                     des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
-                    spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian)
+                    spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian, 1)
                     veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
-                    acc = batch['acc'].to(args.device)  # (batch_size, #pedestrian, pred_step, 2)
-                    future = batch['future'].to(args.device)  # (batch_size, #pedestrian, pred_step, 2)
+                    acc = batch['acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
+                    future_pos = batch['future_pos'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
+                    future_veh = batch['future_veh'].to(args.device)  # (batch_size, #vehicle, pred_step*roll_step, 2)
                     ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
                     veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
+
+                    pos_now = pos.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
+                    vel_now = vel.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
+                    hst_now = hst.repeat(S, 1, 1, 1)  # (S*B, #pedestrian, hist_step, 2)
+                    des_now = des.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
+                    spd_now = spd.repeat(S, 1, 1)  # (S*B, #pedestrian, 1)
+                    veh_now = veh.repeat(S, 1, 1, 1)  # (S*B, #vehicle, hist_step + 1, 2)
+                    ped_length_repeat = ped_length.repeat(S)  # (S*B,)
+                    veh_length_repeat = veh_length.repeat(S)  # (S*B,)
                     test_timer.add('prepare data', n=0)
 
-                    model.set_veh_embedding(veh=veh)
-                    model.set_ped_embedding(pos=pos, vel=vel, hst=hst, des=des, spd=spd)
-                    model.set_sur_info()
-                    test_timer.add('embed data')
-
-                    S = 20  # 采样次数
-                    N = 10  # 采样步数
-                    acc_pred = []
+                    S = 1  # 采样次数
+                    N = 5  # 采样步数
+                    assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
                     for_plot = []
-                    for _ in range(S):
-                        xt = torch.randn(acc.shape, device=args.device)  # 从噪声开始
+                    acc_pred = []
+                    for step in range(args.roll_step):
+                        model.set_veh_embedding(veh=veh_now)
+                        model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
+                        model.set_sur_info()
+                        test_timer.add('embed data')
+
+                        shape = list(acc.shape)
+                        shape[0] *= S
+                        shape[2] = args.pred_step
+                        xt = torch.randn(shape, device=args.device)  # 从噪声开始
                         for_plot.append([xt])
-                        assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} % {N} 不等于 0!"
                         stride = args.T // N
                         for t in tqdm(range(args.T, 0, -stride), disable=True, leave=False):
                             noisy_acc = xt
                             denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
                             x0_pred = model(
                                 noisy_acc=noisy_acc, denoise_t=denoise_t,
-                                ped_length=ped_length, veh_length=veh_length,
-                            )  # (B, #pedestrian, 2)
+                                ped_length=ped_length_repeat, veh_length=veh_length_repeat,
+                            )  # (S*B, #pedestrian, pred_step, 2)
                             xt = ddim.denoise(xt, t, x0_pred, stride=stride)
                             for_plot[-1].append(xt)
-                        acc_pred.append(xt)
-                    test_timer.add('denoise')
+                        acc_new = xt  # (S*B, #pedestrian, pred_step, 2)
+                        acc_pred.append(acc_new)
+                        test_timer.add('denoise')
+
+                        vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+                        pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+                        veh_new = future_veh[:, :, step*args.pred_step:(step+1)*args.pred_step, :].repeat(S, 1, 1, 1)  # (S*B, #vehicle, pred_step, 2)
+                        pos_now = pos_new[:, :, -1, :] # (S*B, #pedestrian, 2)
+                        vel_now = vel_new[:, :, -1, :] # (S*B, #pedestrian, 2)
+                        hst_now = torch.cat([hst_now[:, :, args.pred_step:, :], pos_new], dim=-2) # (S*B, #pedestrian, hist_step, 2)
+                        veh_now = torch.cat([veh_now[:, :, args.pred_step:, :], veh_new], dim=-2)  # (S*B, #vehicle, hist_step + 1, 2)
+                        test_timer.add('rollout')
+
+                    acc_pred = torch.concat(acc_pred, dim=-2)  # (S*B, #pedestrian, roll_step*pred_step, 2)
+                    batch_size, ped_num, _, _ = acc.shape
+                    acc_pred = acc_pred.view(S, batch_size, ped_num, args.roll_step*args.pred_step, 2)  # (S, B, #pedestrian, roll_step*pred_step, 2)
                     # 获取有效的行人掩模
-                    batch_size, ped_num, _ = pos.shape
                     mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
                     # 计算 pos_true 和 vel_true
-                    acc_true = acc # (B, #pedestrian, pred_step, 2)
-                    vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, pred_step, 2)
-                    pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, pred_step, 2)
-                    _logger.debug(f"pos_true 和 future 差距：{np.nanmax((pos_true - future).cpu().abs().numpy()):.4f}")
+                    acc_true = acc # (B, #pedestrian, roll_step*pred_step, 2)
+                    vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
+                    pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
+                    _logger.debug(f"pos_true 和 future 差距：{np.nanmax((pos_true - future_pos).cpu().abs().numpy()):.4f}")
                     # 计算 loss
-                    acc_pred = torch.stack(acc_pred, dim=0)  # (S, B, #pedestrian, pred_step, 2)
-                    loss = criterion(acc_pred[0], acc_true) # float
+                    loss = criterion(acc_pred, acc_true.expand(acc_pred.shape)) # float
                     loss_list.extend([loss.item()] * acc.shape[0]) # List[float]
                     # 计算 distance error
                     vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
@@ -209,28 +234,29 @@ def main(args):
                     dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, pred_step)
                     test_timer.add('evaluate')
                     # 可视化
-                    if False:
+                    if True:
                         import matplotlib.pyplot as plt
                         from src.utils.plot import get_fig
-                        for_plot = torch.stack([torch.stack(fp, dim=0) for fp in for_plot], dim=0)  # (S, N+1, B, #pedestrian, pred_step, 2)
-                        for_plot = vel.unsqueeze(-2) + for_plot.cumsum(dim=-2) / args.fps  # (S, N+1, B, #pedestrian, pred_step, 2)
-                        for_plot = pos.unsqueeze(-2) + for_plot.cumsum(dim=-2) / args.fps  # (S, N+1, B, #pedestrian, pred_step, 2)
+                        for_plot_acc = torch.concat([torch.stack(i, dim=0) for i in for_plot], dim=-2)  # (N+1, S*B, #pedestrian, roll_step*pred_step, 2)
+                        for_plot_acc = for_plot_acc.view(N+1, S, batch_size, ped_num, args.roll_step*args.pred_step, 2)  # (N+1, S, B, #pedestrian, roll_step*pred_step, 2)
+                        for_plot_vel = vel.unsqueeze(-2) + for_plot_acc.cumsum(dim=-2) / args.fps  # (N+1, S, B, #pedestrian, roll_step*pred_step, 2)
+                        for_plot_pos = pos.unsqueeze(-2) + for_plot_vel.cumsum(dim=-2) / args.fps  # (N+1, S, B, #pedestrian, roll_step*pred_step, 2)
                         fi, fig, axes = get_fig(3, 4, AW=6, AH=6, dpi=300)
                         pid = 0
                         for idx, n in enumerate(range(N+1)):
                             ax = axes[idx]
-                            ax.plot(*hst[mask, :, :][pid].T.cpu().numpy(), color='blue') # 历史轨迹
+                            ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # 历史轨迹
                             ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
-                            ax.plot(*pos_true[mask, :, :][pid].T.cpu().numpy(), 'r:') # 未来轨迹
-                            for line in for_plot[:, n, mask, :, :][:, pid]: # 逐步的扩散结果
-                                ax.plot(*line.T.cpu().numpy())
-                        ax = axes[11]
-                        ax.plot(*hst[mask, :, :][pid].T.cpu().numpy(), color='blue') # 历史轨迹
+                            ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
+                            for line in for_plot_pos[n, :, mask, :, :][:, pid]: # 逐步的扩散结果
+                                ax.plot(*line.cpu().numpy().T)
+                        ax = axes[-1]
+                        ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # 历史轨迹
                         ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
-                        ax.plot(*pos_true[mask, :, :][pid].T.cpu().numpy(), 'r:') # 未来轨迹
+                        ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
                         for line in pos_pred[:, mask, :, :][:, pid]: # 最终的采样结果
-                            ax.plot(*line.T.cpu().numpy())
-                        fig.savefig(f"{args.save_path}/eval_epoch{epoch}_{loader.dataset.name}_pid{pid}.png")
+                            ax.plot(*line.cpu().numpy().T)
+                        fig.savefig(f"{args.save_path}/eval_epoch{epoch}_{loader.dataset.name}_idx{idx}_pid{pid}.png")
                         plt.close(fig)
                         del fi, fig, axes
                         test_timer.add('visualize')
@@ -238,8 +264,8 @@ def main(args):
                     dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, pred_step)
                     # 选择 ade 最佳的 sample
                     sample_idx = dis_err.mean(dim=-1).argmin(dim=0)  # (valid{B*#pedestrian},)
-                    batch_idx = torch.arange(dis_err.shape[1], device=args.device)  # (valid{B*#pedestrian},)
-                    dis_err = dis_err[sample_idx, batch_idx, :]  # (valid{B*#pedestrian}, pred_step)
+                    valid_idx = torch.arange(dis_err.shape[1], device=args.device)  # (valid{B*#pedestrian},)
+                    dis_err = dis_err[sample_idx, valid_idx, :]  # (valid{B*#pedestrian}, pred_step)
                     # 计算 ade, fde
                     ade = dis_err.mean(dim=-1) # (valid{B*#pedestrian})
                     fde = dis_err[..., -1] # (valid{B*#pedestrian})
@@ -264,20 +290,21 @@ def main(args):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--name", type=str, default="DDPM")
-    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--device", type=str, default="cuda:2")
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--epochs", type=int, default=10000)
     parser.add_argument("--T", type=int, default=100)
     parser.add_argument("--hist_step", type=int, default=8)
-    parser.add_argument("--pred_step", type=int, default=12)
+    parser.add_argument("--pred_step", type=int, default=1)
     parser.add_argument("--skip_step", type=int, default=1)
+    parser.add_argument("--roll_step", type=int, default=12)
     parser.add_argument("--fps", type=int, default=2.5)
     parser.add_argument("--dot_per_meter", type=int, default=5)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--save_dir", type=str, default="./logs/train")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument('--model_dim', type=int, default=256)
+    parser.add_argument('--model_dim', type=int, default=128)
     parser.add_argument('--map_feature_dim', type=int, default=64)
     parser.add_argument('--head_num', type=int, default=4)
     parser.add_argument('--dropout', type=float, default=0.1)

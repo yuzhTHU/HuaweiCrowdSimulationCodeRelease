@@ -185,7 +185,7 @@ class Model(nn.Module):
                 batch_first=True,
                 norm_first=True,
             ),
-            num_layers=3,
+            num_layers=1,
         )
         self.veh_attention = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
@@ -197,7 +197,7 @@ class Model(nn.Module):
                 batch_first=True,
                 norm_first=True,
             ),
-            num_layers=3,
+            num_layers=1,
         )
         self.map_attention = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
@@ -209,7 +209,7 @@ class Model(nn.Module):
                 batch_first=True,
                 norm_first=True,
             ),
-            num_layers=3,
+            num_layers=1,
         )
         self.latent_attntn = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
@@ -221,7 +221,7 @@ class Model(nn.Module):
                 batch_first=True,
                 norm_first=True,
             ),
-            num_layers=3,
+            num_layers=1,
         )
         self.latent_tokens = nn.Parameter(
             torch.randn(args.latent_token_num, args.model_dim)
