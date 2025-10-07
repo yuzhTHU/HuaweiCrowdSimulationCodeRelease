@@ -4,11 +4,12 @@ import torch
 import logging
 import numpy as np
 import pandas as pd
+from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
 from argparse import Namespace
 from .base_dataset import BaseDataset, RasterizedMap
-from ..utils.homography import calc_homography_mat, affine_transformation
+from ..utils.homography import calc_homography_mat, affine_transformation, image_to_world
 from typing import List
 
 _logger = logging.getLogger(__name__)
@@ -54,22 +55,28 @@ class SDDDataset(BaseDataset):
             'Car': 'vehicle',
             'Bus': 'vehicle',
         })
-        df_data = df_data[['f', 'id', 'x', 'y', 'type']]
+        df_data = df_data[['f', 'id', 'x', 'y', 'type']]  # 第一维向右，第二维向下
 
         ## 仿射变换
-        # H = cls.get_homography_mat(mat_name=data_path.parent.parent.name)
-        # df_data[['x', 'y']] = affine_transformation(df_data[['x', 'y']].values, H)
+        H = cls.get_homography_mat(data_path=data_path)
+        df_data[['x', 'y']] = affine_transformation(df_data[['x', 'y']].values, H)
 
         ## 数据重采样
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
         
-        ## 创建地图
-        dot_per_meter = args.dot_per_meter
-        xmin, xmax = df_data['x'].min(), df_data['x'].max()
-        ymin, ymax = df_data['y'].min(), df_data['y'].max()
-        len_x = len(np.arange(xmin, xmax+1/dot_per_meter, 1/dot_per_meter)[:-1])
-        len_y = len(np.arange(ymin, ymax+1/dot_per_meter, 1/dot_per_meter)[:-1])
-        map = np.full((len_x, len_y), np.nan)
+        ## 读取地图
+        map_path = data_path.parent / f"map.png"
+        if map_path.exists():
+            image = np.array(Image.open(map_path).convert('L'))  # (H, W)  第一维向下，第二维向右
+            image_ = image.T # 转置，使得第一维向右，第二维向下，与 df_data 中的坐标系对齐
+            map, xmin, xmax, ymin, ymax = image_to_world(image_, H, dot_per_meter=5)  # 第一维向右，第二维向上，即 xy 坐标
+        else:
+            dot_per_meter = args.dot_per_meter
+            xmin, xmax = df_data['x'].min(), df_data['x'].max()
+            ymin, ymax = df_data['y'].min(), df_data['y'].max()
+            len_x = len(np.arange(xmin, xmax+1/dot_per_meter, 1/dot_per_meter)[:-1])
+            len_y = len(np.arange(ymin, ymax+1/dot_per_meter, 1/dot_per_meter)[:-1])
+            map = np.full((len_x, len_y), np.nan)
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
 
         ## 标准化坐标
@@ -105,5 +112,12 @@ class SDDDataset(BaseDataset):
         return datasets
 
     @staticmethod
-    def get_homography_mat(mat_name):
-        raise NotImplementedError("SDD dataset does not use homography matrix.")
+    def get_homography_mat(data_path):
+        image0 = np.array(Image.open(data_path.parent / 'reference.jpg'))
+        h, w, _ = image0.shape
+        # 计算仿射矩阵以将图像中最长边缩放到 10 米
+        H = calc_homography_mat(
+            np.array([[0, h], [w, h], [0, 0], [w, 0]]),
+            np.array([[0, 0], [w, 0], [0, h], [w, h]]) / max(h, w) * 10,
+        )
+        return H
