@@ -55,7 +55,7 @@ class BaseDataset(D.Dataset):
 
     def split_samples(self, df_data):
         hist_step = self.args.hist_step
-        pred_step = self.args.pred_step
+        pred_step = self.args.pred_step * self.args.roll_step
         skip_step = self.args.skip_step
         fps = self.args.fps
 
@@ -109,7 +109,7 @@ class BaseDataset(D.Dataset):
                 .transpose(1, 0, 2)
             )  # (#ped, pred_step, 2)
             # 未来轨迹
-            future = (
+            future_pos = (
                 ped_table
                 .iloc[-pred_step:]
                 .values
@@ -160,22 +160,30 @@ class BaseDataset(D.Dataset):
 
             # 车辆信息作为条件
             veh_hist_step = hist_step
-            veh_data = df[df['type'].eq('vehicle') & df['f'].ge(f - veh_hist_step) & df['f'].lt(f + 1)]
+            veh_data = df[df['type'].eq('vehicle') & df['f'].ge(f - veh_hist_step) & df['f'].lt(f + pred_step + 1)]
             veh_list = veh_data['id'].unique().tolist()
             veh_table = (
                 veh_data
                 .pivot_table(index='f', columns='id', values=['x', 'y'])
-                .reindex(index=range(f - veh_hist_step, f + 1),
+                .reindex(index=range(f - veh_hist_step, f + pred_step + 1),
                          columns=pd.MultiIndex.from_product([['x', 'y'], veh_list]))
                 .swaplevel(axis='columns').sort_index(axis='columns')
                 .interpolate(method='linear', limit_area='inside', axis='rows')
             )
             veh = (
                 veh_table
+                .iloc[:veh_hist_step + 1]
                 .values
                 .reshape(veh_hist_step + 1, len(veh_list), 2)
                 .transpose(1, 0, 2)
             )  # (#vehicle, veh_hist_step, 2)
+            future_veh = (
+                veh_table
+                .iloc[-pred_step:]
+                .values
+                .reshape(pred_step, len(veh_list), 2)
+                .transpose(1, 0, 2)
+            )  # (#ped, pred_step, 2)
 
             samples.append({
                 'pos': torch.FloatTensor(pos), # (#ped, 2)
@@ -183,9 +191,10 @@ class BaseDataset(D.Dataset):
                 'hst': torch.FloatTensor(hst), # (#ped, hist_step, 2)
                 'des': torch.FloatTensor(des), # (#ped, 2)
                 'spd': torch.FloatTensor(spd), # (#ped, 1)
-                'veh': torch.FloatTensor(veh), # (#vehicle, veh_hist_step, 2)
+                'veh': torch.FloatTensor(veh), # (#veh, veh_hist_step, 2)
                 'acc': torch.FloatTensor(acc), # (#ped, pred_step, 2)
-                'future': torch.FloatTensor(future), # (#ped, pred_step, 2)
+                'future_pos': torch.FloatTensor(future_pos), # (#ped, pred_step, 2)
+                'future_veh': torch.FloatTensor(future_veh), # (#veh, pred_step, 2)
             })
 
         return samples
@@ -206,7 +215,8 @@ class BaseDataset(D.Dataset):
         des = pad_sequence([item['des'] for item in batch], batch_first=True, padding_value=0.0)
         spd = pad_sequence([item['spd'] for item in batch], batch_first=True, padding_value=0.0)
         veh = pad_sequence([item['veh'] for item in batch], batch_first=True, padding_value=0.0)
-        future = pad_sequence([item['future'] for item in batch], batch_first=True, padding_value=0.0)
+        future_pos = pad_sequence([item['future_pos'] for item in batch], batch_first=True, padding_value=0.0)
+        future_veh = pad_sequence([item['future_veh'] for item in batch], batch_first=True, padding_value=0.0)
         ped_length = torch.LongTensor([item['pos'].shape[0] for item in batch])
         veh_length = torch.LongTensor([item['veh'].shape[0] for item in batch])
 
@@ -218,7 +228,8 @@ class BaseDataset(D.Dataset):
             'des': des,
             'spd': spd,
             'veh': veh,
-            'future': future,
+            'future_pos': future_pos,
+            'future_veh': future_veh,
             'ped_length': ped_length,
             'veh_length': veh_length,
         }
