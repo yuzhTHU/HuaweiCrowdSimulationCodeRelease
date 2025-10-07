@@ -166,6 +166,9 @@ def main(args):
                     ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
                     veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
 
+                    S = args.sample_num  # 采样次数
+                    N = args.denoise_step  # 采样步数
+                    assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
                     pos_now = pos.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
                     vel_now = vel.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
                     hst_now = hst.repeat(S, 1, 1, 1)  # (S*B, #pedestrian, hist_step, 2)
