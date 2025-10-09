@@ -514,7 +514,7 @@ if __name__ == "__main__":
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='cosine', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD'])
+    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo'])
     parser.add_argument('--test_name', type=str, default=None, nargs='+')
     parser.add_argument('--test_ratio', type=float, default=None)
     parser.add_argument('--split_by_scenario', action='store_true')
