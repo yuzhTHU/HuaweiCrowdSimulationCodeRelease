@@ -2,6 +2,7 @@ import os
 import re
 import random
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib import rcParams

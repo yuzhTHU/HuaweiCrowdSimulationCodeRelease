@@ -91,7 +91,7 @@ def main(args):
         test_loaders.append(D.DataLoader(
             dataset,
             shuffle=False,
-            batch_size=args.batch_size,  # 在实际测试时 batch_size 会乘上 sample_num，可能会很大导致 OOM
+            batch_size=args.batch_size // args.sample_num,  # 在实际测试时 batch_size 会乘上 sample_num，可能会很大导致 OOM
             num_workers=args.num_workers,
             collate_fn=dataset.collate_fn,
         ))
@@ -210,6 +210,7 @@ def main(args):
                 _logger.note(f"Best model saved to {save_path}")
             else:
                 patience -= 1
+                _logger.info(f"Patience left: {patience}/{args.patience}")
             timer.add('save_best')
 
         # 打印用时
@@ -467,11 +468,16 @@ def visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path
     for_plot_vel = vel.unsqueeze(-2) + for_plot_acc.cumsum(dim=-2) / args.fps  # (N+1, S, B, #pedestrian, roll_step*pred_step, 2)
     for_plot_pos = pos.unsqueeze(-2) + for_plot_vel.cumsum(dim=-2) / args.fps  # (N+1, S, B, #pedestrian, roll_step*pred_step, 2)
     fi, fig, axes = get_fig(3, 4, AW=6, AH=6, dpi=300)
-    for idx, n in enumerate(range(N+1)):
+    if N + 1 <= 11:
+        loader = range(N+1)
+    else:
+        loader = np.linspace(0, N+1, 12, dtype=int)[:-1].tolist()
+    for idx, n in enumerate(loader):
         ax = axes[idx]
         ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # 历史轨迹
         ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
         ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
+        ax.title.set_text(f"Step {N-n} / {N}")
         for line in for_plot_pos[n, :, mask, :, :][:, pid]: # 逐步的扩散结果
             ax.plot(*line.cpu().numpy().T)
     ax = axes[-1]
