@@ -53,7 +53,7 @@ class BaseDataset(D.Dataset):
     def __getitem__(self, index):
         return self.samples[index]
 
-    def split_samples(self, df_data):
+    def split_samples(self, df_data, use_tqdm=True):
         hist_step = self.args.hist_step
         pred_step = self.args.pred_step * self.args.roll_step
         skip_step = self.args.skip_step
@@ -67,7 +67,7 @@ class BaseDataset(D.Dataset):
 
         samples = []
         f_min, f_max = df_data['f'].min(), df_data['f'].max()
-        for f in range(f_min + hist_step, f_max - pred_step + 1, skip_step):
+        for f in tqdm(range(f_min + hist_step, f_max - pred_step + 1, skip_step), disable=not use_tqdm):
             df = df_data[df_data['f'].ge(f - hist_step) & df_data['f'].lt(f + pred_step + 1)]
 
             ## 行人数据整理
@@ -186,15 +186,15 @@ class BaseDataset(D.Dataset):
             )  # (#ped, pred_step, 2)
 
             samples.append({
-                'pos': np.array(pos), # (#ped, 2)
-                'vel': np.array(vel), # (#ped, 2)
-                'hst': np.array(hst), # (#ped, hist_step, 2)
-                'des': np.array(des), # (#ped, 2)
-                'spd': np.array(spd), # (#ped, 1)
-                'veh': np.array(veh), # (#veh, veh_hist_step, 2)
-                'acc': np.array(acc), # (#ped, pred_step, 2)
-                'future_pos': np.array(future_pos), # (#ped, pred_step, 2)
-                'future_veh': np.array(future_veh), # (#veh, pred_step, 2)
+                'pos': pos, # (#ped, 2)
+                'vel': vel, # (#ped, 2)
+                'hst': hst, # (#ped, hist_step, 2)
+                'des': des, # (#ped, 2)
+                'spd': spd, # (#ped, 1)
+                'veh': veh, # (#veh, veh_hist_step, 2)
+                'acc': acc, # (#ped, pred_step, 2)
+                'future_pos': future_pos, # (#ped, pred_step, 2)
+                'future_veh': future_veh, # (#veh, pred_step, 2)
             })
 
         return samples

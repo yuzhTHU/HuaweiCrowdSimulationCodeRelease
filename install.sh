@@ -14,6 +14,7 @@ rsync -anv --progress \
     --include='UCY/***' \
     --include='SDD/***' \
     --include='GC/***' \
+    --include='WayMo/' \
     --include='WayMo/Processed/***' \
     --include='.cache/***' \
     --exclude='*' \

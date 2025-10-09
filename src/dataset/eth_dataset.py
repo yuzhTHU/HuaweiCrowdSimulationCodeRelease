@@ -18,7 +18,7 @@ _logger = logging.getLogger(__name__)
 
 
 class ETHDataset(BaseDataset):
-    raw_fps = 2.5
+    raw_fps = 25  # 官方 README 说是 25 fps，但是看视频感觉走起路来太快了不像真的
 
     @classmethod
     def load_data(cls, args: Namespace, data_path: str) -> "ETHDataset":
@@ -68,7 +68,7 @@ class ETHDataset(BaseDataset):
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["ETHDataset"]:
         name = '-'.join(Path(data_path).relative_to('./data').parts)
-        cache_path = cls._make_cache_path(args, str(data_path), name)
+        cache_path = Path('./data/.cache') / f"{name}.pkl"
         if args.cache_dataset and os.path.exists(cache_path):
             _logger.info(f"Loading cached dataset-list from {cache_path}")
             files = cls.load_cache(cache_path)

@@ -183,7 +183,8 @@ def main(args):
         # 定期保存
         if set(str(epoch)[1:]) == {'0'}:
             # 只在 epoch=10,20,...,100,...,1000,... 时保存
-            save_path = f"{args.save_path}/checkpoints/epoch{epoch}.pth"
+            save_path = Path(args.save_path) / "checkpoints" / f"epoch{epoch}.pth"
+            save_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save({
                 "epoch": epoch,
                 "model": model.state_dict(),

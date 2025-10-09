@@ -95,7 +95,7 @@ class SDDDataset(BaseDataset):
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["SDDDataset"]:
         name = '-'.join(Path(data_path).relative_to('./data').parts)
-        cache_path = cls._make_cache_path(args, str(data_path), name)
+        cache_path = Path('./data/.cache') / f"{name}.pkl"
         if args.cache_dataset and os.path.exists(cache_path):
             _logger.info(f"Loading cached dataset-list from {cache_path}")
             files = cls.load_cache(cache_path)
