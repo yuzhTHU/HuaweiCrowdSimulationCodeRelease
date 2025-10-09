@@ -201,15 +201,15 @@ class BaseDataset(D.Dataset):
 
     @staticmethod
     def collate_fn(batch):
-        pos = pad_sequence([torch.from_numpy(item['pos']) for item in batch], batch_first=True, padding_value=0.0)
-        vel = pad_sequence([torch.from_numpy(item['vel']) for item in batch], batch_first=True, padding_value=0.0)
-        acc = pad_sequence([torch.from_numpy(item['acc']) for item in batch], batch_first=True, padding_value=0.0)
-        hst = pad_sequence([torch.from_numpy(item['hst']) for item in batch], batch_first=True, padding_value=0.0)
-        des = pad_sequence([torch.from_numpy(item['des']) for item in batch], batch_first=True, padding_value=0.0)
-        spd = pad_sequence([torch.from_numpy(item['spd']) for item in batch], batch_first=True, padding_value=0.0)
-        veh = pad_sequence([torch.from_numpy(item['veh']) for item in batch], batch_first=True, padding_value=0.0)
-        future_pos = pad_sequence([torch.from_numpy(item['future_pos']) for item in batch], batch_first=True, padding_value=0.0)
-        future_veh = pad_sequence([torch.from_numpy(item['future_veh']) for item in batch], batch_first=True, padding_value=0.0)
+        pos = pad_sequence([torch.from_numpy(item['pos']).float() for item in batch], batch_first=True, padding_value=0.0)
+        vel = pad_sequence([torch.from_numpy(item['vel']).float() for item in batch], batch_first=True, padding_value=0.0)
+        acc = pad_sequence([torch.from_numpy(item['acc']).float() for item in batch], batch_first=True, padding_value=0.0)
+        hst = pad_sequence([torch.from_numpy(item['hst']).float() for item in batch], batch_first=True, padding_value=0.0)
+        des = pad_sequence([torch.from_numpy(item['des']).float() for item in batch], batch_first=True, padding_value=0.0)
+        spd = pad_sequence([torch.from_numpy(item['spd']).float() for item in batch], batch_first=True, padding_value=0.0)
+        veh = pad_sequence([torch.from_numpy(item['veh']).float() for item in batch], batch_first=True, padding_value=0.0)
+        future_pos = pad_sequence([torch.from_numpy(item['future_pos']).float() for item in batch], batch_first=True, padding_value=0.0)
+        future_veh = pad_sequence([torch.from_numpy(item['future_veh']).float() for item in batch], batch_first=True, padding_value=0.0)
         ped_length = torch.LongTensor([item['pos'].shape[0] for item in batch])
         veh_length = torch.LongTensor([item['veh'].shape[0] for item in batch])
 
