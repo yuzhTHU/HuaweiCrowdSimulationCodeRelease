@@ -33,7 +33,7 @@ class UCYDataset(BaseDataset):
         ## 检查缓存
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and os.path.exists(cache_path):
-            _logger.note(f"Loading cached dataset from {cache_path}")
+            _logger.info(f"Loading cached dataset from {cache_path}")
             return cls.load_cache(cache_path)
 
         ## 读取数据
@@ -94,22 +94,31 @@ class UCYDataset(BaseDataset):
         return dataset
 
     @classmethod
-    def load_data_batch(self, args: Namespace, data_path: str, show_tqdm=True) -> List["UCYDataset"]:
-        data_path = Path(data_path)
-        if data_path.is_dir():
-            files = list(sorted(data_path.glob("**/*.vsp")))
-        elif "*" in str(data_path):
-            if data_path.is_absolute():
-                data_path = data_path.relative_to(".")
-            files = list(sorted(Path(".").glob(data_path)))
+    def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["UCYDataset"]:
+        ## 检查缓存
+        name = '-'.join(Path(data_path).relative_to('./data').parts)
+        cache_path = cls._make_cache_path(args, str(data_path), name)
+        if args.cache_dataset and os.path.exists(cache_path):
+            _logger.info(f"Loading cached dataset-list from {cache_path}")
+            files = cls.load_cache(cache_path)
         else:
-            files = [data_path]
+            data_path = Path(data_path)
+            if data_path.is_dir():
+                files = list(sorted(data_path.glob("**/*.vsp")))
+            elif "*" in str(data_path):
+                if data_path.is_absolute():
+                    data_path = data_path.relative_to(".")
+                files = list(sorted(Path(".").glob(data_path)))
+            else:
+                files = [data_path]
+            _logger.info(f"Caching dataset-list to {cache_path}")
+            cls.save_cache(files, cache_path)
 
         datasets = []
         pbar = tqdm(files, disable=not show_tqdm, desc="Loading UCY datasets")
         for file in pbar:
             pbar.set_postfix_str(file.parent.name + '/' + file.stem)
-            datasets.append(self.load_data(args, file))
+            datasets.append(cls.load_data(args, file))
         return datasets
 
     @staticmethod

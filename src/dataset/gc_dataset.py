@@ -30,7 +30,7 @@ class GCDataset(BaseDataset):
         ## 检查缓存
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and cache_path.exists():
-            _logger.note(f"Loading cached dataset from {cache_path}")
+            _logger.info(f"Loading cached dataset from {cache_path}")
             return cls.load_cache(cache_path)
         
         ## 读取数据

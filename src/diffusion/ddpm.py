@@ -10,7 +10,7 @@ _logger = logging.getLogger(__name__)
 
 
 class DDPM:
-    def __init__(self, args: Namespace):
+    def __init__(self, args: Namespace, flexibility=0.0):
         self.args = args
         if args.beta_schedule == "cosine":
             beta = self.cosine_beta_schedule(args.T)
@@ -21,6 +21,7 @@ class DDPM:
         self.beta = torch.concatenate([torch.tensor([0.0], device=args.device), beta.to(args.device)])  # (T+1,)
         self.alpha = 1 - self.beta
         self.alpha_bar = self.alpha.cumprod(dim=0)
+        self.flexibility = flexibility
 
     def add_noise(self, x0, denoise_t=None):
         """ DDPM forward: 给未来轨迹加噪 """
@@ -37,18 +38,18 @@ class DDPM:
         xt = torch.sqrt(a_t) * x0 + torch.sqrt(1 - a_t) * noise
         return xt, noise, denoise_t
 
-    def denoise(self, xt, denoise_t, x0_pred, flexibility=0.0):
+    def denoise(self, xt, denoise_t, x0_pred, stride=1):
         """ DDPM backward: 预测噪声并去噪 """
         if denoise_t == 0:
             raise ValueError("denoise_t 不能为 0")
-        coef1 = (1 - self.alpha[denoise_t]) * torch.sqrt(self.alpha_bar[denoise_t-1]) / (1 - self.alpha_bar[denoise_t])
-        coef2 = (1 - self.alpha_bar[denoise_t-1]) * torch.sqrt(self.alpha[denoise_t]) / (1 - self.alpha_bar[denoise_t])
+        coef1 = (1 - self.alpha[denoise_t]) * torch.sqrt(self.alpha_bar[denoise_t-stride]) / (1 - self.alpha_bar[denoise_t])
+        coef2 = (1 - self.alpha_bar[denoise_t-stride]) * torch.sqrt(self.alpha[denoise_t]) / (1 - self.alpha_bar[denoise_t])
         mean = coef1 * x0_pred + coef2 * xt
         if denoise_t > 1:
             noise = torch.randn_like(xt)
             var1 = self.beta[denoise_t]
             var2 = (1 - self.alpha_bar[denoise_t - 1]) / (1 - self.alpha_bar[denoise_t]) * self.beta[denoise_t]
-            var = (1 - flexibility) * var1 + flexibility * var2
+            var = (1 - self.flexibility) * var1 + self.flexibility * var2
             mean = mean + var.sqrt() * noise
         return mean
 
