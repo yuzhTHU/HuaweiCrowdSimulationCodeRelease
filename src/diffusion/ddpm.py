@@ -30,27 +30,43 @@ class DDPM:
             if (denoise_t == 0).any():
                 raise ValueError("denoise_t 不能为 0")
         batch_size = x0.shape[0]
-        denoise_t = torch.randint(
-            1, self.args.T+1, (batch_size,), device=self.args.device
-        ).long()  # (batch_size,)
-        a_t = self.alpha_bar[denoise_t].view(batch_size, 1, 1, 1)
+        if self.args.antithetic_sampling:
+            denoise_t_half = torch.randint(1, self.args.T+1, (batch_size // 2,), device=self.args.device)
+            denoise_t = torch.cat([denoise_t_half, self.args.T + 1 - denoise_t_half], dim=0)  # (batch_size,)
+            if batch_size % 2 == 1:
+                t = torch.randint(1, self.args.T+1, (1,), device=self.args.device)
+                denoise_t = torch.cat([denoise_t, t], dim=0)
+        else:
+            denoise_t = torch.randint(1, self.args.T+1, (batch_size,), device=self.args.device)  # (batch_size,)
+        denoise_t = denoise_t.long()
+        at = self.alpha_bar[denoise_t].view(batch_size, 1, 1, 1)
         noise = torch.randn_like(x0, device=self.args.device)
-        xt = torch.sqrt(a_t) * x0 + torch.sqrt(1 - a_t) * noise
+        xt = torch.sqrt(at) * x0 + torch.sqrt(1 - at) * noise
         return xt, noise, denoise_t
 
-    def denoise(self, xt, denoise_t, x0_pred, stride=1):
+    def denoise(self, xt, denoise_t, x0=None, noise=None, stride=1):
         """ DDPM backward: 预测噪声并去噪 """
+        if not ((x0 is None) ^ (noise is None)):
+            raise ValueError("x0 和 noise 只能传入一个")
         if denoise_t == 0:
             raise ValueError("denoise_t 不能为 0")
-        coef1 = (1 - self.alpha[denoise_t]) * torch.sqrt(self.alpha_bar[denoise_t-stride]) / (1 - self.alpha_bar[denoise_t])
-        coef2 = (1 - self.alpha_bar[denoise_t-stride]) * torch.sqrt(self.alpha[denoise_t]) / (1 - self.alpha_bar[denoise_t])
-        mean = coef1 * x0_pred + coef2 * xt
-        if denoise_t > 1:
-            noise = torch.randn_like(xt)
-            var1 = self.beta[denoise_t]
-            var2 = (1 - self.alpha_bar[denoise_t - 1]) / (1 - self.alpha_bar[denoise_t]) * self.beta[denoise_t]
-            var = (1 - self.flexibility) * var1 + self.flexibility * var2
-            mean = mean + var.sqrt() * noise
+        if denoise_t - stride < 0:
+            raise ValueError("denoise_t - stride 不能小于 0")
+        at = self.alpha[denoise_t]
+        at_next = self.alpha[denoise_t - stride]
+        if x0 is None:
+            coef1 = (at_next / at).sqrt()
+            coef2 = - (1 - at / at_next) / ((1 - at) * at / at_next).sqrt()
+            mean = coef1 * xt + coef2 * noise
+        else:
+            coef1 = (1 - at / at_next) * torch.sqrt(at_next) / (1 - at)
+            coef2 = (1 - at_next) * torch.sqrt(at / at_next) / (1 - at)
+            mean = coef1 * x0 + coef2 * xt
+        if denoise_t - stride > 0:
+            var_upper = (1 - at / at_next)
+            var_lower = (1 - at / at_next) * (1 - at_next) / (1 - at)
+            var = (1 - self.flexibility) * var_upper + self.flexibility * var_lower
+            mean = mean + var.sqrt() * torch.randn_like(xt)
         return mean
 
 
