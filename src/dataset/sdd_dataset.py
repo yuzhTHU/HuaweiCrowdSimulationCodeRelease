@@ -14,6 +14,7 @@ from typing import List
 
 _logger = logging.getLogger(__name__)
 
+
 class SDDDataset(BaseDataset):
     raw_fps = 30
 
@@ -122,10 +123,50 @@ class SDDDataset(BaseDataset):
     @staticmethod
     def get_homography_mat(data_path):
         image0 = np.array(Image.open(data_path.parent / 'reference.jpg'))
+        meter_per_pixel_dict = {
+            'bookstore': {
+                'video1': 36 / 1080, 'video2': 36 / 1080, 'video3': 36 / 1080,
+                'video4': 36 / 1080, 'video5': 36 / 1080, 'video6': 36 / 1080,
+            },
+            'coupa': {
+                'video1': 30 / 1080, 'video2': 31 / 1080,
+                'video3': 33 / 1080, 'video4': 33 / 1080,
+            },
+            'deathCircle': {
+                'video0': 60 / 904, 'video1': 77 / 1080, 'video2': 82 / 1080,
+                'video3': 55 / 1080, 'video4': 77 / 1080,
+            },
+            'gates': {
+                'video0': 32 / 728, 'video1': 35 / 780, 'video2': 43 / 728,
+                'video3': 31 / 772, 'video4': 40 / 784, 'video5': 51 / 1080,
+                'video6': 32 / 712, 'video7': 37 / 728, 'video8': 32 / 728,
+            },
+            'hyang': {
+                'video0': 45 / 816, 'video1': 60 / 780, 'video2': 43 / 842,
+                'video3': 70 / 1434, 'video4': 41 / 836, 'video5': 40 / 788,
+                'video6': 71 / 1416, 'video7': 46 / 808, 'video8': 41 / 752,
+                'video9': 62 / 1080, 'video10': 36 / 748, 'video11': 36 / 748,
+                'video12': 44 / 848, 'video13': 39 / 748, 'video14': 39 / 748,
+            },
+            'little': {
+                'video0': 42/1080, 'video1': 40/1080, 
+                'video2': 40/1080, 'video3': 40/1080,
+            },
+            'nexus': {
+                'video0': 60 / 740, 'video1': 45 / 796, 'video2': 43 / 716,
+                'video3': 37 / 716, 'video4': 39 / 740, 'video5': 38 / 728,
+                'video6': 42 / 788, 'video7': 38 / 728, 'video8': 36 / 732,
+                'video9': 37 / 788, 'video10': 33 / 732, 'video11': 42 / 772,
+            },
+            'quad': {
+                'video0': 56 / 1968, 'video1': 58 / 1968, 
+                'video2': 58 / 1968, 'video3': 60 / 1968,
+            }
+        }
+        ratio = meter_per_pixel_dict[data_path.parent.parent.name][data_path.parent.name]
         h, w, _ = image0.shape
-        # 计算仿射矩阵以将图像中最长边缩放到 10 米
         H = calc_homography_mat(
             np.array([[0, h], [w, h], [0, 0], [w, 0]]),
-            np.array([[0, 0], [w, 0], [0, h], [w, h]]) / max(h, w) * 10,
+            np.array([[0, 0], [w, 0], [0, h], [w, h]]) * ratio,
         )
         return H
