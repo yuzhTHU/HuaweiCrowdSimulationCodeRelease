@@ -40,6 +40,9 @@ def main(args):
         dataset_list = SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
     elif args.datasets == 'WayMo':
         dataset_list = WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/")
+    elif args.datasets == "zara01":
+        dataset_list = [UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")]
+        dataset_list[0].samples = dataset_list[0].samples[:1]
     else:
         raise ValueError(f"Unknown dataset {args.datasets}!")
     # 划分训练集和测试集
@@ -239,7 +242,7 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
         map_data = loader.dataset.map_data
         map = torch.from_numpy(map_data.map).to(args.device).float()
         records = dict(loss=[])
-        for batch in tqdm(loader, total=len(loader), disable=False, leave=False):
+        for batch in tqdm(loader, total=len(loader), disable=False, leave=False, dynamic_ncols=True):
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
             hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
@@ -253,28 +256,31 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
 
             # DDPM forward
             acc_true = acc[:, :, :args.pred_step, :] # (B, #pedestrian, pred_step, 2)
-            noisy_acc, noise, denoise_t = diffusion.add_noise(acc_true)
+            noisy_acc, noise_true, denoise_t = diffusion.add_noise(acc_true)
             train_timer.add('DDPM forward')
 
             # DDPM backward
             model.set_map_embedding(
-                        map=map,
-                        xmin=map_data.xmin,
-                        xmax=map_data.xmax,
-                        ymin=map_data.ymin,
-                        ymax=map_data.ymax,
-                    )
+                map=map,
+                xmin=map_data.xmin,
+                xmax=map_data.xmax,
+                ymin=map_data.ymin,
+                ymax=map_data.ymax,
+            )
             model.set_veh_embedding(veh=veh)
             model.set_ped_embedding(pos=pos, vel=vel, hst=hst, des=des, spd=spd)
             model.set_sur_info()
-            acc_pred = model(
+            output = model(
                 noisy_acc=noisy_acc, denoise_t=denoise_t,
-                ped_length=ped_length, veh_length=veh_length
+                ped_length=ped_length, veh_length=veh_length,
             )  # (B, #pedestrian, pred_step, 2)
             train_timer.add('DDPM backword')
 
             # Compute Loss & Backpropagate
-            loss = criterion(acc_pred, acc_true)
+            if args.predict_noise:
+                loss = criterion(output, noise_true)
+            else:
+                loss = criterion(output, acc_true)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -315,7 +321,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
         )
         test_timer.add('embed map')
         records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[])
-        for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False)):
+        for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
             hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
@@ -331,6 +337,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             S = args.sample_num  # 采样次数
             N = args.denoise_step  # 采样步数
             assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
+            assert 1 <= args.step_offset <= args.T // N, f"step_offset 应该取值于 {{1, ..., {args.T // N}}}!"
             pos_now = pos.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
             vel_now = vel.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
             hst_now = hst.repeat(S, 1, 1, 1)  # (S*B, #pedestrian, hist_step, 2)
@@ -355,16 +362,20 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                 xt = torch.randn(shape, device=args.device)  # 从噪声开始
                 for_plot.append([xt])
                 stride = args.T // N
-                for t in tqdm(range(args.T, 0, -stride), disable=True, leave=False):
+                steps = reversed(range(args.step_offset, args.T+1, stride))
+                for t in tqdm(steps, disable=True, leave=False, dynamic_ncols=True):
                     noisy_acc = xt
                     denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
-                    x0_pred = model(
+                    output = model(
                         noisy_acc=noisy_acc, 
                         denoise_t=denoise_t,
                         ped_length=ped_length_repeat, 
                         veh_length=veh_length_repeat,
                     )  # (S*B, #pedestrian, pred_step, 2)
-                    xt = diffusion.denoise(xt, t, x0_pred, stride=stride)
+                    if args.predict_noise:
+                        xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
+                    else:
+                        xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
                     for_plot[-1].append(xt)
                 acc_new = xt  # (S*B, #pedestrian, pred_step, 2)
                 acc_pred.append(acc_new)
@@ -403,7 +414,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, pred_step)
             test_timer.add('evaluate')
             # 可视化
-            if True:
+            if batch_idx == 0:
                 pid = 0
                 save_path = f"{args.save_path}/visualize/epoch{epoch}_{loader.dataset.name}_idx{batch_idx}_pid{pid}.png"
                 visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path, pid)
@@ -502,9 +513,11 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=10000)
     parser.add_argument('--patience', type=int, default=20)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'])
-    parser.add_argument("--T", type=int, default=100)
-    parser.add_argument('--sample_num', type=int, default=1)
-    parser.add_argument('--denoise_step', type=int, default=5)
+    parser.add_argument("--T", type=int, default=100, help="训练时的扩散步数")
+    parser.add_argument('--sample_num', type=int, default=1, help="测试时每个轨迹采样 {sample_num} 次")
+    parser.add_argument('--denoise_step', type=int, default=5, help="采样时进行 {denoise_step} 次去噪")
+    parser.add_argument('--step_offset', type=int, default=1, help="最后一步去噪从 x_{step_offset} 到 x_0")
+    parser.add_argument('--no_antithetic_sampling', action='store_false', dest='antithetic_sampling', default=True)
     parser.add_argument("--hist_step", type=int, default=8)
     parser.add_argument("--pred_step", type=int, default=1)
     parser.add_argument("--skip_step", type=int, default=1)
@@ -519,9 +532,9 @@ if __name__ == "__main__":
     parser.add_argument('--head_num', type=int, default=4)
     parser.add_argument('--dropout', type=float, default=0.3)
     parser.add_argument('--latent_token_num', type=int, default=16)
-    parser.add_argument('--beta_schedule', type=str, default='cosine', choices=['linear', 'cosine'])
+    parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo'])
+    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo', 'zara01'])
     parser.add_argument('--test_name', type=str, default=None, nargs='+')
     parser.add_argument('--test_ratio', type=float, default=None)
     parser.add_argument('--split_by_scenario', action='store_true')
@@ -530,6 +543,7 @@ if __name__ == "__main__":
     parser.add_argument('--test_per_epoch', type=int, default=10)
     parser.add_argument('--save_per_epoch', type=int, default=50)
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
+    parser.add_argument('--predict_noise', action='store_true')
     args, unknown = parser.parse_known_args()
 
     ## Build Save Path

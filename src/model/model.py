@@ -234,11 +234,13 @@ class Model(nn.Module):
             nn.Linear(4*args.model_dim, args.model_dim),
         )
         self.output_fc = Residual(
-            nn.LayerNorm(args.model_dim),
-            nn.Linear(args.model_dim, args.model_dim//2),
+            nn.LayerNorm(2*args.model_dim),
+            nn.Linear(2*args.model_dim, args.model_dim),
             nn.ReLU(),
-            nn.Linear(args.model_dim//2, args.pred_step*2),
-            input_dim=args.model_dim, 
+            nn.Linear(args.model_dim, args.model_dim),
+            nn.ReLU(),
+            nn.Linear(args.model_dim, args.pred_step*2),
+            input_dim=2*args.model_dim, 
             output_dim=args.pred_step*2,
         )
 
@@ -416,8 +418,13 @@ class Model(nn.Module):
 
         # Fusion
         ped_embedding = self.fusion_fc(
-            ped_embedding + ped_info + veh_info + map_info + sur_info + denoise_t_embedding
+            ped_embedding + ped_info + veh_info + map_info + sur_info
         ) # (batch_size, #pedestrian, model_dim)
+        # acc_embedding = self.acc_embedder(acc_true) # (batch_size, #pedestrian, model_dim)
+        ped_embedding = torch.concat([
+            ped_embedding,
+            denoise_t_embedding + noisy_acc_embedding # + acc_embedding,
+        ], dim=-1) # (batch_size, #pedestrian, 2*model_dim)
 
         # Output
         output = self.output_fc(ped_embedding) # (batch_size, #pedestrian, pred_step*2)
