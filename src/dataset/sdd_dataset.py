@@ -125,12 +125,13 @@ class SDDDataset(BaseDataset):
         image0 = np.array(Image.open(data_path.parent / 'reference.jpg'))
         meter_per_pixel_dict = {
             'bookstore': {
-                'video1': 36 / 1080, 'video2': 36 / 1080, 'video3': 36 / 1080,
-                'video4': 36 / 1080, 'video5': 36 / 1080, 'video6': 36 / 1080,
+                'video0': 36 / 1080, 'video1': 36 / 1080, 'video2': 39 / 1080,
+                'video3': 53 / 1080, 'video4': 54 / 1080, 
+                'video5': 34 / 1080, 'video6': 49 / 1080,
             },
             'coupa': {
-                'video1': 30 / 1080, 'video2': 31 / 1080,
-                'video3': 33 / 1080, 'video4': 33 / 1080,
+                'video0': 30 / 1080, 'video1': 31 / 1080,
+                'video2': 33 / 1080, 'video3': 33 / 1080,
             },
             'deathCircle': {
                 'video0': 60 / 904, 'video1': 77 / 1080, 'video2': 82 / 1080,
