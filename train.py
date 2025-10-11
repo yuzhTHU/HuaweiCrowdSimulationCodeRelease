@@ -69,7 +69,7 @@ def main(args):
             d1 = d
             d2 = deepcopy(d)
             train_num = int(len(d) * (1-args.test_ratio))
-            d1.name = d1.name + f"_{1-args.test_ratio*100:.0f}train"
+            d1.name = d1.name + f"_{100-args.test_ratio*100:.0f}train"
             d2.name = d2.name + f"_{args.test_ratio*100:.0f}test"
             d1.samples = d1.samples[:train_num]
             d2.samples = d2.samples[train_num:]
