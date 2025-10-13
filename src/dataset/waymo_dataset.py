@@ -4,10 +4,11 @@ import torch
 import logging
 import numpy as np
 import pandas as pd
-from PIL import Image, ImageOps
 from tqdm import tqdm
 from pathlib import Path
 from argparse import Namespace
+from PIL import Image, ImageOps
+from scipy.spatial import cKDTree
 from .base_dataset import BaseDataset, RasterizedMap
 from ..utils.homography import calc_homography_mat, affine_transformation, image_to_world
 from typing import List
@@ -44,6 +45,9 @@ class WayMoDataset(BaseDataset):
             'OTHER': 'vehicle',
         })
 
+        ## 清除离行人太远的车辆
+        df_data = cls.filter_vehicle_trajectories(df_data, distance_threshold=5.0)
+
         ## 数据重采样
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
         
@@ -64,7 +68,7 @@ class WayMoDataset(BaseDataset):
         xmin0, xmax0, ymin0, ymax0 = np.loadtxt(data_path.parent / 'map_range.txt')
         H = calc_homography_mat(
             np.array([[0, 0], [h, 0], [0, w], [h, w]]),
-            np.array([[xmin0, ymax0], [xmin0, ymin0], [xmax0, ymax0], [xmin0, ymax0]]),
+            np.array([[xmin0, ymax0], [xmin0, ymin0], [xmax0, ymax0], [xmax0, ymin0]]),
         )
         map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=5)  # 第一维向右，第二维向上，即 xy 坐标
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
@@ -106,6 +110,28 @@ class WayMoDataset(BaseDataset):
         datasets = []
         pbar = tqdm(files, disable=not show_tqdm, desc="Loading SDD datasets")
         for file in pbar:
-            pbar.set_postfix_str(file.parent.parent.name + "/" + file.parent.name)
-            datasets.append(cls.load_data(args, file))
+            try:
+                pbar.set_postfix_str(file.parent.parent.name + "/" + file.parent.name)
+                datasets.append(cls.load_data(args, file))
+            except Exception as e:
+                _logger.error(f"Failed to load {file}: {e}")
+                continue
         return datasets
+
+    @staticmethod
+    def filter_vehicle_trajectories(df_data, distance_threshold=5.0):
+        """ 过滤掉与所有行人轨迹距离超过指定阈值的车辆轨迹。 """
+        if df_data.groupby('id')['type'].nunique().max() > 1:
+            raise ValueError("Each id should correspond to a single type.")
+
+        ped_points = df_data[df_data['type'] == 'pedestrian'][['x', 'y']].values  # (N, 2)
+        kd_tree = cKDTree(ped_points)
+
+        drop_id = []
+        for pid, group in df_data[df_data['type'] == 'vehicle'].groupby('id'):
+            veh_traj = group[['x', 'y']].values  # (M, 2)
+            min_dists, _ = kd_tree.query(veh_traj, k=1)
+            if np.min(min_dists) > distance_threshold:
+                drop_id.append(pid)
+        df_data = df_data[~df_data['id'].isin(drop_id)].reset_index(drop=True)
+        return df_data
