@@ -1,7 +1,10 @@
 import math
 import torch
+import logging
 import torch.nn as nn
 import torch.nn.functional as F
+
+_logger = logging.getLogger(__name__)
 
 
 class NanEmbedding(nn.Module):
@@ -356,9 +359,7 @@ class Model(nn.Module):
         denoise_t_embedding = self.denoise_t_embedder(denoise_t) # (batch_size, model_dim)
         denoise_t_embedding = denoise_t_embedding.unsqueeze(1) # (batch_size, 1, model_dim)
         noisy_acc_embedding = self.noisy_acc_embedder(noisy_acc) # (batch_size, #pedestrian, model_dim)
-        ped_embedding = self.ped_encoder(
-            ped_embedding + denoise_t_embedding + noisy_acc_embedding
-        ) # (batch_size, #pedestrian, model_dim)
+        ped_embedding = self.ped_encoder(ped_embedding + denoise_t_embedding + noisy_acc_embedding) # (batch_size, #pedestrian, model_dim)
 
         # Embedding Vehicle
         # veh_embedding = self.veh_embedder(veh) # (batch_size, #vehicle, model_dim)

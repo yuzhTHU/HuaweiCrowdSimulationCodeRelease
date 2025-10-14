@@ -70,7 +70,7 @@ class WayMoDataset(BaseDataset):
             np.array([[0, 0], [h, 0], [0, w], [h, w]]),
             np.array([[xmin0, ymax0], [xmin0, ymin0], [xmax0, ymax0], [xmax0, ymin0]]),
         )
-        map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=5)  # 第一维向右，第二维向上，即 xy 坐标
+        map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=args.dot_per_meter)  # 第一维向右，第二维向上，即 xy 坐标
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
 
         ## 标准化坐标
@@ -87,7 +87,7 @@ class WayMoDataset(BaseDataset):
         return dataset
 
     @classmethod
-    def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["WayMoDataset"]:
+    def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True, total=200) -> List["WayMoDataset"]:
         ## 检查缓存
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / Path(name).with_suffix(".pkl")
@@ -110,6 +110,7 @@ class WayMoDataset(BaseDataset):
         datasets = []
         pbar = tqdm(files, disable=not show_tqdm, desc="Loading SDD datasets")
         for file in pbar:
+            if len(datasets) == total: break
             try:
                 pbar.set_postfix_str(file.parent.parent.name + "/" + file.parent.name)
                 datasets.append(cls.load_data(args, file))

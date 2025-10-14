@@ -1,3 +1,4 @@
+import sys
 import json
 import torch
 import random
@@ -23,7 +24,6 @@ from src.utils.auto_gpu import AutoGPU
 
 _logger = logging.getLogger("src.train")
 
-
 def main(args):
     ## Load Dataset
     # 加载数据集
@@ -43,6 +43,10 @@ def main(args):
     elif args.datasets == "zara01":
         dataset_list = [UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")]
         dataset_list[0].samples = dataset_list[0].samples[:1]
+    elif args.datasets == 'debug':
+        # dataset_list = [SDDDataset.load_data(args, "./data/SDD/annotations/hyang/video0/annotations.txt")]
+        dataset_list = [WayMoDataset.load_data(args, './data/WayMo/Processed/00002_47_93c31aa2d098f5e6/data.csv.gz')]
+        dataset_list[0].samples = dataset_list[0].samples[int(len(dataset_list[0].samples) * 0.8):]
     else:
         raise ValueError(f"Unknown dataset {args.datasets}!")
     # 划分训练集和测试集
@@ -172,7 +176,7 @@ def main(args):
                 f.write(json.dumps(test_records) + "\n")
 
         # 保存加载点
-        if epoch % args.save_per_epoch == 0: # and timer.time > 300:
+        if epoch % args.save_per_epoch == 0 and timer.time > 300:
             # 只在运行超过 5 min 时保存
             save_path = f"{args.save_path}/checkpoint.pth"
             torch.save({
@@ -241,8 +245,9 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
     for loader in train_loaders:
         map_data = loader.dataset.map_data
         map = torch.from_numpy(map_data.map).to(args.device).float()
-        records = dict(loss=[])
+        records = dict(loss=[], rollout_loss=[])
         for batch in tqdm(loader, total=len(loader), disable=False, leave=False, dynamic_ncols=True):
+            optimizer.zero_grad()
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
             hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
@@ -250,41 +255,89 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
             spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian)
             veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
             future_acc = batch['future_acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
+            future_pos = batch['future_pos'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
+            future_veh = batch['future_veh'].to(args.device)  # (batch_size, #vehicle, pred_step*roll_step, 2)
             ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
             veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
             train_timer.add('prepare data')
 
-            # DDPM forward
-            acc_true = future_acc[:, :, :args.pred_step, :] # (B, #pedestrian, pred_step, 2)
-            noisy_acc, noise_true, denoise_t = diffusion.add_noise(acc_true)
-            train_timer.add('DDPM forward')
+            # Rollout
+            pos_now = pos
+            vel_now = vel
+            hst_now = hst
+            des_now = des
+            spd_now = spd
+            veh_now = veh
+            rollout_loss = []
+            for step in range(args.multi_frame_rollout):
+                # DDPM forward
+                pos_true = future_pos[:, :, args.pred_step*step:args.pred_step*(step+1), :] # (B, #pedestrian, pred_step, 2)
+                vel_true = pos_true.diff(dim=-2, prepend=pos_now.unsqueeze(-2)) * args.fps  # (B, #pedestrian, roll_step*pred_step, 2)
+                acc_true = vel_true.diff(dim=-2, prepend=vel_now.unsqueeze(-2)) * args.fps  # (B, #pedestrian, roll_step*pred_step, 2)
+                # acc_true = future_acc[:, :, args.pred_step*step:args.pred_step*(step+1), :] # (B, #pedestrian, pred_step, 2)
+                noisy_acc, noise_true, denoise_t = diffusion.add_noise(acc_true * args.scale_accelerate)
+                train_timer.add('add noise')
 
-            # DDPM backward
-            model.set_map_embedding(
-                map=map,
-                xmin=map_data.xmin,
-                xmax=map_data.xmax,
-                ymin=map_data.ymin,
-                ymax=map_data.ymax,
-            )
-            model.set_veh_embedding(veh=veh)
-            model.set_ped_embedding(pos=pos, vel=vel, hst=hst, des=des, spd=spd)
-            model.set_sur_info()
-            output = model(
-                noisy_acc=noisy_acc, denoise_t=denoise_t,
-                ped_length=ped_length, veh_length=veh_length,
-            )  # (B, #pedestrian, pred_step, 2)
-            train_timer.add('DDPM backword')
+                # DDPM backward
+                model.set_map_embedding(
+                    map=map,
+                    xmin=map_data.xmin,
+                    xmax=map_data.xmax,
+                    ymin=map_data.ymin,
+                    ymax=map_data.ymax,
+                )
+                model.set_veh_embedding(veh=veh_now)
+                model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
+                model.set_sur_info()
+                output = model(
+                    noisy_acc=noisy_acc, 
+                    denoise_t=denoise_t,
+                    ped_length=ped_length, 
+                    veh_length=veh_length,
+                )  # (B, #pedestrian, pred_step, 2)
+                train_timer.add('forward')
 
-            # Compute Loss & Backpropagate
-            if args.predict_noise:
-                loss = criterion(output, noise_true)
-            else:
-                loss = criterion(output, acc_true)
-            optimizer.zero_grad()
-            loss.backward()
+                # Compute Loss
+                if args.predict_noise:
+                    noise_pred = output
+                    acc_pred = diffusion.noise_to_x0(xt=noisy_acc, denoise_t=denoise_t, noise=noise_pred) / args.scale_accelerate
+                else:
+                    acc_pred = output / args.scale_accelerate
+                
+                if args.loss_type == 'accelerate':
+                    loss = criterion(acc_pred, acc_true)
+                elif args.loss_type == 'position':
+                    # acc_true 是从 pos_true 算出来的，因此不用再返回去计算 pos_true 了
+                    # vel_true = vel_now.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps
+                    # pos_true = pos_now.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps
+                    vel_pred = vel_now.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps
+                    pos_pred = pos_now.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps
+                    loss = criterion(pos_pred, pos_true)
+                elif args.loss_type == 'noise':
+                    if not args.predict_noise:
+                        raise ValueError("When using noise prediction loss, the model must predict noise!")
+                    loss = criterion(noise_pred, noise_true)
+                else:
+                    raise ValueError(f"Unknown loss type {args.loss_type}!")
+                rollout_loss.append(loss.detach().cpu().list())
+                train_timer.add('compute loss')
+                (args.rollout_lambda ** (args.roll_step - step) * loss).backward()
+
+                acc_new = acc_pred.detach()  # (B, #pedestrian, pred_step, 2)
+                vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (B, #pedestrian, pred_step, 2)
+                pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (B, #pedestrian, pred_step, 2)
+                veh_new = future_veh[:, :, step*args.pred_step:(step+1)*args.pred_step, :]  # (B, #vehicle, pred_step, 2)
+
+                hst_now = torch.cat([hst_now, pos_now.unsqueeze(-2), pos_new], dim=-2)[:, :, -args.hist_step-1:-1, :] # (B, #pedestrian, hist_step, 2)
+                veh_now = torch.cat([veh_now, veh_new], dim=-2)[:, :, -args.hist_step-1:, :]  # (B, #vehicle, hist_step + 1, 2)
+                pos_now = pos_new[:, :, -1, :] # (B, #pedestrian, 2)
+                vel_now = vel_new[:, :, -1, :] # (B, #pedestrian, 2)
+                train_timer.add('rollout')
+
+            ## Backpropagate
             optimizer.step()
             records['loss'].extend([loss.item()] * acc_true.shape[0])
+            records['rollout_loss'].extend([rollout_loss] * acc_true.shape[0])
             train_timer.add('backpropagate')
         records_list.append(records)
         _logger.debug(
@@ -301,7 +354,12 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
             if k not in all_records:
                 all_records[k] = []
             all_records[k].extend(v)
-    _logger.info(f"[Epoch {epoch}/{args.epochs}] Loss={np.mean(all_records['loss']):.4f}, Time={train_timer}")
+    _logger.info(
+        f"[Epoch {epoch}/{args.epochs}] "
+        f"Loss={np.mean(all_records['loss']):.4f} "
+        f"Rollout Loss={np.mean(all_records['rollout_loss'], axis=0).round(4).tolist()} "
+        f"Time={train_timer}"
+    )
     return all_records
 
 
@@ -360,7 +418,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                 shape[0] *= S
                 shape[2] = args.pred_step
                 xt = torch.randn(shape, device=args.device)  # 从噪声开始
-                for_plot.append([xt])
+                for_plot.append([diffusion.noise_to_x0(xt=xt, denoise_t=args.T, noise=0) / args.scale_accelerate])
                 stride = args.T // N
                 steps = reversed(range(args.step_offset, args.T+1, stride))
                 for t in tqdm(steps, disable=True, leave=False, dynamic_ncols=True):
@@ -373,21 +431,23 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                         veh_length=veh_length_repeat,
                     )  # (S*B, #pedestrian, pred_step, 2)
                     if args.predict_noise:
+                        for_plot[-1].append(diffusion.noise_to_x0(xt=xt, denoise_t=t, noise=output) / args.scale_accelerate)
                         xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
                     else:
+                        for_plot[-1].append(output / args.scale_accelerate)
                         xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
-                    for_plot[-1].append(xt)
-                acc_new = xt  # (S*B, #pedestrian, pred_step, 2)
-                acc_pred.append(acc_new)
+                acc_pred.append(xt / args.scale_accelerate)  # (S*B, #pedestrian, pred_step, 2)
                 test_timer.add('denoise')
 
+                acc_new = xt / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
                 vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
                 pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
                 veh_new = future_veh[:, :, step*args.pred_step:(step+1)*args.pred_step, :].repeat(S, 1, 1, 1)  # (S*B, #vehicle, pred_step, 2)
+
+                hst_now = torch.cat([hst_now, pos_now.unsqueeze(-2), pos_new], dim=-2)[:, :, -args.hist_step-1:-1, :] # (S*B, #pedestrian, hist_step, 2)
+                veh_now = torch.cat([veh_now, veh_new], dim=-2)[:, :, -args.hist_step-1:, :]  # (S*B, #vehicle, hist_step + 1, 2)
                 pos_now = pos_new[:, :, -1, :] # (S*B, #pedestrian, 2)
                 vel_now = vel_new[:, :, -1, :] # (S*B, #pedestrian, 2)
-                hst_now = torch.cat([hst_now[:, :, args.pred_step:, :], pos_new], dim=-2) # (S*B, #pedestrian, hist_step, 2)
-                veh_now = torch.cat([veh_now[:, :, args.pred_step:, :], veh_new], dim=-2)  # (S*B, #vehicle, hist_step + 1, 2)
                 test_timer.add('rollout')
 
             acc_pred = torch.concat(acc_pred, dim=-2)  # (S*B, #pedestrian, roll_step*pred_step, 2)
@@ -522,6 +582,10 @@ if __name__ == "__main__":
     parser.add_argument('--denoise_step', type=int, default=10, help="采样时进行 {denoise_step} 次去噪")
     parser.add_argument('--step_offset', type=int, default=1, help="最后一步去噪从 x_{step_offset} 到 x_0")
     parser.add_argument('--no_antithetic_sampling', action='store_false', dest='antithetic_sampling', default=True)
+    parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'])
+    parser.add_argument('--rollout_lambda', type=float, default=1.0, help="rollout loss 衰减系数，设置 <1 以赋予未来更高权重")
+    parser.add_argument('--multi_frame_rollout', type=int, default=1, help="每次训练时 rollout 的帧数")
+    parser.add_argument('--scale_accelerate', type=float, default=10.0, help="加速度的缩放比例")
     parser.add_argument("--hist_step", type=int, default=8)
     parser.add_argument("--pred_step", type=int, default=1)
     parser.add_argument("--skip_step", type=int, default=1)
@@ -580,12 +644,16 @@ if __name__ == "__main__":
         info_level="debug" if args.debug else "info",
     )
 
+    ## Save Command
+    args.command = ' '.join(sys.argv)
+
+    ## Warm Unknown Args
+    if unknown:
+        _logger.warning(f"Unknown args: {unknown}")
+
     ## Select GPU
     if args.device == "auto":
         args.device = AutoGPU().choice_gpu(memory_MB=6000, interval=15)
-
-    ## Save Command
-    args.command = ' '.join(sys.argv)
 
     ## Save Args
     args_path = save_path / "args.json"

@@ -69,6 +69,18 @@ class DDPM:
             mean = mean + var.sqrt() * torch.randn_like(xt)
         return mean
 
+    def noise_to_x0(self, xt, denoise_t, noise):
+        """ 根据 xt 和噪声预测 x0 """
+        if (
+            (isinstance(denoise_t, int) and (denoise_t == 0)) or
+            (isinstance(denoise_t, torch.Tensor) and (denoise_t == 0).any())
+        ):
+            raise ValueError("denoise_t 不能为 0")
+        at = self.alpha_bar[denoise_t]
+        if isinstance(denoise_t, torch.Tensor) and denoise_t.numel() > 1:
+            at = at.view(xt.shape[0], *[1] * (xt.ndim - 1))
+        x0 = (xt - torch.sqrt(1 - at) * noise) / torch.sqrt(at)
+        return x0
 
     @staticmethod
     def cosine_beta_schedule(T, s=0.008):
