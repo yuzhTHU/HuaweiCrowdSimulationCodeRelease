@@ -93,12 +93,15 @@ class BaseDataset(D.Dataset):
                 _logger.debug(f"No pedestrian at frame {f} in dataset {self.name}, skip.")
                 continue
 
+            # 填充 NaN
+            ped_table = ped_table.ffill().bfill()
+
             # 当前状态
             pos = ped_table.loc[f].values.reshape(len(ped_list), 2)  # (#ped, 2)
             vel = ped_table.diff().loc[f].mul(fps).fillna(0).values.reshape(len(ped_list), 2)  # (#ped, 2)
 
             # 未来加速度作为标签
-            acc = (
+            future_acc = (
                 ped_table
                 .diff().mul(fps)
                 .diff().mul(fps)
@@ -127,22 +130,22 @@ class BaseDataset(D.Dataset):
             )  # (#ped, hist_step, 2)
 
             # 未来 5s 平均速度
-            future_5s = df_data[
-                df_data['f'].ge(f) & 
-                df_data['f'].lt(f + 5 * fps) &
-                df_data['id'].isin(ped_list)
-            ]
             future_5s = (
-                future_5s
+                df_data[
+                    df_data['f'].ge(f - 1) &  # 包含当前帧，以允许计算下一步的速度
+                    df_data['f'].lt(f + 5 * fps) &
+                    df_data['id'].isin(ped_list)
+                ]
                 .pivot_table(index='f', columns='id', values=['x', 'y'])
-                .reindex(index=range(f, future_5s['f'].max() + 1), 
+                .reindex(index=range(f-1, int(f + 5 * fps) + 1), 
                          columns=pd.MultiIndex.from_product([['x', 'y'], ped_list]))
                 .swaplevel(axis='columns').sort_index(axis='columns')
                 .interpolate(method='linear', limit_area='inside', axis='rows')
-                .diff().mul(fps)
+                .ffill().bfill()
             )
             spd = (
                 future_5s
+                .diff().mul(fps).iloc[1:]  # 去掉第一行 NaN（对应于当前第 f 帧的速度），只剩未来 5s
                 .swaplevel(axis='columns').stack(future_stack=True)
                 .pow(2).sum(axis='columns').pow(0.5)
                 .unstack()
@@ -159,24 +162,23 @@ class BaseDataset(D.Dataset):
             )  # (#ped, 2)
 
             # 车辆信息作为条件
-            veh_hist_step = hist_step
-            veh_data = df[df['type'].eq('vehicle') & df['f'].ge(f - veh_hist_step) & df['f'].lt(f + pred_step + 1)]
+            veh_data = df[df['type'].eq('vehicle') & df['f'].ge(f - hist_step) & df['f'].lt(f + pred_step + 1)]
             veh_list = veh_data['id'].unique().tolist()
             veh_table = (
                 veh_data
                 .pivot_table(index='f', columns='id', values=['x', 'y'])
-                .reindex(index=range(f - veh_hist_step, f + pred_step + 1),
+                .reindex(index=range(f - hist_step, f + pred_step + 1),
                          columns=pd.MultiIndex.from_product([['x', 'y'], veh_list]))
                 .swaplevel(axis='columns').sort_index(axis='columns')
                 .interpolate(method='linear', limit_area='inside', axis='rows')
             )
             veh = (
                 veh_table
-                .iloc[:veh_hist_step + 1]
+                .iloc[:hist_step + 1]
                 .values
-                .reshape(veh_hist_step + 1, len(veh_list), 2)
+                .reshape(hist_step + 1, len(veh_list), 2)
                 .transpose(1, 0, 2)
-            )  # (#vehicle, veh_hist_step, 2)
+            )  # (#vehicle, hist_step + 1, 2)
             future_veh = (
                 veh_table
                 .iloc[-pred_step:]
@@ -188,13 +190,16 @@ class BaseDataset(D.Dataset):
             samples.append({
                 'pos': pos, # (#ped, 2)
                 'vel': vel, # (#ped, 2)
-                'hst': hst, # (#ped, hist_step, 2)
                 'des': des, # (#ped, 2)
                 'spd': spd, # (#ped, 1)
-                'veh': veh, # (#veh, veh_hist_step, 2)
-                'acc': acc, # (#ped, pred_step, 2)
+                'hst': hst, # (#ped, hist_step, 2)
+                'veh': veh, # (#veh, hist_step + 1, 2)
+                'future_acc': future_acc, # (#ped, pred_step, 2)
                 'future_pos': future_pos, # (#ped, pred_step, 2)
                 'future_veh': future_veh, # (#veh, pred_step, 2)
+                'f': f, # int
+                'ped_id': ped_list, # (#ped,)
+                'veh_id': veh_list, # (#veh,)
             })
 
         return samples
@@ -203,28 +208,34 @@ class BaseDataset(D.Dataset):
     def collate_fn(batch):
         pos = pad_sequence([torch.from_numpy(item['pos']).float() for item in batch], batch_first=True, padding_value=0.0)
         vel = pad_sequence([torch.from_numpy(item['vel']).float() for item in batch], batch_first=True, padding_value=0.0)
-        acc = pad_sequence([torch.from_numpy(item['acc']).float() for item in batch], batch_first=True, padding_value=0.0)
-        hst = pad_sequence([torch.from_numpy(item['hst']).float() for item in batch], batch_first=True, padding_value=0.0)
         des = pad_sequence([torch.from_numpy(item['des']).float() for item in batch], batch_first=True, padding_value=0.0)
         spd = pad_sequence([torch.from_numpy(item['spd']).float() for item in batch], batch_first=True, padding_value=0.0)
+        hst = pad_sequence([torch.from_numpy(item['hst']).float() for item in batch], batch_first=True, padding_value=0.0)
         veh = pad_sequence([torch.from_numpy(item['veh']).float() for item in batch], batch_first=True, padding_value=0.0)
+        future_acc = pad_sequence([torch.from_numpy(item['future_acc']).float() for item in batch], batch_first=True, padding_value=0.0)
         future_pos = pad_sequence([torch.from_numpy(item['future_pos']).float() for item in batch], batch_first=True, padding_value=0.0)
         future_veh = pad_sequence([torch.from_numpy(item['future_veh']).float() for item in batch], batch_first=True, padding_value=0.0)
         ped_length = torch.LongTensor([item['pos'].shape[0] for item in batch])
         veh_length = torch.LongTensor([item['veh'].shape[0] for item in batch])
+        f = torch.LongTensor([item['f'] for item in batch])
+        ped_id = pad_sequence([torch.LongTensor(item['ped_id']) for item in batch], batch_first=True, padding_value=-1)
+        veh_id = pad_sequence([torch.LongTensor(item['veh_id']) for item in batch], batch_first=True, padding_value=-1)
 
         return {
             'pos': pos,
             'vel': vel,
-            'acc': acc,
-            'hst': hst,
             'des': des,
             'spd': spd,
+            'hst': hst,
             'veh': veh,
+            'future_acc': future_acc,
             'future_pos': future_pos,
             'future_veh': future_veh,
             'ped_length': ped_length,
             'veh_length': veh_length,
+            'f': f,
+            'ped_id': ped_id,
+            'veh_id': veh_id,
         }
 
     @staticmethod

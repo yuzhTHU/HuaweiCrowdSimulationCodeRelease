@@ -249,13 +249,13 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
             des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
             spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian)
             veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
-            acc = batch['acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
+            future_acc = batch['future_acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
             ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
             veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
             train_timer.add('prepare data')
 
             # DDPM forward
-            acc_true = acc[:, :, :args.pred_step, :] # (B, #pedestrian, pred_step, 2)
+            acc_true = future_acc[:, :, :args.pred_step, :] # (B, #pedestrian, pred_step, 2)
             noisy_acc, noise_true, denoise_t = diffusion.add_noise(acc_true)
             train_timer.add('DDPM forward')
 
@@ -328,7 +328,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
             spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian, 1)
             veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
-            acc = batch['acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
+            future_acc = batch['future_acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
             future_pos = batch['future_pos'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
             future_veh = batch['future_veh'].to(args.device)  # (batch_size, #vehicle, pred_step*roll_step, 2)
             ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
@@ -356,7 +356,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                 model.set_sur_info()
                 test_timer.add('embed data')
 
-                shape = list(acc.shape)
+                shape = list(future_acc.shape)
                 shape[0] *= S
                 shape[2] = args.pred_step
                 xt = torch.randn(shape, device=args.device)  # 从噪声开始
@@ -391,12 +391,12 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                 test_timer.add('rollout')
 
             acc_pred = torch.concat(acc_pred, dim=-2)  # (S*B, #pedestrian, roll_step*pred_step, 2)
-            batch_size, ped_num, _, _ = acc.shape
+            batch_size, ped_num, _, _ = future_acc.shape
             acc_pred = acc_pred.view(S, batch_size, ped_num, args.roll_step*args.pred_step, 2)  # (S, B, #pedestrian, roll_step*pred_step, 2)
             # 获取有效的行人掩模
             mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
             # 计算 pos_true 和 vel_true
-            acc_true = acc # (B, #pedestrian, roll_step*pred_step, 2)
+            acc_true = future_acc # (B, #pedestrian, roll_step*pred_step, 2)
             vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
             pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
             max_err = np.nanmax((pos_true - future_pos).abs().cpu().numpy(), axis=(-2, -1))
@@ -407,7 +407,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             # pos_true = future_pos # (B, #pedestrian, roll_step*pred_step, 2)
             # 计算 loss
             loss = criterion(acc_pred, acc_true.expand(acc_pred.shape)) # float
-            records['loss'].extend([loss.item()] * acc.shape[0]) # List[float]
+            records['loss'].extend([loss.item()] * future_acc.shape[0]) # List[float]
             # 计算 distance error
             vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
             pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
@@ -456,15 +456,17 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
         for k, v in records.items():
             if k not in all_records:
                 all_records[k] = []
-            all_records[k].extend(v)
+            all_records[k].append(np.mean(v))
+    w = np.array(all_records['sample_nums'], dtype=float)
+    w /= w.sum()
     _logger.note(
         f"[Epoch {epoch}/{args.epochs}] Overall: "
-        f"Loss={np.mean(all_records['loss']):.4f}, "
-        f"ADE={np.mean(all_records['ade']):.4f}, "
-        f"FDE={np.mean(all_records['fde']):.4f}, "
-        f"AvgLen={np.mean(all_records['trajlen']):.4f}, "
-        f"PedNum={np.mean(all_records['ped_num']):.4f}, "
-        f"VehNum={np.mean(all_records['veh_num']):.4f}, "
+        f"Loss={np.sum(w * all_records['loss']):.4f}, "
+        f"ADE={np.sum(w * all_records['ade']):.4f}, "
+        f"FDE={np.sum(w * all_records['fde']):.4f}, "
+        f"AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
+        f"PedNum={np.sum(w * all_records['ped_num']):.4f}, "
+        f"VehNum={np.sum(w * all_records['veh_num']):.4f}, "
         f"Time={test_timer}"
     )
     return all_records
@@ -497,6 +499,8 @@ def visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path
     ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
     for line in pos_pred[:, mask, :, :][:, pid]: # 最终的采样结果
         ax.plot(*line.cpu().numpy().T)
+    for ax in axes:
+        ax.axis('equal')
     Path(save_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_path)
     plt.close(fig)
@@ -514,8 +518,8 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, default=20)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'])
     parser.add_argument("--T", type=int, default=100, help="训练时的扩散步数")
-    parser.add_argument('--sample_num', type=int, default=1, help="测试时每个轨迹采样 {sample_num} 次")
-    parser.add_argument('--denoise_step', type=int, default=5, help="采样时进行 {denoise_step} 次去噪")
+    parser.add_argument('--sample_num', type=int, default=20, help="测试时每个轨迹采样 {sample_num} 次")
+    parser.add_argument('--denoise_step', type=int, default=10, help="采样时进行 {denoise_step} 次去噪")
     parser.add_argument('--step_offset', type=int, default=1, help="最后一步去噪从 x_{step_offset} 到 x_0")
     parser.add_argument('--no_antithetic_sampling', action='store_false', dest='antithetic_sampling', default=True)
     parser.add_argument("--hist_step", type=int, default=8)
@@ -534,7 +538,7 @@ if __name__ == "__main__":
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo', 'zara01'])
+    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo', 'zara01', 'debug'])
     parser.add_argument('--test_name', type=str, default=None, nargs='+')
     parser.add_argument('--test_ratio', type=float, default=None)
     parser.add_argument('--split_by_scenario', action='store_true')
@@ -543,7 +547,7 @@ if __name__ == "__main__":
     parser.add_argument('--test_per_epoch', type=int, default=10)
     parser.add_argument('--save_per_epoch', type=int, default=50)
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
-    parser.add_argument('--predict_noise', action='store_true')
+    parser.add_argument('--no_predict_noise', action='store_false', dest='predict_noise', default=True)
     args, unknown = parser.parse_known_args()
 
     ## Build Save Path
@@ -579,6 +583,9 @@ if __name__ == "__main__":
     ## Select GPU
     if args.device == "auto":
         args.device = AutoGPU().choice_gpu(memory_MB=6000, interval=15)
+
+    ## Save Command
+    args.command = ' '.join(sys.argv)
 
     ## Save Args
     args_path = save_path / "args.json"
