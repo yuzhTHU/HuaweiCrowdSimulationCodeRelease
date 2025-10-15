@@ -18,25 +18,16 @@ from src.utils.auto_gpu import AutoGPU
 from src.utils.logger import init_logger
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset
 from src.utils.plot import get_fig, plt, sns
+from src.utils.timer import NamedTimer
 
 
 _logger = logging.getLogger('src.sample')
 
 
 def main(args):
-    # Load Dataset
-    dataset = UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")
+    timer = NamedTimer(unit='it', mode='pace')
 
-    # Load Model
-    model = Model(args).to(args.device)
-    if args.sampling_method == "DDIM":
-        diffusion = DDIM(args)
-    elif args.sampling_method == "DDPM":
-        diffusion = DDPM(args, flexibility=0.0)
-    else:
-        raise ValueError(f"Unknown sampling_method {args.sampling_method}!")
-
-    # Check Arguments
+    ## Check Arguments
     checkpoint_path = Path(args.reload_checkpoint)
     with open(checkpoint_path.parent / "args.json", 'r') as f:
         saved_args = Namespace(**json.load(f))
@@ -47,9 +38,19 @@ def main(args):
     ]:
         if getattr(args, name) != getattr(saved_args, name):
             _logger.warning(f"Checkpoint {name} {getattr(saved_args, name)} != current {name} {getattr(args, name)}!")
+    timer.add('Check Args')
 
-    # Load Checkpoint
+    ## Load Model & Load Checkpoint
+    model = Model(args).to(args.device)
+    if args.sampling_method == "DDIM":
+        diffusion = DDIM(args)
+    elif args.sampling_method == "DDPM":
+        diffusion = DDPM(args, flexibility=0.0)
+    else:
+        raise ValueError(f"Unknown sampling_method {args.sampling_method}!")
     checkpoint_path = Path(args.reload_checkpoint)
+    if checkpoint_path.is_dir():
+        checkpoint_path = checkpoint_path / "best.pth"
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint {checkpoint_path} not found!")
     checkpoint = torch.load(checkpoint_path, map_location=args.device, weights_only=True)
@@ -58,15 +59,16 @@ def main(args):
     model.eval()
     torch.set_grad_enabled(False)
     _logger.info(f"Checkpoint loaded from {checkpoint_path}, resume from epoch {start_epoch}.")
+    timer.add('Load Model')
 
-    # Prepare frame
-    frame_idx = 10
+    ## Prepare data
+    dataset = UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")
+    frame_idx = 20
     df_data = dataset.df_data.set_index(['f', 'id']).sort_index()
     df_ped = df_data.loc[df_data['type'] == 'pedestrian', ['x', 'y']]
     df_veh = df_data.loc[df_data['type'] == 'vehicle', ['x', 'y']]
     ped_list = df_ped.loc[frame_idx].index.tolist() if frame_idx in df_ped.index else []
     veh_list = df_veh.loc[frame_idx].index.tolist() if frame_idx in df_veh.index else []
-    _logger.info(f"Frame {frame_idx}: {len(ped_list)} pedestrians, {len(veh_list)} vehicles.")
     pos = (
         df_ped
         .reindex(pd.MultiIndex.from_product([
@@ -125,14 +127,14 @@ def main(args):
         .values[:, np.newaxis] # (#pedestrian, 1)
     )
     map_data = dataset.map_data
-
-    if args.no_destination:
+    if args.no_destination: 
         des *= np.nan
-    
-    if args.no_speed:
+    if args.no_speed: 
         spd *= np.nan
+    _logger.info(f"Frame {frame_idx}: {len(ped_list)} pedestrians, {len(veh_list)} vehicles.")
+    timer.add('Prepare Initial Step')
 
-    # Rollout for N steps
+    ## Simulation
     S = args.sample_num  # 采样次数
     N = args.denoise_step  # 采样步数
     assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
@@ -145,7 +147,7 @@ def main(args):
     veh_now = torch.from_numpy(veh).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1, 1)  # (S*1, #vehicle, hist_step + 1, 2)
     ped_length_repeat = torch.full((S, ), len(ped_list), device=args.device, dtype=torch.long)  # (S,)
     veh_length_repeat = torch.full((S, ), len(veh_list), device=args.device, dtype=torch.long)  # (S,)
-
+    timer.add('Array to Tensor')
     model.set_map_embedding(
         map=torch.from_numpy(map_data.map).to(device=args.device, dtype=torch.float32),
         xmin=map_data.xmin,
@@ -153,17 +155,20 @@ def main(args):
         ymin=map_data.ymin,
         ymax=map_data.ymax,
     )
+    timer.add('Embed Map')
     traj = []
     for frame in range(frame_idx, frame_idx+args.roll_step, args.pred_step):
         model.set_veh_embedding(veh=veh_now)
+        timer.add('Embed Vehicle')
         model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
+        timer.add('Embed Pedestrian')
         model.set_sur_info()
+        timer.add('Embed Surroundings')
 
         shape = [S, len(ped_list), args.pred_step, 2]  # (S*1, #pedestrian, pred_step, 2)
         xt = torch.randn(shape, device=args.device)  # 从噪声开始
         stride = args.T // N
-        steps = reversed(range(args.step_offset, args.T+1, stride))
-        for t in steps:
+        for t in reversed(range(args.step_offset, args.T+1, stride)):
             noisy_acc = xt
             denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
             output = model(
@@ -171,11 +176,13 @@ def main(args):
                 denoise_t=denoise_t,
                 ped_length=ped_length_repeat, 
                 veh_length=veh_length_repeat,
+                timer=timer,
             )  # (S*B, #pedestrian, pred_step, 2)
             if args.predict_noise:
                 xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
             else:
                 xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
+            timer.add('Denoise')
         
         frame_new = frame + args.pred_step
         acc_new = xt / args.scale_accelerate
@@ -212,21 +219,23 @@ def main(args):
         des_now = des_new  # (S*B, #pedestrian, 2)
         
         traj.append(pos_new.cpu().numpy())  # list of (S*B, #pedestrian, pred_step, 2)
+        timer.add('Prepare Next Step')
 
     traj = np.concatenate(traj, axis=-2)  # (S*B, #pedestrian, roll_step * pred_step, 2)
     traj = traj.reshape(S, len(ped_list), args.roll_step * args.pred_step, 2)  # (S, #pedestrian, roll_step * pred_step, 2)
+    _logger.info(f"Simulation done, sampled {S} times for {args.roll_step * args.pred_step} steps. Time Usage: {timer}")
     
     # Visualize rollout
     fi, fig, axes = get_fig(1, 1, AW=6, AH=6, dpi=300)
     ax = axes[0]
-    for i in range(traj.shape[1]):
+    for i, pid in enumerate(ped_list):
         color = sns.color_palette("hsv", traj.shape[1])[i]
         for s in range(S):
             ax.plot(traj[s, i, :, 0], traj[s, i, :, 1], alpha=0.5, color=color)
         ax.scatter(pos[i, 0], pos[i, 1], marker='o', color=color, s=10, zorder=10)
         ax.scatter(des[i, 0], des[i, 1], marker='*', color=color, s=10, zorder=10)
         ax.plot(hst[i, :, 0], hst[i, :, 1], color=color, linewidth=1, zorder=10)
-        future = df_ped.loc[pd.IndexSlice[frame_idx+1:, i], :].values
+        future = df_ped.loc[pd.IndexSlice[frame_idx+1:, pid], :].values
         ax.plot(future[:, 0], future[:, 1], color=color, linestyle='--', linewidth=1, zorder=10)
 
     ax.set_facecolor('#b2bec3')
