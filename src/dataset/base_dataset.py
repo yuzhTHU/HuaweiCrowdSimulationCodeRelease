@@ -28,12 +28,23 @@ class RasterizedMap:
 
 class BaseDataset(D.Dataset):
     def __init__(
-            self, 
-            name: str,
-            args: Namespace, 
-            df_data: pd.DataFrame,
-            map_data: RasterizedMap=None,
-        ):
+        self, 
+        name: str,
+        args: Namespace, 
+        df_data: pd.DataFrame,
+        map_data: RasterizedMap=None,
+    ):
+        """
+        Required columns in df_data: ['f', 'id', 'x', 'y', 'type']
+        Required fields in args:
+            - fps
+            - hist_step
+            - pred_step
+            - roll_step
+            - skip_step
+            - dot_per_meter
+            - cache_dataset 
+        """
         self.args = args
         self.name = name
         self.df_data = df_data
@@ -255,10 +266,10 @@ class BaseDataset(D.Dataset):
             if group['type'].nunique() > 1:
                 _logger.warning(f"ID {id} has multiple types: {group['type'].unique()}, use the first one.")
             t_raw = group['f'] / raw_fps
-            t_new = np.arange(t_raw.min(), t_raw.max(), 1 / target_fps)
+            f_new = np.arange(np.ceil(t_raw.min() * target_fps), np.floor(t_raw.max() * target_fps)).astype(int)
+            t_new = f_new / target_fps
             x_new = np.interp(t_new, t_raw, group['x'])
             y_new = np.interp(t_new, t_raw, group['y'])
-            f_new = (t_new * target_fps).astype(int)
             new_group = pd.DataFrame({
                 'f': f_new,
                 'x': x_new,
@@ -268,6 +279,10 @@ class BaseDataset(D.Dataset):
             new_group['type'] = group['type'].iloc[0]
             new_df_data.append(new_group)
         new_df_data = pd.concat(new_df_data, ignore_index=True)
+        if new_df_data.duplicated(subset=['f', 'id']).any():
+            if df_data.duplicated(subset=['f', 'id']).any():
+                raise ValueError("Input df_data has duplicate (f, id) entries.")
+            raise ValueError("Resampling resulted in duplicate (f, id) entries.")
         return new_df_data
 
 

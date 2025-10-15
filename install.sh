@@ -6,6 +6,7 @@ cd HuaweiCrowdSimulationCode
 conda create -p ./venv python=3.12 -y
 conda activate ./venv
 pip install setproctitle tqdm numpy matplotlib pandas scipy torch ipykernel
+pip install fastapi uvicorn[standard] websockets
 
 # 复制数据
 mkdir ./data

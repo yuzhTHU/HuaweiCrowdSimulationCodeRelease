@@ -108,12 +108,15 @@ class WayMoDataset(BaseDataset):
             cls.save_cache(files, cache_path)
 
         datasets = []
-        pbar = tqdm(files, disable=not show_tqdm, desc="Loading SDD datasets")
+        pbar = tqdm(files, disable=not show_tqdm, desc="Loading WayMo datasets")
         for file in pbar:
             if len(datasets) == total: break
             try:
                 pbar.set_postfix_str(file.parent.parent.name + "/" + file.parent.name)
-                datasets.append(cls.load_data(args, file))
+                dataset = cls.load_data(args, file)
+                if len(dataset.samples) == 0:
+                    raise ValueError(f"Dataset {file} has no samples, skipping.")
+                datasets.append(dataset)
             except Exception as e:
                 _logger.error(f"Failed to load {file}: {e}")
                 continue
@@ -133,6 +136,17 @@ class WayMoDataset(BaseDataset):
             veh_traj = group[['x', 'y']].values  # (M, 2)
             min_dists, _ = kd_tree.query(veh_traj, k=1)
             if np.min(min_dists) > distance_threshold:
+                drop_id.append(pid)
+        df_data = df_data[~df_data['id'].isin(drop_id)].reset_index(drop=True)
+        return df_data
+
+    @staticmethod
+    def filter_short_trajectories(df_data, distance_threshold=3):
+        """ 过滤掉长度小于指定阈值的轨迹。 """
+        drop_id = []
+        for pid, group in df_data.sort_values(['id', 'f']).groupby('id'):
+            dist = np.linalg.norm((group.iloc[0][['x', 'y']] - group.iloc[-1][['x', 'y']]).values)
+            if dist < distance_threshold:
                 drop_id.append(pid)
         df_data = df_data[~df_data['id'].isin(drop_id)].reset_index(drop=True)
         return df_data

@@ -39,7 +39,7 @@ def main(args):
     elif args.datasets == "SDD":
         dataset_list = SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
     elif args.datasets == 'WayMo':
-        dataset_list = WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/")
+        dataset_list = WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
     elif args.datasets == "zara01":
         dataset_list = [UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")]
         dataset_list[0].samples = dataset_list[0].samples[:1]
@@ -87,6 +87,9 @@ def main(args):
     train_loaders = []
     test_loaders = []
     for dataset in train_dataset:
+        if len(dataset) == 0:
+            _logger.warning(f"Dataset {dataset.name} has no training samples!")
+            continue
         train_loaders.append(D.DataLoader(
             dataset,
             shuffle=True,
@@ -95,6 +98,9 @@ def main(args):
             collate_fn=dataset.collate_fn,
         ))
     for dataset in test_dataset:
+        if len(dataset) == 0:
+            _logger.warning(f"Dataset {dataset.name} has no testing samples!")
+            continue
         test_loaders.append(D.DataLoader(
             dataset,
             shuffle=False,
@@ -195,7 +201,7 @@ def main(args):
             torch.save({
                 "epoch": epoch,
                 "model": model.state_dict(),
-                # "optimizer": optimizer.state_dict(),
+                "optimizer": optimizer.state_dict(),
             }, save_path)
             _logger.note(f"Model saved to {save_path}")
             timer.add('save_periodly')
@@ -212,7 +218,7 @@ def main(args):
                 torch.save({
                     "epoch": epoch,
                     "model": model.state_dict(),
-                    # "optimizer": optimizer.state_dict(),
+                    "optimizer": optimizer.state_dict(),
                 }, save_path)
                 _logger.note(f"Best model saved to {save_path}")
             else:
@@ -227,7 +233,8 @@ def main(args):
         if 'patience' in locals() and patience <= 0:
             _logger.warning(
                 f"Early stopping at epoch {epoch}, "
-                f"best ADE={np.mean(best_records['ade']):.4f} at epoch {best_records['epoch']}, "
+                f"best Accuracy={best_records['accuracy']:.2%} at epoch {best_records['epoch']}."
+                f"ADE={np.mean(best_records['ade']):.4f}, "
                 f"FDE={np.mean(best_records['fde']):.4f}, "
                 f"AvgLen={np.mean(best_records['trajlen']):.4f}, "
                 f"Loss={np.mean(best_records['loss']):.4f}, "
@@ -319,7 +326,7 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
                     loss = criterion(noise_pred, noise_true)
                 else:
                     raise ValueError(f"Unknown loss type {args.loss_type}!")
-                rollout_loss.append(loss.detach().cpu().list())
+                rollout_loss.append(loss.detach().cpu().tolist())
                 train_timer.add('compute loss')
                 (args.rollout_lambda ** (args.roll_step - step) * loss).backward()
 
@@ -519,8 +526,11 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             all_records[k].append(np.mean(v))
     w = np.array(all_records['sample_nums'], dtype=float)
     w /= w.sum()
+    all_records['weighted_accuracy'] = 1 - np.sum(w * all_records['ade']) / np.sum(w * all_records['trajlen'])
+    all_records['accuracy'] = 1 - np.mean(all_records['ade']) / np.mean(all_records['trajlen'])
     _logger.note(
         f"[Epoch {epoch}/{args.epochs}] Overall: "
+        f"Accuracy={all_records['accuracy']:.2%} (weighted={all_records['weighted_accuracy']:.2%}), "
         f"Loss={np.sum(w * all_records['loss']):.4f}, "
         f"ADE={np.sum(w * all_records['ade']):.4f}, "
         f"FDE={np.sum(w * all_records['fde']):.4f}, "
