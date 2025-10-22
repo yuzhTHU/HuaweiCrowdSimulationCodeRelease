@@ -59,7 +59,7 @@ function drawFrame(data) {
   const ped = {x:[], y:[], mode:'markers', type:'scattergl', marker:{color:'blue', size:5}, text:[], name:'ped'};
   const veh = {x:[], y:[], mode:'markers', type:'scattergl', marker:{color:'green', size:6}, text:[], name:'veh'};
   for (const [id,info] of Object.entries(agents)) {
-    const [x,y] = info.pos;
+    const [x,y] = info.positions;
     if (info.type==='ped') { ped.x.push(x); ped.y.push(y); ped.text.push(id); }
     else { veh.x.push(x); veh.y.push(y); veh.text.push(id); }
   }

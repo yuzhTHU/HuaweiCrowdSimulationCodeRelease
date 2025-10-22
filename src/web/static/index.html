@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="connect-src *;">
+  <title>Pedestrian Simulation Viewer</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script defer src="/static/script.js"></script>
+  <style>
+    body { margin:0; font-family: sans-serif; display:flex; flex-direction:column; align-items:center; }
+    #controls { margin:10px; }
+    #agent-info { margin:10px; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="load">加载数据/模型</button>
+    <input id="frame" type="range" min="0" max="100" value="0" />
+    <button id="simulate">开始模拟</button>
+    <button id="stop">停止</button>
+  </div>
+  <div id="plot" style="width:90vw;height:70vh;"></div>
+  <div id="agent-info"><b>点击 agent 查看轨迹</b></div>
+</body>
+</html>

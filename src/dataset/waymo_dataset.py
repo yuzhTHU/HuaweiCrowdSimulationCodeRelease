@@ -29,7 +29,14 @@ class WayMoDataset(BaseDataset):
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and os.path.exists(cache_path):
             _logger.info(f"Loading cached dataset from {cache_path}")
-            return cls.load_cache(cache_path)
+            dataset = cls.load_cache(cache_path)
+            if len(dataset) == 0:
+                raise ValueError(f"Cached dataset {cache_path} is empty.")
+            try:
+                cls.collate_fn([dataset[0]]) # 测试能否正常使用
+                return dataset
+            except Exception as e:
+                _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
 
         ## 读取数据
         df_data = pd.read_csv(
@@ -47,6 +54,9 @@ class WayMoDataset(BaseDataset):
 
         ## 清除离行人太远的车辆
         df_data = cls.filter_vehicle_trajectories(df_data, distance_threshold=5.0)
+
+        ## 清除始末距离太短的轨迹
+        df_data = cls.filter_short_trajectories(df_data, distance_threshold=3.0)
 
         ## 数据重采样
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
@@ -110,6 +120,7 @@ class WayMoDataset(BaseDataset):
         datasets = []
         pbar = tqdm(files, disable=not show_tqdm, desc="Loading WayMo datasets")
         for file in pbar:
+            # if '00002_12_ebf50a0c84bbe2a' in str(file): continue
             if len(datasets) == total: break
             try:
                 pbar.set_postfix_str(file.parent.parent.name + "/" + file.parent.name)
@@ -145,7 +156,9 @@ class WayMoDataset(BaseDataset):
         """ 过滤掉长度小于指定阈值的轨迹。 """
         drop_id = []
         for pid, group in df_data.sort_values(['id', 'f']).groupby('id'):
-            dist = np.linalg.norm((group.iloc[0][['x', 'y']] - group.iloc[-1][['x', 'y']]).values)
+            start_position = group.iloc[0][['x', 'y']].values
+            stop_position = group.iloc[-1][['x', 'y']].values
+            dist = np.linalg.norm(start_position - stop_position)
             if dist < distance_threshold:
                 drop_id.append(pid)
         df_data = df_data[~df_data['id'].isin(drop_id)].reset_index(drop=True)

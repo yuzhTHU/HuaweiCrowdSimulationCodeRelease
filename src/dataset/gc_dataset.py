@@ -31,7 +31,14 @@ class GCDataset(BaseDataset):
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and cache_path.exists():
             _logger.info(f"Loading cached dataset from {cache_path}")
-            return cls.load_cache(cache_path)
+            dataset = cls.load_cache(cache_path)
+            if len(dataset) == 0:
+                raise ValueError(f"Cached dataset {cache_path} is empty.")
+            try:
+                cls.collate_fn([dataset[0]]) # 测试能否正常使用
+                return dataset
+            except Exception as e:
+                _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
         
         ## 读取数据
         H = cls.get_homography_mat()  # (3, 3)

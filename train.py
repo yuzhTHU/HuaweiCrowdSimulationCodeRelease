@@ -243,7 +243,7 @@ def main(args):
             )
             break
 
-    _logger.note("Training finished.")
+    _logger.note(f"Training finished. Re-run: {args.command}")
 
 
 def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoch):
@@ -655,7 +655,7 @@ if __name__ == "__main__":
     )
 
     ## Save Command
-    args.command = ' '.join(sys.argv)
+    args.command = ' '.join([sys.executable, *sys.argv])
 
     ## Warm Unknown Args
     if unknown:
