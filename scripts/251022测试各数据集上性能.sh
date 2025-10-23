@@ -12,7 +12,7 @@ python train.py \
     --test_ratio 0.2 \
     --test_before_train \
     --device auto \
-    --batch_size 256 \
+    --batch_size 128 \
     --denoise_step 5
 python train.py \
     --name SDD_0.2Stest \
@@ -21,7 +21,7 @@ python train.py \
     --split_by_scenario \
     --test_before_train \
     --device auto \
-    --batch_size 256 \
+    --batch_size 128 \
     --denoise_step 5
 python train.py \
     --name WayMo_0.2Stest \
@@ -30,6 +30,6 @@ python train.py \
     --split_by_scenario \
     --test_before_train \
     --device auto \
-    --batch_size 32 \
+    --batch_size 128 \
     --dot_per_meter 1 \
     --denoise_step 5

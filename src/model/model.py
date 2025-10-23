@@ -128,10 +128,10 @@ class Model(nn.Module):
         self.denoise_t_embedder = SinusoidalEmbedding(args.model_dim)
         self.noisy_acc_embedder = nn.Sequential(
             nn.Linear(2, args.model_dim),
-            MeanPoolingLSTM(args.model_dim, args.model_dim, 3),
+            MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
-        self.positional_encoding = FourierPositionalEncoding(out_dim=args.model_dim, num_bands=128, max_freq=10.0)
+        self.positional_encoding = FourierPositionalEncoding(out_dim=args.model_dim, num_bands=args.model_dim, max_freq=10.0)
 
         self.pos_embedder = nn.Sequential(
             nn.Linear(2, args.model_dim),
@@ -143,7 +143,7 @@ class Model(nn.Module):
         )
         self.hst_embedder = nn.Sequential(
             NanEmbedding(2, args.model_dim),
-            MeanPoolingLSTM(args.model_dim, args.model_dim, 3),
+            MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
         self.des_embedder = nn.Sequential(
@@ -163,7 +163,7 @@ class Model(nn.Module):
 
         self.veh_embedder = nn.Sequential(
             NanEmbedding(2, args.model_dim),
-            MeanPoolingLSTM(args.model_dim, args.model_dim, 3),
+            MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
 
@@ -189,7 +189,7 @@ class Model(nn.Module):
                 batch_first=True,
                 norm_first=True,
             ),
-            num_layers=1,
+            num_layers=args.attention_layer_num,
         )
         self.veh_attention = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
@@ -201,7 +201,7 @@ class Model(nn.Module):
                 batch_first=True,
                 norm_first=True,
             ),
-            num_layers=1,
+            num_layers=args.attention_layer_num,
         )
         self.map_attention = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
@@ -213,7 +213,7 @@ class Model(nn.Module):
                 batch_first=True,
                 norm_first=True,
             ),
-            num_layers=1,
+            num_layers=args.attention_layer_num,
         )
         self.latent_attntn = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
@@ -225,7 +225,7 @@ class Model(nn.Module):
                 batch_first=True,
                 norm_first=True,
             ),
-            num_layers=1,
+            num_layers=args.attention_layer_num,
         )
         self.latent_tokens = nn.Parameter(
             torch.randn(args.latent_token_num, args.model_dim)

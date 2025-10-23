@@ -608,6 +608,8 @@ if __name__ == "__main__":
     parser.add_argument('--model_dim', type=int, default=128)
     parser.add_argument('--map_feature_dim', type=int, default=64)
     parser.add_argument('--head_num', type=int, default=4)
+    parser.add_argument('--attention_layer_num', type=int, default=3)
+    parser.add_argument('--lstm_layer_num', type=int, default=3)
     parser.add_argument('--dropout', type=float, default=0.3)
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
