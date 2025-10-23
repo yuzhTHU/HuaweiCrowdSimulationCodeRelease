@@ -63,7 +63,7 @@ def main(args):
 
     ## Prepare data
     dataset = UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")
-    frame_idx = 20
+    frame_idx = 10
     df_data = dataset.df_data.set_index(['f', 'id']).sort_index()
     df_ped = df_data.loc[df_data['type'] == 'pedestrian', ['x', 'y']]
     df_veh = df_data.loc[df_data['type'] == 'vehicle', ['x', 'y']]
@@ -275,6 +275,8 @@ if __name__ == '__main__':
     parser.add_argument('--map_feature_dim', type=int, default=64)
     parser.add_argument('--head_num', type=int, default=4)
     parser.add_argument('--dropout', type=float, default=0.3)
+    parser.add_argument('--attention_layer_num', type=int, default=1)
+    parser.add_argument('--lstm_layer_num', type=int, default=3)
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument('--no_cache_dataset', dest='cache_dataset', action='store_false', default=True)
