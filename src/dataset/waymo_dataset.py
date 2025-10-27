@@ -101,21 +101,32 @@ class WayMoDataset(BaseDataset):
         ## 检查缓存
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / Path(name).with_suffix(".pkl")
-        if args.cache_dataset and os.path.exists(cache_path):
-            _logger.info(f"Loading cached dataset-list from {cache_path}")
-            files = cls.load_cache(cache_path)
-        else:
-            data_path = Path(data_path)
-            if data_path.is_dir():
-                files = list(sorted(data_path.glob("**/data.csv.gz")))
-            elif "*" in str(data_path):
-                if data_path.is_absolute():
-                    data_path = data_path.relative_to(".")
-                files = list(sorted(Path(".").glob(data_path)))
-            else:
-                files = [data_path]
-            _logger.info(f"Caching dataset-list to {cache_path}")
-            cls.save_cache(files, cache_path)
+        # if args.cache_dataset and os.path.exists(cache_path):
+        #     _logger.info(f"Loading cached dataset-list from {cache_path}")
+        #     files = cls.load_cache(cache_path)
+        # else:
+        #     data_path = Path(data_path)
+        #     if data_path.is_dir():
+        #         files = list(sorted(data_path.glob("**/data.csv.gz")))
+        #     elif "*" in str(data_path):
+        #         if data_path.is_absolute():
+        #             data_path = data_path.relative_to(".")
+        #         files = list(sorted(Path(".").glob(data_path)))
+        #     else:
+        #         files = [data_path]
+        #     _logger.info(f"Caching dataset-list to {cache_path}")
+        #     cls.save_cache(files, cache_path)
+        df = pd.read_csv('data/WayMo/summary.csv', sep=',')
+        df = df.sort_values('num_pedestrians', ascending=False)
+        files = []
+        for idx, row in df.iterrows():
+            # filename,id,scenario_id,num_tracks,num_pedestrians
+            # training_20s.tfrecord-00000-of-01000
+            a = row['filename'].split('-')[1]
+            b = row['id']
+            c = row['scenario_id']
+            file = Path('./data/WayMo/Processed') / f"{a}_{b}_{c}" / "data.csv.gz"
+            files.append(file)
 
         datasets = []
         pbar = tqdm(files, disable=not show_tqdm, desc="Loading WayMo datasets")

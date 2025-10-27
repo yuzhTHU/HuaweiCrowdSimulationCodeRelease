@@ -52,8 +52,8 @@ class DDPM:
             raise ValueError("denoise_t 不能为 0")
         if denoise_t - stride < 0:
             raise ValueError("denoise_t - stride 不能小于 0")
-        at = self.alpha[denoise_t]
-        at_next = self.alpha[denoise_t - stride]
+        at = self.alpha_bar[denoise_t]
+        at_next = self.alpha_bar[denoise_t - stride]
         if x0 is None:
             coef1 = (at_next / at).sqrt()
             coef2 = - (1 - at / at_next) / ((1 - at) * at / at_next).sqrt()

@@ -223,7 +223,16 @@ def main(args):
                 _logger.note(f"Best model saved to {save_path}")
             else:
                 patience -= 1
-                _logger.info(f"Patience left: {patience}/{args.patience}")
+                _logger.info(
+                    f"Patience left: {patience}/{args.patience} ("
+                    f"best Accuracy={best_records['accuracy']:.2%} at epoch {best_records['epoch']}. "
+                    f"ADE={np.mean(best_records['ade']):.4f}, "
+                    f"FDE={np.mean(best_records['fde']):.4f}, "
+                    f"AvgLen={np.mean(best_records['trajlen']):.4f}, "
+                    f"Loss={np.mean(best_records['loss']):.4f}, "
+                    f"PedNum={np.mean(best_records['ped_num']):.1f}, "
+                    f"VehNum={np.mean(best_records['veh_num']):.1f})"
+                )
             timer.add('save_best')
 
         # 打印用时
@@ -233,13 +242,13 @@ def main(args):
         if 'patience' in locals() and patience <= 0:
             _logger.warning(
                 f"Early stopping at epoch {epoch}, "
-                f"best Accuracy={best_records['accuracy']:.2%} at epoch {best_records['epoch']}."
+                f"best Accuracy={best_records['accuracy']:.2%} at epoch {best_records['epoch']}. "
                 f"ADE={np.mean(best_records['ade']):.4f}, "
                 f"FDE={np.mean(best_records['fde']):.4f}, "
                 f"AvgLen={np.mean(best_records['trajlen']):.4f}, "
                 f"Loss={np.mean(best_records['loss']):.4f}, "
                 f"PedNum={np.mean(best_records['ped_num']):.1f}, "
-                f"VehNum={np.mean(best_records['veh_num']):.1f}. "
+                f"VehNum={np.mean(best_records['veh_num']):.1f}"
             )
             break
 
@@ -278,10 +287,10 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
             rollout_loss = []
             for step in range(args.multi_frame_rollout):
                 # DDPM forward
-                pos_true = future_pos[:, :, args.pred_step*step:args.pred_step*(step+1), :] # (B, #pedestrian, pred_step, 2)
-                vel_true = pos_true.diff(dim=-2, prepend=pos_now.unsqueeze(-2)) * args.fps  # (B, #pedestrian, roll_step*pred_step, 2)
-                acc_true = vel_true.diff(dim=-2, prepend=vel_now.unsqueeze(-2)) * args.fps  # (B, #pedestrian, roll_step*pred_step, 2)
-                # acc_true = future_acc[:, :, args.pred_step*step:args.pred_step*(step+1), :] # (B, #pedestrian, pred_step, 2)
+                # pos_true = future_pos[:, :, args.pred_step*step:args.pred_step*(step+1), :] # (B, #pedestrian, pred_step, 2)
+                # vel_true = pos_true.diff(dim=-2, prepend=pos_now.unsqueeze(-2)) * args.fps  # (B, #pedestrian, roll_step*pred_step, 2)
+                # acc_true = vel_true.diff(dim=-2, prepend=vel_now.unsqueeze(-2)) * args.fps  # (B, #pedestrian, roll_step*pred_step, 2)
+                acc_true = future_acc[:, :, args.pred_step*step:args.pred_step*(step+1), :] # (B, #pedestrian, pred_step, 2)
                 noisy_acc, noise_true, denoise_t = diffusion.add_noise(acc_true * args.scale_accelerate)
                 train_timer.add('add noise')
 
@@ -315,8 +324,8 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
                     loss = criterion(acc_pred, acc_true)
                 elif args.loss_type == 'position':
                     # acc_true 是从 pos_true 算出来的，因此不用再返回去计算 pos_true 了
-                    # vel_true = vel_now.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps
-                    # pos_true = pos_now.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps
+                    vel_true = vel_now.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps
+                    pos_true = pos_now.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps
                     vel_pred = vel_now.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps
                     pos_pred = pos_now.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps
                     loss = criterion(pos_pred, pos_true)
@@ -328,7 +337,7 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
                     raise ValueError(f"Unknown loss type {args.loss_type}!")
                 rollout_loss.append(loss.detach().cpu().tolist())
                 train_timer.add('compute loss')
-                (args.rollout_lambda ** (args.roll_step - step) * loss).backward()
+                (args.rollout_lambda ** (args.multi_frame_rollout - step) * loss).backward()
 
                 acc_new = acc_pred.detach()  # (B, #pedestrian, pred_step, 2)
                 vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (B, #pedestrian, pred_step, 2)
@@ -443,10 +452,10 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                     else:
                         for_plot[-1].append(output / args.scale_accelerate)
                         xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
-                acc_pred.append(xt / args.scale_accelerate)  # (S*B, #pedestrian, pred_step, 2)
+                acc_new = xt / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
+                acc_pred.append(acc_new)
                 test_timer.add('denoise')
 
-                acc_new = xt / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
                 vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
                 pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
                 veh_new = future_veh[:, :, step*args.pred_step:(step+1)*args.pred_step, :].repeat(S, 1, 1, 1)  # (S*B, #vehicle, pred_step, 2)
@@ -507,12 +516,13 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
         records_list.append(records)
         _logger.info(
             f"[Epoch {epoch}/{args.epochs}] Eval on {loader.dataset.name}: "
+            f"Accuracy={1 - np.mean(records['ade']) / np.mean(records['trajlen']):.2%}, "
             f"Loss={np.mean(records['loss']):.4f}, "
             f"ADE={np.mean(records['ade']):.4f}, "
             f"FDE={np.mean(records['fde']):.4f}, "
             f"AvgLen={np.mean(records['trajlen']):.4f}, "
             f"PedNum={np.mean(records['ped_num']):.1f}, "
-            f"VehNum={np.mean(records['veh_num']):.1f}, "
+            f"VehNum={np.mean(records['veh_num']):.1f}"
         )
     all_records = {
         'epoch': epoch,
@@ -595,7 +605,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'])
     parser.add_argument('--rollout_lambda', type=float, default=1.0, help="rollout loss 衰减系数，设置 <1 以赋予未来更高权重")
     parser.add_argument('--multi_frame_rollout', type=int, default=1, help="每次训练时 rollout 的帧数")
-    parser.add_argument('--scale_accelerate', type=float, default=10.0, help="加速度的缩放比例")
+    parser.add_argument('--scale_accelerate', type=float, default=1.0, help="加速度的缩放比例")
     parser.add_argument("--hist_step", type=int, default=8)
     parser.add_argument("--pred_step", type=int, default=1)
     parser.add_argument("--skip_step", type=int, default=1)
@@ -608,7 +618,7 @@ if __name__ == "__main__":
     parser.add_argument('--model_dim', type=int, default=128)
     parser.add_argument('--map_feature_dim', type=int, default=64)
     parser.add_argument('--head_num', type=int, default=4)
-    parser.add_argument('--attention_layer_num', type=int, default=3)
+    parser.add_argument('--attention_layer_num', type=int, default=1)
     parser.add_argument('--lstm_layer_num', type=int, default=3)
     parser.add_argument('--dropout', type=float, default=0.3)
     parser.add_argument('--latent_token_num', type=int, default=16)
@@ -624,6 +634,7 @@ if __name__ == "__main__":
     parser.add_argument('--save_per_epoch', type=int, default=50)
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
     parser.add_argument('--no_predict_noise', action='store_false', dest='predict_noise', default=True)
+    parser.add_argument('--required_memory_MB', type=int, default=6000)
     args, unknown = parser.parse_known_args()
 
     ## Build Save Path
@@ -632,10 +643,10 @@ if __name__ == "__main__":
         date = now.strftime("%Y%m%d")
         time = now.strftime("%H%M%S")
         host = gethostname()
-        args.exp_name = f'{date}_{args.name}_{time}_{host}'
         invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
         for char in invalid_chars:
             args.name = args.name.replace(char, '_')
+        args.exp_name = f'{date}_{args.name}_{time}_{host}'
     save_path = Path(args.save_dir) / args.exp_name
     if not save_path.exists():
         save_path.mkdir(parents=True, exist_ok=True)
@@ -665,7 +676,7 @@ if __name__ == "__main__":
 
     ## Select GPU
     if args.device == "auto":
-        args.device = AutoGPU().choice_gpu(memory_MB=6000, interval=15)
+        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)
 
     ## Save Args
     args_path = save_path / "args.json"

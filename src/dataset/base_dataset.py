@@ -105,7 +105,7 @@ class BaseDataset(D.Dataset):
                 continue
 
             # 填充 NaN
-            ped_table = ped_table.ffill().bfill()
+            # ped_table = ped_table.ffill().bfill()
 
             # 当前状态
             pos = ped_table.loc[f].values.reshape(len(ped_list), 2)  # (#ped, 2)
@@ -152,7 +152,7 @@ class BaseDataset(D.Dataset):
                          columns=pd.MultiIndex.from_product([['x', 'y'], ped_list]))
                 .swaplevel(axis='columns').sort_index(axis='columns')
                 .interpolate(method='linear', limit_area='inside', axis='rows')
-                .ffill().bfill()
+                # .ffill().bfill()
             )
             spd = (
                 future_5s
