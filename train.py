@@ -636,7 +636,7 @@ if __name__ == "__main__":
     parser.add_argument("--name", type=str, default="train")
     parser.add_argument("--exp_name", type=str, default=None)
     parser.add_argument("--device", type=str, default="auto")
-    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--epochs", type=int, default=10000)
     parser.add_argument('--patience', type=int, default=20)
