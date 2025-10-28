@@ -40,9 +40,14 @@ def main(args):
         dataset_list = SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
     elif args.datasets == 'WayMo':
         dataset_list = WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
-    elif args.datasets == "zara01":
-        dataset_list = [UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")]
-        dataset_list[0].samples = dataset_list[0].samples[:1]
+    elif args.datasets == 'All':
+        dataset_list = [
+            *UCYDataset.load_data_batch(args, "./data/UCY/data/"),
+            *ETHDataset.load_data_batch(args, "./data/ETH/"),
+            GCDataset.load_data(args, "./data/GC/Annotation"),
+            *SDDDataset.load_data_batch(args, "./data/SDD/annotations/"),
+            *WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100),
+        ]
     elif args.datasets == 'debug':
         # dataset_list = [SDDDataset.load_data(args, "./data/SDD/annotations/hyang/video0/annotations.txt")]
         dataset_list = [WayMoDataset.load_data(args, './data/WayMo/Processed/00002_47_93c31aa2d098f5e6/data.csv.gz')]
@@ -526,6 +531,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
         )
     all_records = {
         'epoch': epoch,
+        'dataset_class': [type(loader.dataset).__name__.removesuffix('Dataset') for loader in test_loaders],
         'dataset_names': [loader.dataset.name for loader in test_loaders],
         'sample_nums': [len(loader.dataset) for loader in test_loaders],
     }
@@ -549,6 +555,26 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
         f"VehNum={np.sum(w * all_records['veh_num']):.4f}, "
         f"Time={test_timer}"
     )
+    if len(set(all_records['dataset_class'])) > 1:
+        for klass in set(all_records['dataset_class']):
+            idxs = [i for i, k in enumerate(all_records['dataset_class']) if k == klass]
+            ade = np.array([all_records['ade'][i] for i in idxs])
+            fde = np.array([all_records['fde'][i] for i in idxs])
+            trajlen = np.array([all_records['trajlen'][i] for i in idxs])
+            ped_num = np.array([all_records['ped_num'][i] for i in idxs])
+            veh_num = np.array([all_records['veh_num'][i] for i in idxs])
+            w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
+            w /= w.sum()
+            acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
+            _logger.note(
+                f"[Epoch {epoch}/{args.epochs}] Overall on {klass} datasets: "
+                f"Accuracy={acc:.2%}, "
+                f"ADE={np.sum(w * ade):.4f}, "
+                f"FDE={np.sum(w * fde):.4f}, "
+                f"AvgLen={np.sum(w * trajlen):.4f}, "
+                f"PedNum={np.sum(w * ped_num):.4f}, "
+                f"VehNum={np.sum(w * veh_num):.4f}"
+            )
     return all_records
 
 
@@ -624,7 +650,7 @@ if __name__ == "__main__":
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo', 'zara01', 'debug'])
+    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo', 'All', 'debug'])
     parser.add_argument('--test_name', type=str, default=None, nargs='+')
     parser.add_argument('--test_ratio', type=float, default=None)
     parser.add_argument('--split_by_scenario', action='store_true')
