@@ -21,6 +21,7 @@ from src.utils.seed import seed_all
 from src.utils.timer import NamedTimer
 from src.utils.plot import get_fig
 from src.utils.auto_gpu import AutoGPU
+from src.utils.negation_flags import add_negation_flags
 
 _logger = logging.getLogger("src.train")
 
@@ -627,7 +628,7 @@ if __name__ == "__main__":
     parser.add_argument('--sample_num', type=int, default=20, help="测试时每个轨迹采样 {sample_num} 次")
     parser.add_argument('--denoise_step', type=int, default=10, help="采样时进行 {denoise_step} 次去噪")
     parser.add_argument('--step_offset', type=int, default=1, help="最后一步去噪从 x_{step_offset} 到 x_0")
-    parser.add_argument('--no_antithetic_sampling', action='store_false', dest='antithetic_sampling', default=True)
+    parser.add_argument('--antithetic_sampling', action='store_true', default=True)
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'])
     parser.add_argument('--rollout_lambda', type=float, default=1.0, help="rollout loss 衰减系数，设置 <1 以赋予未来更高权重")
     parser.add_argument('--multi_frame_rollout', type=int, default=1, help="每次训练时 rollout 的帧数")
@@ -654,13 +655,14 @@ if __name__ == "__main__":
     parser.add_argument('--test_name', type=str, default=None, nargs='+')
     parser.add_argument('--test_ratio', type=float, default=None)
     parser.add_argument('--split_by_scenario', action='store_true')
-    parser.add_argument('--no_cache_dataset', dest='cache_dataset', action='store_false', default=True)
+    parser.add_argument('--cache_dataset', action='store_true', default=True)
     parser.add_argument('--test_before_train', action='store_true')
     parser.add_argument('--test_per_epoch', type=int, default=10)
     parser.add_argument('--save_per_epoch', type=int, default=50)
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
-    parser.add_argument('--no_predict_noise', action='store_false', dest='predict_noise', default=True)
+    parser.add_argument('--predict_noise', action='store_true', default=True)
     parser.add_argument('--required_memory_MB', type=int, default=6000)
+    parser = add_negation_flags(parser)
     args, unknown = parser.parse_known_args()
 
     ## Build Save Path
