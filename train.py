@@ -22,6 +22,7 @@ from src.utils.timer import NamedTimer
 from src.utils.plot import get_fig
 from src.utils.auto_gpu import AutoGPU
 from src.utils.negation_flags import add_negation_flags
+from src.utils.tag2ansi import tag2ansi
 
 _logger = logging.getLogger("src.train")
 
@@ -150,8 +151,18 @@ def main(args):
             raise FileNotFoundError(f"Checkpoint {checkpoint_path} not found!")
         checkpoint = torch.load(checkpoint_path, map_location=args.device)
         start_epoch = checkpoint["epoch"] + 1
+        if 'args' in checkpoint:
+            saved_args = checkpoint['args']
+            for key in sorted(set(saved_args.keys()) | set(vars(args).keys())):
+                val1 = saved_args.get(key, None)
+                val2 = getattr(args, key, None)
+                if val1 != val2:
+                    _logger.warning(
+                        f"Argument '{key}' differs from the saved checkpoint: "
+                        f"saved_args={val1} vs. current_args={val2}"
+                    )
         model.load_state_dict(checkpoint["model"])
-        _logger.note(f"Checkpoint loaded from {checkpoint_path}, resume from epoch {start_epoch}.")
+        _logger.note(tag2ansi(f"Checkpoint loaded from [underline green]{checkpoint_path}[reset], resume from epoch [underline green]{start_epoch}[reset]."))
         if "optimizer" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer"])
         else:
@@ -188,15 +199,17 @@ def main(args):
                 f.write(json.dumps(test_records) + "\n")
 
         # 保存加载点
-        if epoch % args.save_per_epoch == 0 and timer.time > 300:
-            # 只在运行超过 5 min 时保存
+        if '_last_checkpoint_time' not in locals() or (datetime.now() - _last_checkpoint_time).seconds  > 300:
+            # 只在间隔超过 5 min 时保存
+            _last_checkpoint_time = datetime.now()
             save_path = f"{args.save_path}/checkpoint.pth"
             torch.save({
                 "epoch": epoch,
+                "args": vars(args),
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }, save_path)
-            _logger.note(f"Checkpoint saved to {save_path}")
+            _logger.note(tag2ansi(f"Checkpoint saved to [underline green]{save_path}[reset]."))
             timer.add('save_checkpoint')
         
         # 定期保存
@@ -206,10 +219,11 @@ def main(args):
             save_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save({
                 "epoch": epoch,
+                "args": vars(args),
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }, save_path)
-            _logger.note(f"Model saved to {save_path}")
+            _logger.note(tag2ansi(f"Model saved to [underline green]{save_path}[reset]"))
             timer.add('save_periodly')
 
         # 保存最佳模型
@@ -223,39 +237,42 @@ def main(args):
                 save_path = f"{args.save_path}/best.pth"
                 torch.save({
                     "epoch": epoch,
+                    "args": vars(args),
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                 }, save_path)
-                _logger.note(f"Best model saved to {save_path}")
+                _logger.note(tag2ansi(f"Best model saved to [underline green]{save_path}[reset]"))
             else:
                 patience -= 1
-                _logger.info(
-                    f"Patience left: {patience}/{args.patience} ("
-                    f"best Accuracy={best_records['accuracy']:.2%} at epoch {best_records['epoch']}. "
-                    f"ADE={np.mean(best_records['ade']):.4f}, "
-                    f"FDE={np.mean(best_records['fde']):.4f}, "
-                    f"AvgLen={np.mean(best_records['trajlen']):.4f}, "
-                    f"Loss={np.mean(best_records['loss']):.4f}, "
-                    f"PedNum={np.mean(best_records['ped_num']):.1f}, "
-                    f"VehNum={np.mean(best_records['veh_num']):.1f})"
-                )
+                _logger.info(tag2ansi(
+                    f"Patience left: [lightred]{patience}/{args.patience}[reset] ("
+                    f"[bold underline orange]best Accuracy={best_records['accuracy']:.2%}[reset] "
+                    f"at epoch [#66CCFF]{best_records['epoch']}[reset]. "
+                    f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
+                    f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
+                    f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
+                    f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
+                    f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
+                    f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f})"
+                ))
             timer.add('save_best')
 
         # 打印用时
-        _logger.info(f"[Epoch {epoch}/{args.epochs}] finished. Time Usage={timer}")
+        _logger.info(tag2ansi(f"[pink][Epoch {epoch}/{args.epochs}] finished. Time Usage={timer}[reset]"))
         
         # 提前终止
         if 'patience' in locals() and patience <= 0:
-            _logger.warning(
-                f"Early stopping at epoch {epoch}, "
-                f"best Accuracy={best_records['accuracy']:.2%} at epoch {best_records['epoch']}. "
-                f"ADE={np.mean(best_records['ade']):.4f}, "
-                f"FDE={np.mean(best_records['fde']):.4f}, "
-                f"AvgLen={np.mean(best_records['trajlen']):.4f}, "
-                f"Loss={np.mean(best_records['loss']):.4f}, "
-                f"PedNum={np.mean(best_records['ped_num']):.1f}, "
-                f"VehNum={np.mean(best_records['veh_num']):.1f}"
-            )
+            _logger.warning(tag2ansi(
+                f"Early stopping at epoch [lightred]{epoch}/{args.epochs}[reset], "
+                f"[bold underline orange]best Accuracy={best_records['accuracy']:.2%}[reset] "
+                f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
+                f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
+                f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
+                f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
+                f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
+                f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
+                f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}"
+            ))
             break
 
     _logger.note(f"Training finished. Re-run: {args.command}")
@@ -376,12 +393,12 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
             if k not in all_records:
                 all_records[k] = []
             all_records[k].extend(v)
-    _logger.info(
-        f"[Epoch {epoch}/{args.epochs}] "
-        f"Loss={np.mean(all_records['loss']):.4f} "
-        f"Rollout Loss={np.mean(all_records['rollout_loss'], axis=0).round(4).tolist()} "
-        f"Time={train_timer}"
-    )
+    _logger.info(tag2ansi(
+        f"[#66CCFF][Epoch {epoch}/{args.epochs}] "
+        f"[#66CCFF]Loss={np.mean(all_records['loss']):.4f} "
+        f"[#66CCFF]Rollout Loss={np.mean(all_records['rollout_loss'], axis=0).round(4).tolist()} "
+        f"[#66CCFF]Time={train_timer}"
+    ))
     return all_records
 
 
@@ -520,16 +537,16 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             records['veh_num'].extend(veh_length.cpu().tolist()) # List[int]
             test_timer.add('evaluate', n=0)
         records_list.append(records)
-        _logger.info(
-            f"[Epoch {epoch}/{args.epochs}] Eval on {loader.dataset.name}: "
-            f"Accuracy={1 - np.mean(records['ade']) / np.mean(records['trajlen']):.2%}, "
-            f"Loss={np.mean(records['loss']):.4f}, "
-            f"ADE={np.mean(records['ade']):.4f}, "
-            f"FDE={np.mean(records['fde']):.4f}, "
-            f"AvgLen={np.mean(records['trajlen']):.4f}, "
-            f"PedNum={np.mean(records['ped_num']):.1f}, "
-            f"VehNum={np.mean(records['veh_num']):.1f}"
-        )
+        _logger.info(tag2ansi(
+            f"[#66CCFF][Epoch {epoch}/{args.epochs}] Eval on {loader.dataset.name}: "
+            f"[bold underline orange]Accuracy={1 - np.mean(records['ade']) / np.mean(records['trajlen']):.2%}[reset], "
+            f"[#66CCFF]Loss={np.mean(records['loss']):.4f}, "
+            f"[#66CCFF]ADE={np.mean(records['ade']):.4f}, "
+            f"[#66CCFF]FDE={np.mean(records['fde']):.4f}, "
+            f"[#66CCFF]AvgLen={np.mean(records['trajlen']):.4f}, "
+            f"[#66CCFF]PedNum={np.mean(records['ped_num']):.1f}, "
+            f"[#66CCFF]VehNum={np.mean(records['veh_num']):.1f}"
+        ))
     all_records = {
         'epoch': epoch,
         'dataset_class': [type(loader.dataset).__name__.removesuffix('Dataset') for loader in test_loaders],
@@ -543,19 +560,19 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             all_records[k].append(np.mean(v))
     w = np.array(all_records['sample_nums'], dtype=float)
     w /= w.sum()
-    all_records['weighted_accuracy'] = 1 - np.sum(w * all_records['ade']) / np.sum(w * all_records['trajlen'])
-    all_records['accuracy'] = 1 - np.mean(all_records['ade']) / np.mean(all_records['trajlen'])
-    _logger.note(
-        f"[Epoch {epoch}/{args.epochs}] Overall: "
-        f"Accuracy={all_records['accuracy']:.2%} (weighted={all_records['weighted_accuracy']:.2%}), "
-        f"Loss={np.sum(w * all_records['loss']):.4f}, "
-        f"ADE={np.sum(w * all_records['ade']):.4f}, "
-        f"FDE={np.sum(w * all_records['fde']):.4f}, "
-        f"AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
-        f"PedNum={np.sum(w * all_records['ped_num']):.4f}, "
-        f"VehNum={np.sum(w * all_records['veh_num']):.4f}, "
-        f"Time={test_timer}"
-    )
+    all_records['accuracy'] = 1 - np.sum(w * all_records['ade']) / np.sum(w * all_records['trajlen'])
+    all_records['unweighted_accuracy'] = 1 - np.mean(all_records['ade']) / np.mean(all_records['trajlen'])
+    _logger.note(tag2ansi(
+        f"[#66CCFF][Epoch {epoch}/{args.epochs}] Overall: "
+        f"[bold underline orange]Accuracy={all_records['accuracy']:.2%}[reset] (unweighted={all_records['unweighted_accuracy']:.2%}), "
+        f"[#66CCFF]Loss={np.sum(w * all_records['loss']):.4f}, "
+        f"[#66CCFF]ADE={np.sum(w * all_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.sum(w * all_records['fde']):.4f}, "
+        f"[#66CCFF]AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
+        f"[#66CCFF]PedNum={np.sum(w * all_records['ped_num']):.4f}, "
+        f"[#66CCFF]VehNum={np.sum(w * all_records['veh_num']):.4f}, "
+        f"[#66CCFF]Time={test_timer}"
+    ))
     if len(set(all_records['dataset_class'])) > 1:
         for klass in set(all_records['dataset_class']):
             idxs = [i for i, k in enumerate(all_records['dataset_class']) if k == klass]
@@ -567,15 +584,15 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
             acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
-            _logger.note(
-                f"[Epoch {epoch}/{args.epochs}] Overall on {klass} datasets: "
-                f"Accuracy={acc:.2%}, "
-                f"ADE={np.sum(w * ade):.4f}, "
-                f"FDE={np.sum(w * fde):.4f}, "
-                f"AvgLen={np.sum(w * trajlen):.4f}, "
-                f"PedNum={np.sum(w * ped_num):.4f}, "
-                f"VehNum={np.sum(w * veh_num):.4f}"
-            )
+            _logger.note(tag2ansi(
+                f"[#66CCFF][Epoch {epoch}/{args.epochs}] Overall on {klass} datasets: "
+                f"[bold underline orange]Accuracy={acc:.2%}[reset], "
+                f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
+                f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
+                f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
+                f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
+                f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}"
+            ))
     return all_records
 
 
@@ -633,6 +650,9 @@ if __name__ == "__main__":
     parser.add_argument('--rollout_lambda', type=float, default=1.0, help="rollout loss 衰减系数，设置 <1 以赋予未来更高权重")
     parser.add_argument('--multi_frame_rollout', type=int, default=1, help="每次训练时 rollout 的帧数")
     parser.add_argument('--scale_accelerate', type=float, default=1.0, help="加速度的缩放比例")
+    parser.add_argument('--p_drop_map', type=float, default=None)
+    parser.add_argument('--p_drop_destination', type=float, default=None)
+    parser.add_argument('--p_drop_speed', type=float, default=None)
     parser.add_argument("--hist_step", type=int, default=8)
     parser.add_argument("--pred_step", type=int, default=1)
     parser.add_argument("--skip_step", type=int, default=1)
@@ -658,7 +678,6 @@ if __name__ == "__main__":
     parser.add_argument('--cache_dataset', action='store_true', default=True)
     parser.add_argument('--test_before_train', action='store_true')
     parser.add_argument('--test_per_epoch', type=int, default=10)
-    parser.add_argument('--save_per_epoch', type=int, default=50)
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
     parser.add_argument('--predict_noise', action='store_true', default=True)
     parser.add_argument('--required_memory_MB', type=int, default=6000)

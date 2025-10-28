@@ -19,6 +19,7 @@ from src.utils.logger import init_logger
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset
 from src.utils.plot import get_fig, plt, sns
 from src.utils.timer import NamedTimer
+from src.utils.tag2ansi import tag2ansi
 
 
 _logger = logging.getLogger('src.sample')
@@ -156,6 +157,11 @@ def main(args):
         ymax=map_data.ymax,
     )
     timer.add('Embed Map')
+    _logger.info(tag2ansi(
+        f"[pink]Begin to simulate for {args.roll_step} steps[reset]. "
+        f"[#66CCFF]Time Usage[reset] so far: {timer}"
+    ))
+    timer.clear(reset=True)
     traj = []
     for frame in range(frame_idx, frame_idx+args.roll_step, args.pred_step):
         model.set_veh_embedding(veh=veh_now)
@@ -223,7 +229,11 @@ def main(args):
 
     traj = np.concatenate(traj, axis=-2)  # (S*B, #pedestrian, roll_step * pred_step, 2)
     traj = traj.reshape(S, len(ped_list), args.roll_step * args.pred_step, 2)  # (S, #pedestrian, roll_step * pred_step, 2)
-    _logger.info(f"Simulation done, sampled {S} times for {args.roll_step * args.pred_step} steps. Time Usage: {timer}")
+    _logger.note(tag2ansi(
+        f"[pink]Simulation done, sampled {S} times for {args.roll_step * args.pred_step} steps[reset]. "
+        f"[bold underline orange]FPS = {timer._count['Embed Vehicle'] / timer.time:.2f} Hz[reset]. "
+        f"[#66CCFF]Time Usage[reset]: {timer}"
+    ))
     
     # Visualize rollout
     fi, fig, axes = get_fig(1, 1, AW=6, AH=6, dpi=300)
@@ -248,7 +258,7 @@ def main(args):
     plt.close()
     _logger.info(f"Rollout figure saved to {args.exp_name}_rollout.png")
 
-    _logger.info("Done.")
+    _logger.note(f"Sampling finished. Re-run: {args.command}")
 
 
 if __name__ == '__main__':
@@ -261,13 +271,13 @@ if __name__ == '__main__':
     parser.add_argument('--sample_num', type=int, default=20, help="测试时每个轨迹采样 {sample_num} 次")
     parser.add_argument('--denoise_step', type=int, default=10, help="采样时进行 {denoise_step} 次去噪")
     parser.add_argument('--step_offset', type=int, default=1, help="最后一步去噪从 x_{step_offset} 到 x_0")
-    parser.add_argument('--scale_accelerate', type=float, default=10.0, help="加速度的缩放比例")
+    parser.add_argument('--scale_accelerate', type=float, default=1.0, help="加速度的缩放比例")
     parser.add_argument("--hist_step", type=int, default=8)
     parser.add_argument("--pred_step", type=int, default=1)
     parser.add_argument("--skip_step", type=int, default=1)
     parser.add_argument("--roll_step", type=int, default=12)
     parser.add_argument("--fps", type=int, default=2.5)
-    parser.add_argument("--dot_per_meter", type=int, default=1)
+    parser.add_argument("--dot_per_meter", type=int, default=5)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--save_dir", type=str, default="./logs/sample")
     parser.add_argument("--debug", action="store_true")
@@ -279,9 +289,9 @@ if __name__ == '__main__':
     parser.add_argument('--lstm_layer_num', type=int, default=3)
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
-    parser.add_argument('--no_cache_dataset', dest='cache_dataset', action='store_false', default=True)
+    parser.add_argument('--cache_dataset', action='store_true', default=True)
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth', required=True)
-    parser.add_argument('--no_predict_noise', action='store_false', dest='predict_noise', default=True)
+    parser.add_argument('--predict_noise', action='store_true', default=True)
     parser.add_argument('--no_destination', action='store_true', default=False, help="不使用目的地信息")
     parser.add_argument('--no_speed', action='store_true', default=False, help="不使用速度信息")
     args, unknown = parser.parse_known_args()
@@ -317,7 +327,7 @@ if __name__ == '__main__':
     )
 
     ## Save Command
-    args.command = ' '.join(sys.argv)
+    args.command = ' '.join([sys.executable, *sys.argv])
 
     ## Warm Unknown Args
     if unknown:

@@ -360,7 +360,9 @@ class Model(nn.Module):
         denoise_t_embedding = denoise_t_embedding.unsqueeze(1) # (batch_size, 1, model_dim)
         noisy_acc_embedding = self.noisy_acc_embedder(noisy_acc) # (batch_size, #pedestrian, model_dim)
         ped_embedding = self.ped_encoder(ped_embedding + denoise_t_embedding + noisy_acc_embedding) # (batch_size, #pedestrian, model_dim)
-        if timer: timer.add('Embedding Pedestrian')
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Embedding Pedestrian')
 
         # Embedding Vehicle
         # veh_embedding = self.veh_embedder(veh) # (batch_size, #vehicle, model_dim)
@@ -385,7 +387,9 @@ class Model(nn.Module):
         ped_mask = ped_mask >= ped_length.unsqueeze(1) # (batch_size, max_ped_num)
         veh_mask = torch.arange(max_veh_num, device=veh_length.device).unsqueeze(0).expand(batch_size, max_veh_num) # (batch_size, max_veh_num)
         veh_mask = veh_mask >= veh_length.unsqueeze(1) # (batch_size, max_veh_num)
-        if timer: timer.add('Build Mask')
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Build Mask')
 
         # Social Attention
         ped_info = self.ped_attention(
@@ -394,7 +398,9 @@ class Model(nn.Module):
             tgt_key_padding_mask=ped_mask,
         ) # (batch_size, #pedestrian, model_dim)
         ped_info = F.layer_norm(ped_info, ped_info.shape[-1:])
-        if timer: timer.add('Social Attention')
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Social Attention')
 
         # Vehicle Attention
         veh_info = self.veh_attention(
@@ -403,7 +409,9 @@ class Model(nn.Module):
             tgt_key_padding_mask=ped_mask,
         ) # (batch_size, #pedestrian, model_dim)
         veh_info = F.layer_norm(veh_info, veh_info.shape[-1:])
-        if timer: timer.add('Vehicle Attention')
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Vehicle Attention')
 
         # Map Attention
         pe = self.pe
@@ -412,7 +420,9 @@ class Model(nn.Module):
             tgt_key_padding_mask=ped_mask,
         ) # (batch_size, #pedestrian, model_dim)
         map_info = F.layer_norm(map_info, map_info.shape[-1:])
-        if timer: timer.add('Map Attention')
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Map Attention')
 
         # Surrounding Info
         # idx = pos[..., 1].sub(ymin).div(ymax-ymin).mul(map_embedding.size(0)).round().long().clamp(0, map_embedding.size(0) - 1)  # (batch_size, #pedestrian)
@@ -426,10 +436,14 @@ class Model(nn.Module):
         ped_embedding = self.fusion_fc(
             ped_embedding + ped_info + veh_info + map_info + sur_info + denoise_t_embedding
         ) # (batch_size, #pedestrian, model_dim)
-        if timer: timer.add('Fusion')
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Fusion')
 
         # Output
         output = self.output_fc(ped_embedding) # (batch_size, #pedestrian, pred_step*2)
         output = output.view(*output.shape[:-1], self.args.pred_step, 2) # (batch_size, #pedestrian, pred_step, 2)
-        if timer: timer.add('Output')
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Output')
         return output
