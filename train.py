@@ -1,4 +1,5 @@
 import sys
+import time
 import json
 import torch
 import random
@@ -209,7 +210,7 @@ def main(args):
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }, save_path)
-            _logger.note(tag2ansi(f"Checkpoint saved to [underline green]{save_path}[reset]."))
+            _logger.info(tag2ansi(f"Checkpoint saved to [underline green]{save_path}[reset]."))
             timer.add('save_checkpoint')
         
         # 定期保存
@@ -245,7 +246,7 @@ def main(args):
             else:
                 patience -= 1
                 _logger.info(tag2ansi(
-                    f"Patience left: [lightred]{patience}/{args.patience}[reset] ("
+                    f"Patience left: [brightred]{patience}/{args.patience}[reset] ("
                     f"[bold underline orange]best Accuracy={best_records['accuracy']:.2%}[reset] "
                     f"at epoch [#66CCFF]{best_records['epoch']}[reset]. "
                     f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
@@ -442,7 +443,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             ymax=map_data.ymax,
         )
         test_timer.add('embed map')
-        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[])
+        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[])
         for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
@@ -472,6 +473,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
 
             for_plot = []
             acc_pred = []
+            start_time = time.time()
             for step in range(args.roll_step):
                 model.set_veh_embedding(veh=veh_now)
                 model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
@@ -513,6 +515,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                 pos_now = pos_new[:, :, -1, :] # (S*B, #pedestrian, 2)
                 vel_now = vel_new[:, :, -1, :] # (S*B, #pedestrian, 2)
                 test_timer.add('rollout')
+            rollout_time = (time.time() - start_time) / args.roll_step
 
             acc_pred = torch.concat(acc_pred, dim=-2)  # (S*B, #pedestrian, roll_step*pred_step, 2)
             batch_size, ped_num, _, _ = future_acc.shape
@@ -560,6 +563,8 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             # 统计行人和车辆数量
             records['ped_num'].extend(ped_length.cpu().tolist()) # List[int]
             records['veh_num'].extend(veh_length.cpu().tolist()) # List[int]
+            # 统计 Rollout 用时
+            records['rollout_time'].append(rollout_time)  # List[float]
             test_timer.add('evaluate', n=0)
         records_list.append(records)
         _logger.info(tag2ansi(
@@ -570,7 +575,9 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             f"[#66CCFF]FDE={np.mean(records['fde']):.4f}, "
             f"[#66CCFF]AvgLen={np.mean(records['trajlen']):.4f}, "
             f"[#66CCFF]PedNum={np.mean(records['ped_num']):.1f}, "
-            f"[#66CCFF]VehNum={np.mean(records['veh_num']):.1f}"
+            f"[#66CCFF]VehNum={np.mean(records['veh_num']):.1f}, "
+            f"[#66CCFF]RolloutTime={np.mean(records['rollout_time'])*1000:.2f}ms "
+            f"([bold underline orange]FPS={1/np.mean(records['rollout_time']):.2f} Hz[reset])"
         ))
     all_records = {
         'epoch': epoch,
@@ -596,6 +603,8 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
         f"[#66CCFF]AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
         f"[#66CCFF]PedNum={np.sum(w * all_records['ped_num']):.4f}, "
         f"[#66CCFF]VehNum={np.sum(w * all_records['veh_num']):.4f}, "
+        f"[#66CCFF]RolloutTime={np.mean(all_records['rollout_time'])*1000:.2}ms "
+        f"([bold underline orange]FPS={1/np.mean(all_records['rollout_time']):.2f} Hz[reset]), "
         f"[#66CCFF]Time={test_timer}"
     ))
     if len(set(all_records['dataset_class'])) > 1:
@@ -606,6 +615,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             trajlen = np.array([all_records['trajlen'][i] for i in idxs])
             ped_num = np.array([all_records['ped_num'][i] for i in idxs])
             veh_num = np.array([all_records['veh_num'][i] for i in idxs])
+            rollout_time = np.array([all_records['rollout_time'][i] for i in idxs])
             w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
             acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
@@ -616,7 +626,9 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
-                f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}"
+                f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
+                f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
+                f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
             ))
     return all_records
 
@@ -713,12 +725,12 @@ if __name__ == "__main__":
     if args.exp_name is None:
         now = datetime.now()
         date = now.strftime("%Y%m%d")
-        time = now.strftime("%H%M%S")
+        hour = now.strftime("%H%M%S")
         host = gethostname()
         invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
         for char in invalid_chars:
             args.name = args.name.replace(char, '_')
-        args.exp_name = f'{date}_{args.name}_{time}_{host}'
+        args.exp_name = f'{date}_{args.name}_{hour}_{host}'
     save_path = Path(args.save_dir) / args.exp_name
     if not save_path.exists():
         save_path.mkdir(parents=True, exist_ok=True)
