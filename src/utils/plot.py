@@ -39,7 +39,7 @@ def get_fig(
     fontsize=7,
     lw=0.5,
     gridspec=False,
-    font_family="Arial",
+    font_family="DejaVu Sans",
     **kwargs,
 ):
     plt.rcParams["font.family"] = font_family
