@@ -418,7 +418,11 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
         for k, v in records.items():
             if k not in all_records:
                 all_records[k] = []
-            all_records[k].extend(v)
+            if isinstance(v[0], (int, float)):
+                mean_v = np.mean(v)
+            else: 
+                mean_v = np.mean(v, axis=0).tolist()
+            all_records[k].append(mean_v)
     _logger.info(tag2ansi(
         f"[#66CCFF][Epoch {epoch}/{args.epochs}] "
         f"[#66CCFF]Loss={np.mean(all_records['loss']):.4f} "
