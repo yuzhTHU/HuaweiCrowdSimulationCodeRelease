@@ -5,19 +5,25 @@ cd HuaweiCrowdSimulationCode
 # 创建环境
 conda create -p ./venv python=3.12 -y
 conda activate ./venv
-pip install setproctitle tqdm numpy matplotlib pandas scipy torch ipykernel
-pip install fastapi uvicorn[standard] websockets
+pip install setproctitle tqdm numpy matplotlib pandas scipy torch ipykernel seaborn
+pip install fastapi "uvicorn[standard]" websockets
 
 # 复制数据
 mkdir ./data
-rsync -anv --progress \
+rsync -anv --info=progress2 \
     --include='ETH/***' \
     --include='UCY/***' \
     --include='SDD/***' \
     --include='GC/***' \
     --include='WayMo/' \
+    --include='WayMo/summary.csv' \
     --include='WayMo/Processed/***' \
     --include='.cache/***' \
     --exclude='*' \
-    lm2:~/WorkSpace/35-HuaweiCrowdSimulation/HuaweiCrowdSimulationCode/data/ ./data
+    dl4:~/WorkSpace/35-HuaweiCrowdSimulation/HuaweiCrowdSimulationCode/data/ ./data
 
+# 复制日志
+mkdir ./logs
+rsync -anv --info=progress2 \
+    --exclude='***/.syncthing*' \
+    dl4:~/WorkSpace/35-HuaweiCrowdSimulation/HuaweiCrowdSimulationCode/logs/ ./logs
