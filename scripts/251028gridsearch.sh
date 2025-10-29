@@ -48,6 +48,13 @@ python train.py \
 
 python train.py \
     --test_before_train \
+    --name sample1 \
+    --datasets All \
+    --test_ratio 0.2 \
+    --sample_num 1
+
+python train.py \
+    --test_before_train \
     --name denoise5 \
     --datasets All \
     --test_ratio 0.2 \

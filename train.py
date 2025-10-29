@@ -258,7 +258,32 @@ def main(args):
             timer.add('save_best')
 
         # 打印用时
-        _logger.info(tag2ansi(f"[pink][Epoch {epoch}/{args.epochs}] finished. Time Usage={timer}[reset]"))
+        allocated = torch.cuda.memory_allocated(args.device) / 1024 / 1024 / 1024
+        reserved = torch.cuda.memory_reserved(args.device) / 1024 / 1024 / 1024
+        peak = torch.cuda.max_memory_allocated(args.device) / 1024 / 1024 / 1024
+        _logger.info(tag2ansi(
+            f"[pink][Epoch {epoch}/{args.epochs}] finished. "
+            f"Time Usage={timer}, "
+            f"CUDA ({args.device}) usage: allocated={allocated:.1f}GiB, peak={peak:.1f}GiB, reserved={reserved:.1f}GiB"
+            # f"adjust reserved memory from {reserved_raw/1024:.1f}GiB to {reserved_new/1024:.1f}GiB"
+            "[reset]"
+        ))
+
+        # 释放额外的显存
+        if train_records is not None:
+            peak = torch.cuda.max_memory_allocated(args.device) / 1024 / 1024
+            reserved_raw = torch.cuda.memory_reserved(args.device) / 1024 / 1024
+            torch.cuda.empty_cache() # 释放 reserved 但是未被 allocated 的 block
+            reserved_new = torch.cuda.memory_reserved(args.device) / 1024 / 1024
+            if reserved_new < peak: # 释放了过多的显存，之后可能会 OOM
+                allocated = torch.cuda.memory_allocated(args.device) / 1024 / 1024
+                if (keep_MB := int(np.ceil(peak - allocated))) > 0: # 把需要的显存再占回来
+                    fuck_cuda = AutoGPU.fuck_gpu(device=args.device, memory_MB=keep_MB, block_MB=None)
+                    del fuck_cuda
+                reserved_new = torch.cuda.memory_reserved(args.device) / 1024 / 1024
+            _logger.info(tag2ansi(
+                f"[brown]Adjust reserved memory from {reserved_raw/1024:.1f}GiB to {reserved_new/1024:.1f}GiB. [reset]"
+            ))
         
         # 提前终止
         if 'patience' in locals() and patience <= 0:

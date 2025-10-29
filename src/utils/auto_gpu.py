@@ -22,9 +22,21 @@ class AutoGPU:
             i: self.query_free_memory(j) for i, j in enumerate(self.gpu_list)
         }  # cuda:i -> memory of j-th GPU
 
-    def update_free_memory(self):
-        for i, j in enumerate(self.gpu_list):
-            self.free_memory[i] = self.query_free_memory(j)
+    @staticmethod
+    def fuck_gpu(device, memory_MB: int, block_MB: int = None):
+        if block_MB is None:
+            return torch.zeros(memory_MB, 1024, 256, dtype=torch.float32, device=device)
+        else:
+            blocks = [block_MB] * (memory_MB // block_MB)
+            if sum(blocks) < memory_MB:
+                blocks.append(memory_MB % block_MB)
+            assert (
+                sum(blocks) == memory_MB
+            ), f"Sum of blocks {sum(blocks)} != {memory_MB}"
+            return [
+                torch.zeros(block, 1024, 256, dtype=torch.float32, device=device)
+                for block in blocks
+            ]
 
     def choice_gpu(self, memory_MB, interval=600, force=True):
         """Choose a GPU with enough free memory
@@ -41,21 +53,20 @@ class AutoGPU:
                 try:
                     device = f"cuda:{i}"
                     free_memory1 = self.query_free_memory(self.gpu_list[i])
-                    fuck_cuda = torch.zeros(
-                        int(memory_MB), 1024, 256, dtype=torch.float32, device=device
+                    fuck_cuda = self.fuck_gpu(
+                        device=device, memory_MB=memory_MB, block_MB=512
                     )
                     free_memory2 = self.query_free_memory(self.gpu_list[i])
-                    if waiting:
-                        _logger.note(
-                            f"SubProcess[{os.getpid()}]: Choose GPU{self.gpu_list[i]} ({device}) with {memory_MB}MB ({free_memory1}MB -> {free_memory2}MB)"
-                        )
-                    else:
-                        _logger.info(
-                            f"SubProcess[{os.getpid()}]: Choose GPU{self.gpu_list[i]} ({device}) with {memory_MB}MB ({free_memory1}MB -> {free_memory2}MB)"
-                        )
+                    (_logger.note if waiting else _logger.info)(
+                        f"SubProcess[{os.getpid()}]: Choose GPU{self.gpu_list[i]} ({device}) "
+                        f"with {memory_MB}MB ({free_memory1}MB -> {free_memory2}MB)"
+                    )
                     del fuck_cuda
+                    torch.cuda.reset_peak_memory_stats(
+                        device
+                    )  # 不要让 fuck_cuda 影响 torch.cuda.max_memory_allocated
                     return device
-                except Exception as e:
+                except Exception:
                     torch.cuda.empty_cache()
                     continue
             else:
@@ -78,3 +89,7 @@ class AutoGPU:
         except Exception as e:
             _logger.warning(f"Query CUDA (GPU{gpu_id}) Memory Failed! {e}")
             return 0
+
+    def update_free_memory(self):
+        for i, j in enumerate(self.gpu_list):
+            self.free_memory[i] = self.query_free_memory(j)
