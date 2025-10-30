@@ -29,6 +29,18 @@ python train.py \
     --lr 2e-4 
 
 python train.py \
+    --name lr5e-4 \
+    --datasets All \
+    --test_ratio 0.2 \
+    --lr 5e-4 
+
+python train.py \
+    --name lr1e-4 \
+    --datasets All \
+    --test_ratio 0.2 \
+    --lr 1e-4 
+
+python train.py \
     --name sample10 \
     --datasets All \
     --test_ratio 0.2 \
@@ -39,6 +51,18 @@ python train.py \
     --datasets All \
     --test_ratio 0.2 \
     --sample_num 5 
+
+python train.py \
+    --name sample2 \
+    --datasets All \
+    --test_ratio 0.2 \
+    --sample_num 2 
+
+python train.py \
+    --name sample3 \
+    --datasets All \
+    --test_ratio 0.2 \
+    --sample_num 3
 
 python train.py \
     --name sample1 \
