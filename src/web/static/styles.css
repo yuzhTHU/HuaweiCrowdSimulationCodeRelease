@@ -1,0 +1,12 @@
+body { font-family: "Helvetica Neue", Arial, sans-serif; margin: 12px; color:#222; }
+header h1 { margin:4px 0 12px 0; }
+.row { margin: 6px 0; display:flex; gap: 8px; align-items:center; }
+#controls { margin-bottom:12px; }
+#canvas_area { display:flex; gap: 12px; align-items:flex-start; }
+#map_canvas { border:1px solid #888; background:#eee; }
+#legend { font-size: 13px; }
+.dot { display: inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle;}
+.dot.ped { background: #1f78b4; }
+.dot.veh { background: #33a02c; }
+.dot.sim { background: #e31a1c; }
+.sim_slider_row { margin:6px 0; display:flex; gap:8px; align-items:center; }
