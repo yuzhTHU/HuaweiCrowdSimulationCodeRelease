@@ -254,6 +254,14 @@ class Model(nn.Module):
         des: torch.FloatTensor,
         spd: torch.FloatTensor,
     ):
+        """设置行人嵌入向量 ped_embedding
+        Args:
+            pos (torch.FloatTensor): 行人当前位置 (batch_size, #pedestrian, 2)
+            vel (torch.FloatTensor): 行人当前速度 (batch_size, #pedestrian, 2)
+            hst (torch.FloatTensor): 行人历史轨迹 (batch_size, #pedestrian, hist_step, 2)
+            des (torch.FloatTensor): 行人终点位置 (batch_size, #pedestrian, 2)
+            spd (torch.FloatTensor): 行人预期速度 (batch_size, #pedestrian, 1)
+        """
         pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
         vel_embedding = self.vel_embedder(vel) # (batch_size, #pedestrian, model_dim)
         hst_embedding = self.hst_embedder(hst) # (batch_size, #pedestrian, model_dim)
@@ -270,6 +278,10 @@ class Model(nn.Module):
         self,
         veh: torch.FloatTensor,
     ):
+        """设置车辆嵌入向量 veh_embedding
+        Args:
+            veh (torch.FloatTensor): 车辆历史轨迹 (batch_size, #vehicle, hist_step + 1, 2)
+        """
         shape = list(veh.shape)
         if shape[1] == 0:
             shape[1] = 1
@@ -285,6 +297,14 @@ class Model(nn.Module):
         ymin: torch.FloatTensor, 
         ymax: torch.FloatTensor,
     ):
+        """设置场景地图嵌入向量 map_embedding 和潜在令牌嵌入向量 ltn_embedding
+        Args:
+            map (torch.FloatTensor): 场景高度地图 (H, W), 取值范围 0~1 (0-空地, 1-障碍物)
+            xmin (float): 地图x轴最小值, 与 pos & veh 处于同一坐标系
+            xmax (float): 地图x轴最大值, 与 pos & veh 处于同一坐标系
+            ymin (float): 地图y轴最小值, 与 pos & veh 处于同一坐标系
+            ymax (float): 地图y轴最大值, 与 pos & veh 处于同一坐标系
+        """
         map_embedding = self.map_embedder(map.unsqueeze(-1)) # (H', W', model_dim)
         xx = torch.linspace(xmin, xmax, map_embedding.size(1), device=map_embedding.device)
         yy = torch.linspace(ymin, ymax, map_embedding.size(0), device=map_embedding.device)
@@ -300,6 +320,7 @@ class Model(nn.Module):
         self.ymin = ymin
 
     def set_sur_info(self):
+        """设置行人周边环境信息 sur_info"""
         pos = self.pos
         xmax, xmin = self.xmax, self.xmin
         ymax, ymin = self.ymax, self.ymin
@@ -313,17 +334,6 @@ class Model(nn.Module):
 
     def forward(
         self, 
-        # pos: torch.FloatTensor, 
-        # vel: torch.FloatTensor,
-        # hst: torch.FloatTensor,
-        # des: torch.FloatTensor,
-        # spd: torch.FloatTensor,
-        # veh: torch.FloatTensor,
-        # map: torch.FloatTensor,
-        # xmin: torch.FloatTensor, 
-        # xmax: torch.FloatTensor, 
-        # ymin: torch.FloatTensor, 
-        # ymax: torch.FloatTensor,
         denoise_t: torch.LongTensor,
         noisy_acc: torch.FloatTensor,
         ped_length: torch.LongTensor,
@@ -331,30 +341,17 @@ class Model(nn.Module):
         timer: NamedTimer = None,
     ):
         """根据行人、车辆、场景信息对行人下一步加速度 acc 进行去噪
+        调用前需要先调用 set_ped_embedding(), set_veh_embedding(), set_map_embedding() 和 set_sur_info() 以设置对应的信息
         Args:
-            pos (torch.FloatTensor): 行人当前位置 (batch_size, #pedestrian, 2)
-            vel (torch.FloatTensor): 行人当前速度 (batch_size, #pedestrian, 2)
-            hst (torch.FloatTensor): 行人历史轨迹 (batch_size, #pedestrian, hist_step, 2)
-            des (torch.FloatTensor): 行人终点位置 (batch_size, #pedestrian, 2)
-            spd (torch.FloatTensor): 行人预期速度 (batch_size, #pedestrian, 1)
-            veh (torch.FloatTensor): 车辆历史轨迹 (batch_size, #vehicle, hist_step + 1, 2)
-            map (torch.FloatTensor): 场景高度地图 (H, W)
-            xmin (float): 地图x轴最小值, 与 pos & veh 处于同一坐标系
-            xmax (float): 地图x轴最大值, 与 pos & veh 处于同一坐标系
-            ymin (float): 地图y轴最小值, 与 pos & veh 处于同一坐标系
-            ymax (float): 地图y轴最大值, 与 pos & veh 处于同一坐标系
             denoise_t (torch.LongTensor): 当前去噪时间步 (batch_size,)
             noisy_acc (torch.FloatTensor): （带噪的）行人下步加速度 (batch_size, #pedestrian, pred_step, 2)
             ped_length (torch.LongTensor): 每个batch中行人数量 (batch_size,)
             veh_length (torch.LongTensor): 每个batch中车辆数量 (batch_size,)
+        Returns:
+            output (torch.FloatTensor): 去噪后的行人下步加速度 / 用于去噪的噪声 (batch_size, #pedestrian, pred_step, 2)
         """
+
         # Embedding Pedestrian
-        # pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
-        # vel_embedding = self.vel_embedder(vel) # (batch_size, #pedestrian, model_dim)
-        # hst_embedding = self.hst_embedder(hst) # (batch_size, #pedestrian, model_dim)
-        # des_embedding = self.des_embedder(des) # (batch_size, #pedestrian, model_dim)
-        # spd_embedding = self.spd_embedder(spd) # (batch_size, #pedestrian, model_dim)
-        # ped_embedding = pos_embedding + vel_embedding + hst_embedding + des_embedding + spd_embedding
         ped_embedding = self.ped_embedding
         denoise_t_embedding = self.denoise_t_embedder(denoise_t) # (batch_size, model_dim)
         denoise_t_embedding = denoise_t_embedding.unsqueeze(1) # (batch_size, 1, model_dim)
@@ -365,18 +362,9 @@ class Model(nn.Module):
             timer.add('Embedding Pedestrian')
 
         # Embedding Vehicle
-        # veh_embedding = self.veh_embedder(veh) # (batch_size, #vehicle, model_dim)
-        veh_embedding = self.veh_embedding
+        veh_embedding = self.veh_embedding # (batch_size, #vehicle, model_dim)
 
         # Embedding Map
-        # map_embedding = self.map_embedder(map.unsqueeze(-1)) # (H', W', model_dim)
-        # xx = torch.linspace(xmin, xmax, map_embedding.size(1), device=map_embedding.device)
-        # yy = torch.linspace(ymin, ymax, map_embedding.size(0), device=map_embedding.device)
-        # gridx, gridy = torch.meshgrid(xx, yy, indexing='xy')
-        # gridxy = torch.stack([gridx, gridy], dim=-1) # (H', W', 2)
-        # map_embedding = map_embedding + self.positional_encoding(gridxy) # (H', W', model_dim)
-        # ltn_embedding, _ = self.latent_attntn(self.latent_tokens, map_embedding.flatten(0, 1), map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
-        # ltn_embedding = ltn_embedding.unsqueeze(0).expand(ped_embedding.size(0), *ltn_embedding.shape) # (batch_size, #latent_token, model_dim)
         ltn_embedding = self.ltn_embedding.unsqueeze(0).expand(ped_embedding.size(0), *self.ltn_embedding.shape) # (batch_size, #latent_token, model_dim)
 
         # Build Mask
@@ -425,11 +413,6 @@ class Model(nn.Module):
             timer.add('Map Attention')
 
         # Surrounding Info
-        # idx = pos[..., 1].sub(ymin).div(ymax-ymin).mul(map_embedding.size(0)).round().long().clamp(0, map_embedding.size(0) - 1)  # (batch_size, #pedestrian)
-        # jdx = pos[..., 0].sub(xmin).div(xmax-xmin).mul(map_embedding.size(1)).round().long().clamp(0, map_embedding.size(1) - 1)  # (batch_size, #pedestrian)
-        # idx = map_embedding.size(0) - 1 - idx # (batch_size, #pedestrian)
-        # sur_info = map_embedding[idx, jdx] # (batch_size, #pedestrian, model_dim)
-        # sur_info = F.layer_norm(sur_info, sur_info.shape[-1:])
         sur_info = self.sur_info
 
         # Fusion

@@ -343,6 +343,13 @@ def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoc
                 noisy_acc, noise_true, denoise_t = diffusion.add_noise(acc_true * args.scale_accelerate)
                 train_timer.add('add noise')
 
+                if args.p_drop_map and random.random() < args.p_drop_map:
+                    map = torch.full_like(map, torch.nan, device=map.device)
+                if args.p_drop_destination and random.random() < args.p_drop_destination:
+                    des_now = torch.full_like(des_now, torch.nan, device=des_now.device)
+                if args.p_drop_speed and random.random() < args.p_drop_speed:
+                    spd_now = torch.full_like(spd_now, torch.nan, device=spd_now.device)
+
                 # DDPM backward
                 model.set_map_embedding(
                     map=map,
