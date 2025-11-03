@@ -139,6 +139,7 @@ class WayMoDataset(BaseDataset):
                 if len(dataset.samples) == 0:
                     raise ValueError(f"Dataset {file} has no samples, skipping.")
                 datasets.append(dataset)
+                datasets[-1].path = str(file)
             except Exception as e:
                 _logger.error(f"Failed to load {file}: {e}")
                 continue

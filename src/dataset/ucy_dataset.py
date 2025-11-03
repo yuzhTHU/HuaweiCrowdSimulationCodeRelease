@@ -126,6 +126,7 @@ class UCYDataset(BaseDataset):
         for file in pbar:
             pbar.set_postfix_str(file.parent.name + '/' + file.stem)
             datasets.append(cls.load_data(args, file))
+            datasets[-1].path = str(file)
         return datasets
 
     @staticmethod
