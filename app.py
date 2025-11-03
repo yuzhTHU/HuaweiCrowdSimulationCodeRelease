@@ -1,3 +1,4 @@
+""" uvicorn app:app --host 0.0.0.0 --port 12345 """
 import json
 import torch
 import asyncio
@@ -268,7 +269,7 @@ def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model
     )
     des = (
         df_ped
-        .loc[pd.IndexSlice[frame_idx + 1:, ped_list], :]
+        .loc[df_ped.index.get_level_values('id').isin(ped_list)]
         .groupby(level=1, sort=False).tail(1)
         .swaplevel(axis=0).reindex(index=ped_list, level=0)
         .values # (#pedestrian, 2)
@@ -354,10 +355,12 @@ def simulate_one_step(
         df_veh
         .loc[frame+1:frame+args.pred_step]  # pandas 中的切片是闭区间，因此实际上切出来了 pred_step 帧
         .unstack().swaplevel(axis='columns').sort_index(axis='columns')
-        .reindex(columns=veh_list, level=0)
-        .reindex(index=range(frame+1, frame+args.pred_step+1))
-        .values.reshape(args.hist_step+1, len(veh_list), 2) # (hist_step + 1, #vehicle, 2)
-        .transpose(1, 0, 2) # (#vehicle, hist_step + 1, 2)
+        .reindex(
+            index=range(frame+1, frame+args.pred_step+1),
+            columns=pd.MultiIndex.from_product([veh_list, ['x', 'y']])
+        )
+        .values.reshape(args.pred_step, len(veh_list), 2) # (pred_step, #vehicle, 2)
+        .transpose(1, 0, 2) # (#vehicle, pred_step, 2)
     ).to(device=args.device, dtype=torch.float32)
     des_new = des_now  # (S*B, #pedestrian, 2)
     spd_new = spd_now  # (S*B, #pedestrian, 1)
@@ -394,4 +397,4 @@ def simulate_one_step(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=12345) # , reload=True, reload_includes=["src/", 'app2.py'])
+    uvicorn.run(app, host="0.0.0.0", port=12345) # , reload=True, reload_includes=["src/", 'app.py'])

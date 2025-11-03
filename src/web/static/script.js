@@ -133,16 +133,9 @@
         render(name);
     }
 
-    function render(name) {
-        ACTIVE_NAME = name;
-        log(`切换至数据集：${name}`);
-        renderMap();
-    }
-
     // UI: 创建滑块、管理滑块事件
     function createSliderForResponse(name) {
         const item = DATA_CACHE[name];
-        // find min/max frame from frames keys
         const frameKeys = Object.keys(item.frames).map(k => Number(k)).sort((a, b) => a - b);
         const min = frameKeys.length ? frameKeys[0] : 0;
         const max = frameKeys.length ? frameKeys[frameKeys.length - 1] : min;
@@ -151,9 +144,29 @@
         // DOM
         const wrap = document.createElement('div');
         wrap.className = 'slider-wrap';
+        wrap.draggable = false;  // 允许拖动
+
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+
         const label = document.createElement('div');
         label.className = 'slider-label';
-        label.textContent = `${name}`;
+        label.textContent = name;
+        label.draggable = true; // 允许拖动
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✖';
+        closeBtn.className = 'btn btn-sm btn-outline-danger';
+        closeBtn.style.padding = '0 6px';
+        closeBtn.style.lineHeight = '1';
+        closeBtn.title = '删除此滑块';
+
+        header.appendChild(label);
+        header.appendChild(closeBtn);
+        wrap.appendChild(header);
+
         const slider = document.createElement('input');
         slider.type = 'range';
         slider.min = min;
@@ -163,15 +176,31 @@
         slider.style.width = '100%';
         slider.id = `slider-${name.replace(/\s+/g, '_')}-${Date.now()}`;
         item.sliderId = slider.id;
+
         const valueSpan = document.createElement('span');
         valueSpan.textContent = `当前帧: ${cur} (${min}~${max})`;
         valueSpan.style.marginLeft = '8px';
-        wrap.appendChild(label);
+
         wrap.appendChild(slider);
         wrap.appendChild(valueSpan);
         slidersDiv.appendChild(wrap);
-        
-        // Event
+
+        // === 删除按钮事件 ===
+        closeBtn.addEventListener('click', () => {
+            wrap.remove();
+            delete DATA_CACHE[name]; // 可选
+        });
+
+        // === 拖动事件 ===
+        label.addEventListener('dragstart', (ev) => {
+            ev.dataTransfer.setData('text/plain', name);
+            wrap.classList.add('dragging');
+        });
+        label.addEventListener('dragend', () => wrap.classList.remove('dragging'));
+        // slider.addEventListener('mousedown', (ev) => ev.stopPropagation());
+        // slider.addEventListener('touchstart', (ev) => ev.stopPropagation());
+
+        // === 滑动事件 ===
         slider.addEventListener('input', (ev) => {
             const v = Number(ev.target.value);
             item.currentFrame = v;
@@ -180,6 +209,31 @@
         });
         slider.addEventListener('mousedown', () => render(name));
         slider.addEventListener('touchstart', () => render(name));
+    }
+
+    // === 全局：为 slidersDiv 启用拖拽排序 ===
+    slidersDiv.addEventListener('dragover', (ev) => {
+        ev.preventDefault();
+        const dragging = document.querySelector('.dragging');
+        const afterElement = getDragAfterElement(slidersDiv, ev.clientY);
+        if (afterElement == null) {
+            slidersDiv.appendChild(dragging);
+        } else {
+            slidersDiv.insertBefore(dragging, afterElement);
+        }
+    });
+
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.slider-wrap:not(.dragging)')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
     function updateSliderRangeAndValue(name) {
@@ -201,8 +255,35 @@
         if (span) span.textContent = `当前帧: ${cur} (${min}~${max})`;
     }
 
-    // 渲染地图 (Plotly)
-    function renderMap() {
+    // UI: 高亮当前活动滑块
+    function highlightSlider() {
+        const item = DATA_CACHE[ACTIVE_NAME];
+        const sliderWraps = slidersDiv.querySelectorAll('.slider-wrap');
+        sliderWraps.forEach(wrap => {
+            if (wrap.contains(document.getElementById(item.sliderId))) {
+                // 当前滑块高亮
+                wrap.style.border = '2px solid #007bff';
+                wrap.style.backgroundColor = '#e7f1ff';
+            } else {
+                // 取消高亮
+                wrap.style.border = '1px solid #dee2e6';
+                wrap.style.backgroundColor = '#ffffff';
+            }
+        });
+    }
+
+    // 渲染函数：根据 ACTIVE_NAME 渲染地图和轨迹
+    function render(name) {
+        if (ACTIVE_NAME !== name) {
+            ACTIVE_NAME = name;
+            log(`切换至数据集：${name}`);
+            highlightSlider();
+        }
+        renderTrace();
+    }
+
+    // 渲染实体轨迹 (Plotly)
+    function renderTrace() {
         if (!ACTIVE_NAME || !DATA_CACHE[ACTIVE_NAME]) {
             Plotly.react(mapDiv, [], { title: "暂无数据" });
             return;
@@ -210,10 +291,10 @@
         const plotData = [];
         const item = DATA_CACHE[ACTIVE_NAME];
         const entities = item.frames[Number(item.currentFrame)];
-        if (!entities) {
-            Plotly.react(mapDiv, [], { title: `${ACTIVE_NAME} - 当前帧无数据` });
-            return;
-        }
+        // if (!entities) {
+        //     Plotly.react(mapDiv, [], { title: `${ACTIVE_NAME} - 当前帧无数据` });
+        //     return;
+        // }
 
         const byType = {};
         entities.forEach(e => {
@@ -246,8 +327,17 @@
             });
         });
         traces.forEach(t => plotData.push(t));
+    //     Plotly.react(mapDiv, plotData, { responsive: true });
+    // }
 
-        // 背景地图
+    // // 渲染背景地图 (Plotly)
+    // function renderMap() {
+    //     if (!ACTIVE_NAME || !DATA_CACHE[ACTIVE_NAME]) {
+    //         Plotly.react(mapDiv, [], { title: "暂无数据" });
+    //         return;
+    //     }
+    //     const plotData = [];
+    //     const item = DATA_CACHE[ACTIVE_NAME];
         let layout = {
             margin: { t: 20, b: 40, l: 40, r: 10 },
             xaxis: { title: 'x', autorange: true, scaleratio: 1 },
@@ -397,7 +487,7 @@
     async function init() {
         connectWebsocket();
         loadLists();
-        renderMap();
+        renderTrace();
     }
 
     // 启动
