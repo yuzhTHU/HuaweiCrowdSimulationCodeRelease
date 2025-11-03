@@ -1,321 +1,397 @@
-import os
-import io
 import json
-import base64
+import torch
 import asyncio
+import logging
 import numpy as np
-from pydantic import BaseModel
-from typing import Dict, Any, Optional
-from starlette.requests import Request
-from starlette.concurrency import run_in_threadpool
+import pandas as pd
+from pathlib import Path
+from copy import deepcopy
+from argparse import Namespace
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from src.model.model import Model
+from src.diffusion import DDPM, DDIM
+from src.dataset import BaseDataset, UCYDataset, ETHDataset, GCDataset, SDDDataset, WayMoDataset
+from src.utils.logger import init_logger
+from src.web.utils.json_compatible import json_compatible
 
-# --- imports for your model/dataset code (adjust as needed) ---
-# from src.dataset import UCYDataset, ETHDataset, ...
-# from src.model.model import Model
-# from src.diffusion import DDIM, DDPM
-# (We'll assume you have functions to load dataset & checkpoint and run one rollout)
-# -------------------------------------------------------------------
+_logger = logging.getLogger("src")
+init_logger('src')
 
-app = FastAPI()
-BASE_DIR = os.path.dirname(__file__)  # project root
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "src", "web", "static"))
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "src", "web", "static")), name="static")
+DATASET_LIST = pd.read_csv('./data/datasets.csv', sep='\t') # 所有可用的 Dataset
+DATASET_LIST['full_name'] = '[' + DATASET_LIST['dataset'] + '] ' + DATASET_LIST['name']
+MODEL_LIST = [ # 所有可用的 Model
+    '20251103_new-1_104153_DL4', '20251103_new-1-BS128_104322_DL4', 
+    '20251103_new-1-CFG_111635_DL4', '20251103_new-1-lr5e-4_104337_DL4',
+]
+DATASET_DICT = {} # 缓存加载的真实数据集以及模拟的仿真数据集
+MANAGER_DICT = {} # 缓存每个 WebSocket 连接对应的仿真任务
+MODEL = None
+with open('logs/train/20251103_new-1-CFG_111635_DL4/args.json', 'r') as f:
+    ARGS = Namespace(**json.load(f))
 
-# ---------- Simple in-memory stores ----------
-DATASETS: Dict[str, Dict] = {}  # dataset_id -> metadata & df/map
-CHECKPOINTS: Dict[str, Dict] = {}  # ckpt_id -> metadata
-SIMULATIONS: Dict[str, Dict] = {}  # sim_id -> state (history, current_step, paused, frames, map...)
-WS_CLIENTS: Dict[str, WebSocket] = {}
+app = FastAPI(title="Pedestrian Simulation Backend")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 前端可跨域访问
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
 
-# ---------- Pydantic models ----------
-class LoadDatasetReq(BaseModel):
-    dataset_path: str
-    dataset_id: Optional[str] = None
 
-class LoadCheckpointReq(BaseModel):
-    checkpoint_path: str
-    ckpt_id: Optional[str] = None
+@app.get("/")
+async def get_index():
+    with open("src/web/static/index.html", "r") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content, status_code=200)
 
-class StartSimReq(BaseModel):
-    dataset_id: str
-    frame_idx: int
-    checkpoint_id: str
-    sim_id: Optional[str] = None
-    sample_num: int = 1
-    roll_step: int = 12
-    pred_step: int = 1
-    future_5s_speed: Optional[float] = None  # optional override of speed
-    destinations: Optional[Dict[int, list]] = None  # {ped_id: [x,y], ...} manual destinations
 
-# ---------- Utilities ----------
-def encode_map_to_png_bytes(map_array: np.ndarray) -> bytes:
-    """
-    map_array: H x W (0/1) or grayscale - convert to PNG bytes (so frontend can load as image)
-    """
-    from PIL import Image
-    if map_array.dtype != np.uint8:
-        # normalize to 0..255
-        ma = map_array.astype(float)
-        mi, ma_ = ma.min(), ma.max()
-        if ma_ - mi > 0:
-            ma = (ma - mi) / (ma_ - mi) * 255.0
-        else:
-            ma = ma * 0
-        arr = ma.astype(np.uint8)
+@app.get("/api/dataset_list")
+async def dataset_list():
+    """ 获取所有可用的数据集列表 """
+    return JSONResponse(content=json_compatible(DATASET_LIST['full_name'].to_dict()))
+
+
+@app.get("/api/model_list")
+async def model_list():
+    """ 获取所有可用的模型列表 """
+    return JSONResponse(content=json_compatible({i: s for i, s in enumerate(MODEL_LIST)}))
+
+
+@app.get("/api/load_dataset")
+async def load_dataset(idx: int, name: str):
+    """ 加载 DATASET_LIST[idx] 对应的数据集，并保存到 DATASET_DICT[name] 中 """
+    row = DATASET_LIST.loc[idx]
+    if row['dataset'] == 'UCYDataset':
+        dataset = UCYDataset.load_data(ARGS, row['path'])
+    elif row['dataset'] == 'ETHDataset':
+        dataset = ETHDataset.load_data(ARGS, row['path'])
+    elif row['dataset'] == 'SDDDataset':
+        dataset = SDDDataset.load_data(ARGS, row['path'])
+    elif row['dataset'] == 'WayMoDataset':
+        dataset = WayMoDataset.load_data(ARGS, row['path'])
+    elif row['dataset'] == 'GCDataset':
+        dataset = GCDataset.load_data(ARGS, row['path'])
     else:
-        arr = map_array
-    img = Image.fromarray(arr).convert("L")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-# ---------- Placeholder: dataset loader ----------
-def load_dataset_from_path(path: str):
-    """
-    Replace this with your dataset load routine, returning a dict:
-    {
-        "map": map_data,  # numpy HxW
-        "map_meta": {xmin, xmax, ymin, ymax},
-        "df_data": df_data,  # pandas DataFrame like in your code with multiindex (f, id)
-        "n_frames": n_frames,
-        "frame_index_list": list_of_frames,
+        raise ValueError(f"Unknown dataset type: {row['dataset']}")
+    global DATASET_DICT
+    DATASET_DICT[name] = dataset
+    response = {
+        "name": name,
+        "frames": { # {frame: {id: {"type":..., "x":..., "y":...}, ...}, ...}
+            f: (
+                group.set_index("id")
+                .sort_index()[["type", "x", "y"]]
+                .to_dict(orient="records")
+            ) for f, group in dataset.df_data.groupby("f", sort=True)
+        },
+        "map": {
+            "grid": dataset.map_data.map,
+            "xmin": dataset.map_data.xmin,
+            "xmax": dataset.map_data.xmax,
+            "ymin": dataset.map_data.ymin,
+            "ymax": dataset.map_data.ymax,
+        }
     }
-    """
-    # --- DUMMY example: generate empty map and no agents ---
-    H, W = 400, 600
-    map_arr = np.zeros((H, W), dtype=np.uint8)
-    map_meta = {"xmin": 0.0, "xmax": W/10.0, "ymin": 0.0, "ymax": H/10.0}
-    from pandas import DataFrame
-    df = DataFrame()  # you must fill this in with your dataset's df_data
-    return {
-        "map": map_arr,
-        "map_meta": map_meta,
-        "df_data": df,
-        "n_frames": 0,
-        "frame_index_list": [],
-    }
+    return JSONResponse(content={"status": "ok", "response": json_compatible(response), "msg": f"Dataset {name} loaded."})
 
-# ---------- Placeholder: load checkpoint ----------
-def load_checkpoint(path: str):
-    """
-    Load your model checkpoint, return an object you will use later to instantiate model
-    """
-    return {"path": path}
 
-# ---------- Placeholder: perform rollout (adapt your pasted code into this function) ----------
-def run_rollout_once(checkpoint_obj, dataset_obj, frame_idx: int, *,
-                    sample_num=1, roll_step=12, pred_step=1,
-                    future_5s_speed=None, destinations=None):
-    """
-    Run model rollout starting at frame_idx and return a dictionary:
-    {
-    "sim_id": str,
-    "ped_list": [...],  # list of ped ids
-    "veh_list": [...],  # list of vehicle ids
-    "hist_positions": { id: [ [x,y] ... ] }, # up to frame_idx history
-    "ground_truth_future": { id: [ [x,y] ... ] }, # available true future from dataset
-    "simulated_future": { sample_index: { id: [ [x,y], ... ] } } # simulated
-    }
-    IMPORTANT: adapt this function to call into your model code (the main() snippet you gave).
-    For demo we return an empty result.
-    """
-    # TODO: Replace with direct call into your model's simulation logic.
-    # e.g., use your code to prepare pos_now, hst_now, veh_now, then run the denoising loop and build `traj`
-    result = {
-        "sim_id": f"sim_{frame_idx}_{np.random.randint(1e6)}",
-        "ped_list": [],
-        "veh_list": [],
-        "hist_positions": {},
-        "ground_truth_future": {},
-        "simulated_future": {},
-    }
-    return result
+@app.get("/api/load_model")
+async def load_model(idx: int):
+    path = Path('logs/train') / MODEL_LIST[idx] / 'best.pth'
+    checkpoint = torch.load(path, map_location=ARGS.device, weights_only=True)
+    saved_args = Namespace(**checkpoint["args"])
+    global MODEL
+    MODEL = Model(saved_args).to(ARGS.device)
+    MODEL.load_state_dict(checkpoint["model"])
+    MODEL.eval()
+    torch.set_grad_enabled(False)
+    return JSONResponse(content={"status": "ok", "response": MODEL_LIST[idx], "msg": f"Model checkpoint loaded from {path}."})
 
-# ---------- REST endpoints ----------
-@app.post("/api/load_dataset")
-async def api_load_dataset(req: LoadDatasetReq):
-    ds = load_dataset_from_path(req.dataset_path)
-    dsid = req.dataset_id or f"ds_{len(DATASETS)+1}"
-    DATASETS[dsid] = ds
-    # encode map as base64 png for quick return
-    png = encode_map_to_png_bytes(ds["map"])
-    b64 = base64.b64encode(png).decode("ascii")
-    return {"dataset_id": dsid, "n_frames": ds["n_frames"], "map_png_b64": b64, "map_meta": ds["map_meta"]}
-
-@app.post("/api/load_checkpoint")
-async def api_load_checkpoint(req: LoadCheckpointReq):
-    ck = load_checkpoint(req.checkpoint_path)
-    ckid = req.ckpt_id or f"ck_{len(CHECKPOINTS)+1}"
-    CHECKPOINTS[ckid] = ck
-    return {"checkpoint_id": ckid, "path": req.checkpoint_path}
-
-@app.get("/api/dataset/{dataset_id}/frame_count")
-async def api_frame_count(dataset_id: str):
-    if dataset_id not in DATASETS:
-        return JSONResponse({"error": "dataset not found"}, status_code=404)
-    return {"n_frames": DATASETS[dataset_id]["n_frames"]}
-
-@app.get("/api/dataset/{dataset_id}/frame/{frame_idx}")
-async def api_frame(dataset_id: str, frame_idx: int):
-    """
-    Return the metadata and positions for a single frame:
-    - history positions for each agent up to frame_idx (for display)
-    - current positions for this frame
-    - vehicle positions
-    - ground-truth future (optional)
-    """
-    if dataset_id not in DATASETS:
-        return JSONResponse({"error": "dataset not found"}, status_code=404)
-    ds = DATASETS[dataset_id]
-    # NOTE: adapt to your dataset DataFrame structure
-    # For demo we return empty
-    return {
-        "frame_idx": frame_idx,
-        "ped_list": [],  # [id,...]
-        "veh_list": [],
-        "history": {},  # id -> [[x,y],...]
-        "current": {},  # id -> [x,y]
-        "gt_future": {},  # id -> [[x,y], ...]
-    }
-
-# ---------- WebSocket Protocol ----------
-# Frontend will open /ws and send JSON messages of form:
-# { "type": "subscribe", "client_id": "abc" }
-# { "type": "start_sim", "dataset_id":..., "frame_idx":..., "checkpoint_id":..., ... }
-# { "type": "stop_sim", "sim_id": "..." }
-# { "type": "seek_sim", "sim_id": "...", "step": N }  # to view a previous simulation step
-# server sends updates:
-# { "type": "frame_update", "frame_idx": N, "current": {...}, "history": {...}, "gt_future": {...} }
-# { "type": "sim_step", "sim_id": ..., "sim_step_idx": K, "simulated_future": {...}, "sim_done": bool }
-# { "type": "sim_state", ... }
-
-# Helper: broadcast to single websocket
-async def ws_send_safe(ws: WebSocket, data: dict):
-    try:
-        await ws.send_text(json.dumps(data, default=lambda o: None))
-    except Exception:
-        pass
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
-    client_id = f"client_{id(ws)}_{np.random.randint(1e6)}"
-    WS_CLIENTS[client_id] = ws
     try:
         while True:
-            text = await ws.receive_text()
-            try:
-                msg = json.loads(text)
-            except Exception:
-                continue
-            typ = msg.get("type")
-            if typ == "ping":
-                await ws_send_safe(ws, {"type": "pong"})
-            elif typ == "start_sim":
-                # start simulation in background task (async)
-                req = StartSimReq(**msg.get("payload", {}))
-                sim_id = req.sim_id or f"sim_{np.random.randint(1e9)}"
-                # initialize sim state
-                SIMULATIONS[sim_id] = {
-                    "dataset_id": req.dataset_id,
-                    "frame_idx": req.frame_idx,
-                    "checkpoint_id": req.checkpoint_id,
-                    "sample_num": req.sample_num,
-                    "roll_step": req.roll_step,
-                    "pred_step": req.pred_step,
-                    "future_5s_speed": req.future_5s_speed,
-                    "destinations": req.destinations or {},
-                    "status": "running",
-                    "current_step": 0,
-                    "sim_data": None,
-                    "clients": [client_id],
-                }
-                # run rollout in a background task (non-blocking)
-                asyncio.create_task(simulation_worker(sim_id, ws))
-                await ws_send_safe(ws, {"type": "sim_started", "sim_id": sim_id})
-            elif typ == "stop_sim":
-                sim_id = msg.get("sim_id")
-                if sim_id and sim_id in SIMULATIONS:
-                    SIMULATIONS[sim_id]["status"] = "stopped"
-                    await ws_send_safe(ws, {"type": "sim_stopped", "sim_id": sim_id})
-            elif typ == "seek_sim":
-                sim_id = msg.get("sim_id")
-                step = int(msg.get("step", 0))
-                # return stored sim up to step
-                if sim_id in SIMULATIONS and SIMULATIONS[sim_id].get("sim_data") is not None:
-                    simdata = SIMULATIONS[sim_id]["sim_data"]
-                    # send the portion up to step
-                    await ws_send_safe(ws, {"type": "sim_seek", "sim_id": sim_id, "step": step, "simulated_future": simdata.get("simulated_until", {})})
-            elif typ == "request_frame":
-                dataset_id = msg.get("dataset_id")
-                frame_idx = int(msg.get("frame_idx", 0))
-                info = await api_frame(dataset_id, frame_idx)
-                await ws_send_safe(ws, {"type": "frame_info", "payload": info})
-            else:
-                await ws_send_safe(ws, {"type": "error", "message": f"unknown type {typ}"})
+            data = await ws.receive_json()
+            action = data.get("action")
+            if action == "ping":
+                asyncio.create_task(ws.send_json({"status": "pong"}))
+            elif action == "start":
+                dataset_name = data["dataset_name"]
+                frame_idx = data["frame_idx"]
+                save_name = f'sim-{dataset_name}-from-{frame_idx}'
+                result_queue = asyncio.Queue() # maxsize=10
+                sendclient_worker_task = asyncio.create_task(
+                    sendclient_worker(ws, dataset_name, frame_idx, save_name, result_queue)
+                )
+                simulation_worker_task = asyncio.create_task(
+                    simulation_worker(ws, dataset_name, frame_idx, save_name, result_queue)
+                )
+                MANAGER_DICT[ws] = (sendclient_worker_task, simulation_worker_task)
+                _logger.info(f"Started simulation for dataset {dataset_name} from frame {frame_idx}, saving to {save_name}. Current #simulations: {len(MANAGER_DICT)}")
+            elif action == "stop":
+                if ws in MANAGER_DICT:
+                    sendclient_worker_task, simulation_worker_task = MANAGER_DICT.pop(ws)
+                    simulation_worker_task.cancel()
+                    sendclient_worker_task.cancel()
+                    asyncio.create_task(ws.send_json({"status": "ok", "msg": "Simulation stopped"}))
+                    _logger.info("Simulation stopped by client request.")
+                else:
+                    asyncio.create_task(ws.send_json({"status": "error", "msg": "No simulation running"}))
+                    _logger.info("No simulation to stop for this WebSocket.")
     except WebSocketDisconnect:
-        del WS_CLIENTS[client_id]
+        if ws in MANAGER_DICT:
+            sendclient_worker_task, simulation_worker_task = MANAGER_DICT.pop(ws)
+            simulation_worker_task.cancel()
+            sendclient_worker_task.cancel()
+        _logger.info("WebSocket disconnected, cleaned up simulation tasks.")
 
-# ---------- Simulation worker ----------
-async def simulation_worker(sim_id: str, ws: WebSocket):
-    """
-    This coroutine runs the model rollout in small steps and pushes updates to the connected websocket.
-    It stores the full simulation in SIMULATIONS[sim_id]['sim_data'] after each step so the frontend can seek back.
-    """
-    sim = SIMULATIONS[sim_id]
-    dsid = sim["dataset_id"]
-    ckd = sim["checkpoint_id"]
-    frame_idx = sim["frame_idx"]
-    # Validate dataset & checkpoint
-    if dsid not in DATASETS or ckd not in CHECKPOINTS:
-        await ws_send_safe(ws, {"type": "sim_error", "sim_id": sim_id, "message": "dataset or checkpoint missing"})
-        sim["status"] = "stopped"
-        return
 
-    # ---------- run the actual rollout (blocking) in threadpool to avoid blocking asyncio loop ----------
-    def blocking_rollout():
-        # call into your run_rollout_once - must return serializable dict
-        res = run_rollout_once(CHECKPOINTS[ckd], DATASETS[dsid], frame_idx,
-                            sample_num=sim["sample_num"],
-                            roll_step=sim["roll_step"],
-                            pred_step=sim["pred_step"],
-                            future_5s_speed=sim["future_5s_speed"],
-                            destinations=sim["destinations"])
-        return res
+async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, save_name: str, result_queue: asyncio.Queue):
+    """ 将 result_queue 中订阅的模拟结果保存至 saved_name, 并同时发送给前端客户端 """
+    try:
+        if save_name not in DATASET_DICT:
+            DATASET_DICT[save_name] = deepcopy(DATASET_DICT[dataset_name])
+            DATASET_DICT[save_name].df_data = DATASET_DICT[save_name].df_data[DATASET_DICT[save_name].df_data['f'] <= frame_idx]
+            df_data = DATASET_DICT[save_name].df_data
+            map_data = DATASET_DICT[save_name].map_data
+            response = {
+                "name": save_name,
+                "frames": {
+                    f: group.set_index("id").sort_index()[["type", "x", "y"]].to_dict(orient="records")
+                    for f, group in df_data.groupby("f", sort=True)
+                },
+                "map": {
+                    "grid": map_data.map, "xmin": map_data.xmin, "xmax": map_data.xmax,
+                    "ymin": map_data.ymin, "ymax": map_data.ymax,
+                },
+            }
+            await ws.send_json(json_compatible({
+                'status': 'ok', 'data': response, 'msg': f'Initialized simulation dataset {save_name} from {dataset_name} up to frame {frame_idx}.'
+            }))
+        while True:
+            df_new_frame = await result_queue.get()
+            DATASET_DICT[save_name].df_data = pd.concat([DATASET_DICT[save_name].df_data, df_new_frame], ignore_index=True)
+            response = {
+                'name': save_name, 'map': None, 'frames': {
+                    f: group.set_index('id').sort_index()[['type', 'x', 'y']].to_dict(orient='records') 
+                    for f, group in df_new_frame.groupby('f', sort=True)
+                },
+            }
+            await ws.send_json(json_compatible({
+                'status': 'ok', 'data': response, 'msg': f'Sent simulated frame {df_new_frame["f"].min()}~{df_new_frame["f"].max()} to client.'
+            }))
+    except asyncio.CancelledError:
+        _logger.info("Sendclient worker cancelled.")
+        raise
+    except Exception as e:
+        import traceback
+        _logger.error(
+            f"Simulation worker encountered an error: [{type(e)}] {e}\n"
+            f"{traceback.format_exc()}"
+        )
+        raise
 
-    # We will simulate in chunks: call the rollout function once (which may return full traj),
-    # then stream step-by-step to the client. If your model supports stepwise generation, better to adapt run_rollout_once to yield steps.
-    rollout_result = await run_in_threadpool(blocking_rollout)
+async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, save_name: str, result_queue: asyncio.Queue):
+    """ 从 dataset_name 的 frame_idx 帧开始进行模拟 """
+    try:
+        diffusion = DDIM(ARGS)
+        dataset = DATASET_DICT[dataset_name]
+        now = await asyncio.to_thread(init_simulation, ARGS, dataset, frame_idx, MODEL) # 运行 100~200ms
+        _logger.info(f"Frame {frame_idx}: {len(now[0])} pedestrians, {len(now[1])} vehicles.")
+        while True:
+            df_new, now = await asyncio.to_thread(simulate_one_step, ARGS, MODEL, diffusion, *now) # 运行 100~200ms
+            await result_queue.put(df_new)
+    except asyncio.CancelledError:
+        _logger.info("Simulation worker cancelled.")
+        raise
+    except Exception as e:
+        import traceback
+        _logger.error(
+            f"Simulation worker encountered an error: [{type(e)}] {e}\n"
+            f"{traceback.format_exc()}"
+        )
+        raise
 
-    # store result
-    sim["sim_data"] = rollout_result
-    # We'll ambulate through roll steps and send updates:
-    # For demonstration send a message per step (sleep a bit)
-    total_steps = sim["roll_step"] * max(1, sim["pred_step"])
-    # If rollout_result includes simulated frames as array, iterate through them. Here we'll just simulate sending incremental steps.
-    for step in range(total_steps):
-        if sim["status"] == "stopped":
-            break
-        # Build payload - in your real run, include simulated_future up to this step
-        payload = {
-            "type": "sim_step",
-            "sim_id": sim_id,
-            "step": step,
-            "sim_done": (step == total_steps - 1),
-            # include simulated trajectories up to this step. Example:
-            "simulated_future": rollout_result.get("simulated_future", {}),
+
+def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model: Model):
+    df_data = dataset.df_data.set_index(['f', 'id']).sort_index()
+    df_ped = df_data.loc[df_data['type'] == 'pedestrian', ['x', 'y']]
+    df_veh = df_data.loc[df_data['type'] == 'vehicle', ['x', 'y']]
+    ped_list = df_ped.loc[frame_idx].index.tolist() if frame_idx in df_ped.index else []
+    veh_list = df_veh.loc[frame_idx].index.tolist() if frame_idx in df_veh.index else []
+    pos = (
+        df_ped
+        .reindex(pd.MultiIndex.from_product([
+            [frame_idx], 
+            ped_list
+        ], names=['f', 'id']))
+        # .fillna(0.0)  # 不应该有 nan
+        .values.reshape(len(ped_list), 2) # (#pedestrian, 2)
+    )
+    vel = (
+        df_ped
+        .reindex(pd.MultiIndex.from_product([
+            [frame_idx-1, frame_idx], 
+            ped_list
+        ], names=['f', 'id']))
+        .unstack()
+        .diff().mul(args.fps).iloc[1]
+        .unstack().T
+        .fillna(0.0)
+        .values # (#pedestrian, 2)
+    )
+    hst = (
+        df_ped
+        .reindex(pd.MultiIndex.from_product([
+            range(frame_idx-args.hist_step, frame_idx), 
+            ped_list
+        ], names=['f', 'id']))
+        .values.reshape(args.hist_step, len(ped_list), 2) # (hist_step, #pedestrian, 2)
+        .transpose(1, 0, 2) # (#pedestrian, hist_step, 2)
+    )
+    veh = (
+        df_veh
+        .reindex(pd.MultiIndex.from_product([
+            range(frame_idx-args.hist_step, frame_idx + 1), 
+            veh_list
+        ], names=['f', 'id']))
+        .values.reshape(args.hist_step+1, len(veh_list), 2) # (#vehicle, hist_step + 1, 2)
+        .transpose(1, 0, 2) # (#vehicle, hist_step + 1, 2)
+    )
+    des = (
+        df_ped
+        .loc[pd.IndexSlice[frame_idx + 1:, ped_list], :]
+        .groupby(level=1, sort=False).tail(1)
+        .swaplevel(axis=0).reindex(index=ped_list, level=0)
+        .values # (#pedestrian, 2)
+    )
+    spd = (
+        df_ped
+        .reindex(pd.MultiIndex.from_product([
+            range(frame_idx, frame_idx+int(5*args.fps) + 1),
+            ped_list
+        ], names=['f', 'id']))
+        .unstack().ffill().bfill().diff().mul(args.fps).iloc[1:]
+        .stack(future_stack=True).pow(2).sum(axis='columns').pow(0.5)
+        .unstack().mean(axis='rows')
+        .values[:, np.newaxis] # (#pedestrian, 1)
+    )
+    map_data = dataset.map_data
+
+    ## Simulation
+    S = args.sample_num  # 采样次数
+    N = args.denoise_step  # 采样步数
+    assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
+    assert 1 <= args.step_offset <= args.T // N, f"step_offset 应该取值于 {{1, ..., {args.T // N}}}!"
+    pos_now = torch.from_numpy(pos).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1)  # (S*1, #pedestrian, 2)
+    vel_now = torch.from_numpy(vel).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1)  # (S*1, #pedestrian, 2)
+    hst_now = torch.from_numpy(hst).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1, 1)  # (S*1, #pedestrian, hist_step, 2)
+    des_now = torch.from_numpy(des).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1)  # (S*1, #pedestrian, 2)
+    spd_now = torch.from_numpy(spd).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1)  # (S*1, #pedestrian, 1)
+    veh_now = torch.from_numpy(veh).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1, 1)  # (S*1, #vehicle, hist_step + 1, 2)
+    model.set_map_embedding(
+        map=torch.from_numpy(map_data.map).to(device=args.device, dtype=torch.float32),
+        xmin=map_data.xmin,
+        xmax=map_data.xmax,
+        ymin=map_data.ymin,
+        ymax=map_data.ymax,
+    )
+    frame = frame_idx
+    return ped_list, veh_list, df_veh, frame, pos_now, vel_now, hst_now, des_now, spd_now, veh_now
+
+
+def simulate_one_step(
+        args: Namespace, model: Model, diffusion: DDPM,
+        ped_list, veh_list, df_veh, frame, pos_now, vel_now, hst_now, des_now, spd_now, veh_now,
+    ):
+    model.eval()
+    torch.set_grad_enabled(False)
+
+    # _logger.info(f"Simulating from frame {frame} to frame {frame + args.pred_step}...")
+    S = args.sample_num  # 采样次数
+    N = args.denoise_step  # 采样步数
+    ped_length_repeat = torch.full((S, ), len(ped_list), device=args.device, dtype=torch.long)  # (S,)
+    veh_length_repeat = torch.full((S, ), len(veh_list), device=args.device, dtype=torch.long)  # (S,)
+
+    # _logger.info(f"  Starting setting vehicle embeddings...")
+    model.set_veh_embedding(veh=veh_now)
+    # _logger.info(f"  Starting setting pedestrian embeddings...")
+    model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
+    # _logger.info(f"  Starting setting surrounding info...")
+    model.set_sur_info()
+
+    shape = [S, len(ped_list), args.pred_step, 2]  # (S*1, #pedestrian, pred_step, 2)
+    xt = torch.randn(shape, device=args.device)  # 从噪声开始
+    stride = args.T // N
+    for t in reversed(range(args.step_offset, args.T+1, stride)):
+        # _logger.info(f"  Denoising step at t={t}...")
+        noisy_acc = xt
+        denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
+        output = model(
+            noisy_acc=noisy_acc, 
+            denoise_t=denoise_t,
+            ped_length=ped_length_repeat, 
+            veh_length=veh_length_repeat,
+        )  # (S*B, #pedestrian, pred_step, 2)
+        if args.predict_noise:
+            xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
+        else:
+            xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
+    # _logger.info(f"  Denoising completed.")
+    
+    acc_new = xt / args.scale_accelerate
+    vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+    pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+    veh_new = torch.from_numpy(
+        df_veh
+        .loc[frame+1:frame+args.pred_step]  # pandas 中的切片是闭区间，因此实际上切出来了 pred_step 帧
+        .unstack().swaplevel(axis='columns').sort_index(axis='columns')
+        .reindex(columns=veh_list, level=0)
+        .reindex(index=range(frame+1, frame+args.pred_step+1))
+        .values.reshape(args.hist_step+1, len(veh_list), 2) # (hist_step + 1, #vehicle, 2)
+        .transpose(1, 0, 2) # (#vehicle, hist_step + 1, 2)
+    ).to(device=args.device, dtype=torch.float32)
+    des_new = des_now  # (S*B, #pedestrian, 2)
+    spd_new = spd_now  # (S*B, #pedestrian, 1)
+    # _logger.info(f"  Computed new positions and velocities.")
+
+    hst_now = torch.cat([hst_now, pos_now.unsqueeze(-2), pos_new], dim=-2)[:, :, -args.hist_step-1:-1, :] # (S*B, #pedestrian, hist_step, 2)
+    veh_now = torch.cat([veh_now, veh_new.unsqueeze(0).repeat(S, 1, 1, 1)], dim=-2)[:, :, -args.hist_step-1:, :] # (S*B, #vehicle, hist_step + 1, 2)
+    pos_now = pos_new[:, :, -1, :] # (S*B, #pedestrian, 2)
+    vel_now = vel_new[:, :, -1, :] # (S*B, #pedestrian, 2)
+    spd_now = spd_new  # (S*B, #pedestrian, 1)
+    des_now = des_new  # (S*B, #pedestrian, 2)
+    # _logger.info(f"  Updated states for next step.")
+
+    # _logger.info(f"  Converting new positions to CPU numpy. {pos_new.shape}, {type(pos_new)}")
+    df_ped_new = pd.DataFrame([
+        {
+            'f': frame + 1 + f,
+            'id': ped_list[i],
+            'type': 'pedestrian',
+            'x': float(pos_new[0, i, f, 0]),
+            'y': float(pos_new[0, i, f, 1]),
         }
-        await ws_send_safe(ws, payload)
-        sim["current_step"] = step
-        await asyncio.sleep(0.1)  # small pause so frontend animates nicely
-    sim["status"] = "finished" if sim["status"] != "stopped" else "stopped"
-    await ws_send_safe(ws, {"type": "sim_finished", "sim_id": sim_id, "status": sim["status"]})
+        for i in range(pos_new.shape[1])
+        for f in range(pos_new.shape[2])
+    ])
+    # _logger.info(f"  Converted new positions to CPU numpy. {pos_new.shape}, {type(pos_new)}")
+    df_veh_new = df_veh.loc[frame+1:frame+args.pred_step]
+    df_new = pd.concat([df_ped_new, df_veh_new], ignore_index=True)
+    frame = frame + args.pred_step
+    # _logger.info(f"Completed simulation up to frame {frame}.")
 
-# ---------- Simple index page ----------
-@app.get("/")
-async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return df_new, (ped_list, veh_list, df_veh, frame, pos_now, vel_now, hst_now, des_now, spd_now, veh_now)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=12345) # , reload=True, reload_includes=["src/", 'app2.py'])

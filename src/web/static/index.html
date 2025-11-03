@@ -1,64 +1,85 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="connect-src *;">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>行人模拟可视化</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.24.2.min.js"></script> <!-- Plotly -->
+  <style>
+    body { background-color: #f8f9fa; font-family: Arial, sans-serif; margin: 20px; }
+    #log {
+      background-color: #212529;
+      color: #00ff88;
+      padding: 1rem;
+      border-radius: .5rem;
+      height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+    }
+    #map { border: 1px solid #ccc; width: 100%; max-width: 900px; height: 500px; position: relative; margin: 0 auto 1rem; }
+    .entity { position: absolute; border-radius: 50%; text-align: center; color: white; font-size: 12px; }
+    .pedestrian { background: blue; width: 10px; height: 10px; }
+    .vehicle { background: red; width: 14px; height: 14px; }
+    #controls { margin-bottom: 10px; }
+    button { margin-right: 5px; }
+    .control-row { display:flex; gap:8px; align-items:center; justify-content:center; margin-bottom:8px; flex-wrap:wrap; }
+    .slider-container { margin-top: 8px; }
+    .slider-wrap { margin-bottom: 10px; border-radius:6px; padding:8px; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);}
+    .slider-label { font-weight:600; margin-bottom:6px; }
+  </style>
 </head>
+
 <body>
-  <div id="app">
-    <header>
-      <h1>行人/车辆 模拟可视化</h1>
-    </header>
+  <div class="container py-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title mb-4 text-center">行人模拟可视化</h2>
 
-    <section id="controls">
-      <div class="row">
-        <label>数据集路径: <input id="dataset_path" value="./data/..." /></label>
-        <button id="btn_load_dataset">加载数据集</button>
-        <span id="dataset_info"></span>
+        <div id="firefoxWarning" class="alert alert-warning d-none" role="alert">
+          检测到您使用的是 Firefox 浏览器，WebSocket 功能可能无法正常使用，请换用 Chrome 或 Edge。
+        </div>
+        
+        <!-- 通过 Plotly 显示的地图 -->
+        <div id="map"></div>
+
+        <!-- 控制按钮和各种控件 -->
+        <div id="controls" class="text-center mb-4">
+          <div class="control-row">
+            <label class="form-label mb-0">Dataset:</label>
+            <select id="datasetSelect" class="form-select" style="width:340px;"></select>
+            <button class="btn btn-success px-3" id="loadDatasetBtn">加载数据</button>
+          </div>
+
+          <div class="control-row">
+            <label class="form-label mb-0">Model:</label>
+            <select id="modelSelect" class="form-select" style="width:340px;"></select>
+            <button class="btn btn-success px-3" id="loadModelBtn">加载模型</button>
+          </div>
+
+          <div class="control-row">
+            <button class="btn btn-primary px-4" id="startSimBtn">开始模拟</button>
+            <button class="btn btn-danger px-4" id="stopSimBtn">停止模拟</button>
+          </div>
+
+          <!-- 滑块容器（动态加入） -->
+          <div id="sliders" class="slider-container mx-auto" style="max-width:900px;"></div>
+        </div>
+
+        <!-- 消息输出 -->
+        <pre id="log"></pre>
+
       </div>
-      <div class="row">
-        <label>Checkpoint 路径: <input id="checkpoint_path" value="./checkpoints/best.pth" /></label>
-        <button id="btn_load_checkpoint">加载 checkpoint</button>
-        <span id="checkpoint_info"></span>
-      </div>
-
-      <div class="row">
-        <label>原始帧 (frame): <input type="range" id="frame_slider" min="0" max="100" value="0" /></label>
-        <span id="frame_idx">0</span>
-        <button id="btn_request_frame">取该帧数据</button>
-      </div>
-
-      <div class="row">
-        <label>模拟步数: <input id="roll_steps" type="number" value="12" /></label>
-        <label>sample_num: <input id="sample_num" type="number" value="1" /></label>
-        <label>future_5s_speed: <input id="future_5s_speed" type="number" step="0.1" /></label>
-        <button id="btn_start_sim">开始模拟（从当前帧）</button>
-        <button id="btn_stop_sim">停止模拟</button>
-      </div>
-    </section>
-
-    <section id="canvas_area">
-      <canvas id="map_canvas" width="800" height="600"></canvas>
-      <div id="legend">
-        <div><span class="dot ped"></span> 行人 (真实)</div>
-        <div><span class="dot veh"></span> 车辆 (真实)</div>
-        <div><span class="dot sim"></span> 模型预测</div>
-      </div>
-    </section>
-
-    <section id="sim_controls">
-      <div>模拟滑条（每次新模拟生成新的滑条）：</div>
-      <div id="sim_sliders_container"></div>
-      <div>说明：点击某个 agent 可查看完整轨迹并高亮；在地图上单击可设置 destination（按住 Shift 可拖动设置）</div>
-    </section>
-
-    <footer>
-      <small>Backend WebSocket status: <span id="ws_status">disconnected</span></small>
-    </footer>
+    </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/script.js"></script>
+  <script>
+    if (navigator.userAgent.toLowerCase().includes('firefox')) {
+      document.getElementById('firefoxWarning').classList.remove('d-none');
+    }
+  </script>
+
 </body>
 </html>
