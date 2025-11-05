@@ -19,6 +19,7 @@
     // 数据缓存与运行状态
     const DATA_CACHE = {};  // { name: { name, map, frames: { frameNumber: { id: {type, x, y}, ... } }, currentFrame, sliderId } }
     let ACTIVE_NAME = null; // 当前选中的 name
+    let ARGS_LOADED = null; // 当前加载的模型参数
     let MODEL_LOADED = null; // 当前加载的模型
     let SIMULATION_RUNNING = false; // 是否有模拟在运行中
 
@@ -401,7 +402,8 @@
     // 加载 dataset
     loadDatasetBtn.addEventListener('click', async () => {
         const idx = datasetSelect.value;
-        if (idx == null) { log('请先选择 dataset'); return; }
+        if (idx == null) { alert('请先选择数据集'); return; }
+        if (ARGS_LOADED == null) { alert('请先加载模型'); return; }
         try {
             // 将 name 设为一个唯一标识，后端会把它作为 key 保存在 DATASET_DICT[name]
             const name = datasetSelect.options[datasetSelect.selectedIndex].text || 'dataset';
@@ -426,7 +428,7 @@
     // 加载 model
     loadModelBtn.addEventListener('click', async () => {
         const idx = modelSelect.value;
-        if (idx == null) { log('请先选择 model'); return; }
+        if (idx == null) { log('请先选择模型'); return; }
         try {
             const name = modelSelect.options[modelSelect.selectedIndex].text || 'model';
             log(`正在加载模型权重 ${name} (idx=${idx}) ...`);
@@ -434,7 +436,9 @@
             const msg = await res.json();
             if (msg.status === 'ok') {
                 log('Server:', msg.msg || 'Model loaded.');
-                MODEL_LOADED = msg.response || 'Loaded Model';
+                MODEL_LOADED = name;
+                ARGS_LOADED = msg.response;
+                log('当前模型参数:', ARGS_LOADED);
             } else {
                 log('加载模型失败:', msg.msg || msg);
             }
