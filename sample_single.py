@@ -167,15 +167,15 @@ def main(args):
     timer.clear(reset=True)
     traj = []
     for frame in range(frame_idx, frame_idx+args.roll_step, args.pred_step):
-        if frame % 2 == frame_idx % 2:
+        if (frame - frame_idx) % 2 == 0:
             model.set_veh_embedding(veh=veh_now)
-            torch.cuda.synchronize()
+            # torch.cuda.synchronize()
             timer.add('Embed Vehicle')
             model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
-            torch.cuda.synchronize()
+            # torch.cuda.synchronize()
             timer.add('Embed Pedestrian')
             model.set_sur_info()
-            torch.cuda.synchronize()
+            # torch.cuda.synchronize()
             timer.add('Embed Surroundings')
 
             shape = [S, len(ped_list), args.pred_step, 2]  # (S*1, #pedestrian, pred_step, 2)
@@ -189,18 +189,17 @@ def main(args):
                     denoise_t=denoise_t,
                     ped_length=ped_length_repeat, 
                     veh_length=veh_length_repeat,
-                    timer=timer,
+                    # timer=timer,
                 )  # (S*B, #pedestrian, pred_step, 2)
                 if args.predict_noise:
                     xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
                 else:
                     xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
-                torch.cuda.synchronize()
+                # torch.cuda.synchronize()
                 timer.add('Denoise')
             acc_new = xt / args.scale_accelerate
         else:
             acc_new = 0.0 * acc_new
-
         frame_new = frame + args.pred_step
         vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
         pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
@@ -304,9 +303,9 @@ if __name__ == '__main__':
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'])
     parser.add_argument("--T", type=int, default=100, help="训练时的扩散步数")
-    parser.add_argument('--sample_num', type=int, default=20, help="测试时每个轨迹采样 {sample_num} 次")
-    parser.add_argument('--denoise_step', type=int, default=10, help="采样时进行 {denoise_step} 次去噪")
-    parser.add_argument('--step_offset', type=int, default=1, help="最后一步去噪从 x_{step_offset} 到 x_0")
+    parser.add_argument('--sample_num', type=int, default=10, help="测试时每个轨迹采样 {sample_num} 次")
+    parser.add_argument('--denoise_step', type=int, default=2, help="采样时进行 {denoise_step} 次去噪")
+    parser.add_argument('--step_offset', type=int, default=10, help="最后一步去噪从 x_{step_offset} 到 x_0")
     parser.add_argument('--scale_accelerate', type=float, default=1.0, help="加速度的缩放比例")
     parser.add_argument("--hist_step", type=int, default=8)
     parser.add_argument("--pred_step", type=int, default=1)
@@ -317,12 +316,12 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--save_dir", type=str, default="./logs/sample")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument('--model_dim', type=int, default=128)
+    parser.add_argument('--model_dim', type=int, default=64)
     parser.add_argument('--map_feature_dim', type=int, default=64)
     parser.add_argument('--head_num', type=int, default=4)
     parser.add_argument('--dropout', type=float, default=0.3)
     parser.add_argument('--attention_layer_num', type=int, default=1)
-    parser.add_argument('--lstm_layer_num', type=int, default=3)
+    parser.add_argument('--lstm_layer_num', type=int, default=1)
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument('--cache_dataset', action='store_true', default=True)

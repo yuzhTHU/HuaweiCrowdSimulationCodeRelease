@@ -1,0 +1,12 @@
+setproctitle
+tqdm
+numpy
+matplotlib
+pandas
+scipy
+torch
+ipykernel
+seaborn
+fastapi
+uvicorn[standard]
+websockets
