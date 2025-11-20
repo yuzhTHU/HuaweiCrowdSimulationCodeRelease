@@ -70,6 +70,7 @@ def main(args):
     df_ped = df_data.loc[df_data['type'] == 'pedestrian', ['x', 'y']]
     df_veh = df_data.loc[df_data['type'] == 'vehicle', ['x', 'y']]
     ped_list = df_ped.loc[frame_idx].index.tolist() if frame_idx in df_ped.index else []
+    ped_list = [ped_list[0]] # 仅测试一个行人
     veh_list = df_veh.loc[frame_idx].index.tolist() if frame_idx in df_veh.index else []
     pos = (
         df_ped
@@ -166,36 +167,40 @@ def main(args):
     timer.clear(reset=True)
     traj = []
     for frame in range(frame_idx, frame_idx+args.roll_step, args.pred_step):
-        model.set_veh_embedding(veh=veh_now)
-        torch.cuda.synchronize()
-        timer.add('Embed Vehicle')
-        model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
-        torch.cuda.synchronize()
-        timer.add('Embed Pedestrian')
-        model.set_sur_info()
-        torch.cuda.synchronize()
-        timer.add('Embed Surroundings')
-
-        shape = [S, len(ped_list), args.pred_step, 2]  # (S*1, #pedestrian, pred_step, 2)
-        xt = torch.randn(shape, device=args.device)  # 从噪声开始
-        stride = args.T // N
-        for t in reversed(range(args.step_offset, args.T+1, stride)):
-            noisy_acc = xt
-            denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
-            output = model(
-                noisy_acc=noisy_acc, 
-                denoise_t=denoise_t,
-                ped_length=ped_length_repeat, 
-                veh_length=veh_length_repeat,
-                timer=timer,
-            )  # (S*B, #pedestrian, pred_step, 2)
-            if args.predict_noise:
-                xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
-            else:
-                xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
+        if frame % 2 == frame_idx % 2:
+            model.set_veh_embedding(veh=veh_now)
             torch.cuda.synchronize()
-            timer.add('Denoise')
-        acc_new = xt / args.scale_accelerate
+            timer.add('Embed Vehicle')
+            model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
+            torch.cuda.synchronize()
+            timer.add('Embed Pedestrian')
+            model.set_sur_info()
+            torch.cuda.synchronize()
+            timer.add('Embed Surroundings')
+
+            shape = [S, len(ped_list), args.pred_step, 2]  # (S*1, #pedestrian, pred_step, 2)
+            xt = torch.randn(shape, device=args.device)  # 从噪声开始
+            stride = args.T // N
+            for t in reversed(range(args.step_offset, args.T+1, stride)):
+                noisy_acc = xt
+                denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
+                output = model(
+                    noisy_acc=noisy_acc, 
+                    denoise_t=denoise_t,
+                    ped_length=ped_length_repeat, 
+                    veh_length=veh_length_repeat,
+                    timer=timer,
+                )  # (S*B, #pedestrian, pred_step, 2)
+                if args.predict_noise:
+                    xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
+                else:
+                    xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
+                torch.cuda.synchronize()
+                timer.add('Denoise')
+            acc_new = xt / args.scale_accelerate
+        else:
+            acc_new = 0.0 * acc_new
+
         frame_new = frame + args.pred_step
         vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
         pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
@@ -264,7 +269,7 @@ def main(args):
         f"[#66CCFF]Rollout Time={records['rollout_time']*1000:.2f}ms/step,\n"
         f"[bold orange]FPS={records['FPS']:.2f}Hz."
     ))
-    
+
     # Visualize rollout
     save_file = save_path / f"{args.exp_name}_rollout.png"
     fi, fig, axes = get_fig(1, 1, AW=6, AH=6, dpi=300)

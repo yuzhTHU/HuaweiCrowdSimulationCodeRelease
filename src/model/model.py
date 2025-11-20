@@ -31,15 +31,15 @@ class SinusoidalEmbedding(nn.Module):
             nn.ReLU(),
             nn.Linear(embed_dim * 4, embed_dim),
         )
+self.half_dim = self.embed_dim // 2
+        self.freq = torch.exp(
+            -torch.arange(self.half_dim).float()
+            * (math.log(10000.0) / (self.half_dim - 1))
+        )[None, :]
 
     def forward(self, t: torch.LongTensor):
         # sinusoidal position encoding
-        half_dim = self.embed_dim // 2
-        freq = torch.exp(
-            -torch.arange(half_dim, device=t.device).float()
-            * (math.log(10000.0) / (half_dim - 1))
-        )
-        emb = t[:, None].float() * freq[None]  # (batch, half_dim)
+                emb = t[:, None].float() * self.freq.to(t.device)  # (batch, half_dim)
         emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)  # (batch, embed_dim)
         return self.mlp(emb)  # (batch, embed_dim)
 

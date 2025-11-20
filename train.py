@@ -1,7 +1,9 @@
+import re
 import sys
 import time
 import json
 import torch
+import shlex
 import random
 import logging
 import numpy as np
@@ -736,23 +738,19 @@ if __name__ == "__main__":
     if args.exp_name is None:
         now = datetime.now()
         date = now.strftime("%Y%m%d")
-        hour = now.strftime("%H%M%S")
+        curr = now.strftime("%H%M%S")
         host = gethostname()
-        invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
-        for char in invalid_chars:
-            args.name = args.name.replace(char, '_')
-        args.exp_name = f'{date}_{args.name}_{hour}_{host}'
+        exp_name = f'{date}_{args.name}_{curr}_{host}'
+        exp_name = re.compile(r'[ <>:"/\\|?*\x00-\x1f]').sub('_', exp_name.strip())
+        exp_name = exp_name or 'unnamed'
+        exp_name = exp_name[:255] # Max filename length on most filesystems
+        args.exp_name = exp_name
     save_path = Path(args.save_dir) / args.exp_name
     if not save_path.exists():
         save_path.mkdir(parents=True, exist_ok=True)
     else:
         _logger.warning(f"Save path {save_path} already exists.")
     args.save_path = str(save_path)
-
-    ## Set Seed
-    if args.seed is None:
-        args.seed = random.randint(1, 10000)
-    seed_all(args.seed)
 
     ## Init Logger
     init_logger(
@@ -762,13 +760,16 @@ if __name__ == "__main__":
         info_level="debug" if args.debug else "info",
     )
 
-    ## Save Command
-    args.command = ' '.join([sys.executable, *sys.argv])
-
     ## Warm Unknown Args
     if unknown:
         _logger.warning(f"Unknown args: {unknown}")
 
+    ## Set Seed
+    if args.seed is None:
+        args.seed = random.randint(1, 10000)
+    seed_all(args.seed)
+    ## Set Command
+    args.command = ' '.join(map(shlex.quote, [sys.executable, *sys.argv]))
     ## Select GPU
     if args.device == "auto":
         args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)
