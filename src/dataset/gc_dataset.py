@@ -60,7 +60,7 @@ class GCDataset(BaseDataset):
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
 
         ## 创建地图
-        image = np.array(Image.open(data_path.parent / f"map.png").convert('L')) # (H, W) 第一维向下，第二维向右
+        image = np.array(Image.open(data_path.parent / f"map.png").convert('L')) / 255.0 # (H, W) 第一维向下，第二维向右
         image = image.T # 转置，使得第一维向右，第二维向下，与 df_data 中的坐标系对齐
         map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=args.dot_per_meter) # 第一维向右，第二维向上，即 xy 坐标
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)

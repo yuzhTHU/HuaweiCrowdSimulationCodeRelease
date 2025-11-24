@@ -31,7 +31,7 @@ class SinusoidalEmbedding(nn.Module):
             nn.ReLU(),
             nn.Linear(embed_dim * 4, embed_dim),
         )
-self.half_dim = self.embed_dim // 2
+        self.half_dim = self.embed_dim // 2
         self.freq = torch.exp(
             -torch.arange(self.half_dim).float()
             * (math.log(10000.0) / (self.half_dim - 1))
@@ -39,7 +39,7 @@ self.half_dim = self.embed_dim // 2
 
     def forward(self, t: torch.LongTensor):
         # sinusoidal position encoding
-                emb = t[:, None].float() * self.freq.to(t.device)  # (batch, half_dim)
+        emb = t[:, None].float() * self.freq.to(t.device)  # (batch, half_dim)
         emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)  # (batch, embed_dim)
         return self.mlp(emb)  # (batch, embed_dim)
 
@@ -62,6 +62,33 @@ class MeanPoolingLSTM(nn.Module):
         out = out.mean(dim=-2)  # (batch_size, embed_dim)
         out = out.view(*shape[:-2], shape[-1])  # (batch_size, N, embed_dim)
         return out
+
+
+class MultiScaleCNN(nn.Module):
+    def __init__(self, args):
+        super().__init__()
+        dim = args.map_feature_dim
+        
+        # 分支1: 感受野 3x3 (看细节)
+        self.branch1 = nn.Conv2d(dim, dim, kernel_size=3, padding=1)
+        
+        # 分支2: 感受野 5x5 (看中等物体)
+        self.branch2 = nn.Conv2d(dim, dim, kernel_size=5, padding=2)
+        
+        # 分支3: 膨胀卷积，感受野大 (看整体结构)
+        self.branch3 = nn.Conv2d(dim, dim, kernel_size=3, padding=2, dilation=2)
+        
+        self.fusion = nn.Conv2d(dim * 3, args.model_dim, kernel_size=1)
+
+    def forward(self, x):
+        # ... embedding ...
+        x1 = F.relu(self.branch1(x))
+        x2 = F.relu(self.branch2(x))
+        x3 = F.relu(self.branch3(x))
+        
+        # 拼接特征
+        out = torch.cat([x1, x2, x3], dim=1)
+        return self.fusion(out)
 
 
 class Permuted(nn.Module):
@@ -91,7 +118,7 @@ class Residual(nn.Module):
 
 
 class FourierPositionalEncoding(nn.Module):
-    def __init__(self, out_dim: int = 256, num_bands: int = 64, max_freq: float = 10.0):
+    def __init__(self, out_dim: int = 256, num_bands: int = 64, min_freq: float = 1e-3):
         """
         将标量 x ∈ R 编码到高维空间
         Args:
@@ -100,9 +127,7 @@ class FourierPositionalEncoding(nn.Module):
             max_freq: 最大频率
         """
         super().__init__()
-        self.num_bands = num_bands
-        self.max_freq = max_freq
-        self.freqs = torch.linspace(1.0, max_freq, num_bands)
+        self.freqs = torch.linspace(min_freq, 1.0, num_bands)
         self.proj = nn.Linear(num_bands * 4, out_dim)
 
     def forward(self, x: torch.Tensor):
@@ -160,13 +185,11 @@ class Model(nn.Module):
             nn.ReLU(),
             nn.Linear(4*args.model_dim, args.model_dim),
         )
-
         self.veh_embedder = nn.Sequential(
             NanEmbedding(2, args.model_dim),
             MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
-
         self.map_embedder = nn.Sequential(
             NanEmbedding(1, args.map_feature_dim//4),
             Permuted(2, 0, 1),  # (H, W, C) -> (C, H, W)
@@ -178,7 +201,6 @@ class Model(nn.Module):
             Permuted(1, 2, 0),  # (C, H, W) -> (H, W, C)
             nn.LayerNorm(args.model_dim),
         )
-
         self.ped_attention = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
                 d_model=args.model_dim,
@@ -230,7 +252,6 @@ class Model(nn.Module):
         self.latent_tokens = nn.Parameter(
             torch.randn(args.latent_token_num, args.model_dim)
         )
-
         self.fusion_fc = Residual(
             nn.LayerNorm(args.model_dim),
             nn.Linear(args.model_dim, 4*args.model_dim),
@@ -299,18 +320,18 @@ class Model(nn.Module):
     ):
         """设置场景地图嵌入向量 map_embedding 和潜在令牌嵌入向量 ltn_embedding
         Args:
-            map (torch.FloatTensor): 场景高度地图 (H, W), 取值范围 0~1 (0-空地, 1-障碍物)
+            map (torch.FloatTensor): 场景高度地图 (W, H), 取值范围 0~1 (0-空地, 1-障碍物)
             xmin (float): 地图x轴最小值, 与 pos & veh 处于同一坐标系
             xmax (float): 地图x轴最大值, 与 pos & veh 处于同一坐标系
             ymin (float): 地图y轴最小值, 与 pos & veh 处于同一坐标系
             ymax (float): 地图y轴最大值, 与 pos & veh 处于同一坐标系
         """
-        map_embedding = self.map_embedder(map.unsqueeze(-1)) # (H', W', model_dim)
-        xx = torch.linspace(xmin, xmax, map_embedding.size(1), device=map_embedding.device)
-        yy = torch.linspace(ymin, ymax, map_embedding.size(0), device=map_embedding.device)
-        gridx, gridy = torch.meshgrid(xx, yy, indexing='xy')
-        gridxy = torch.stack([gridx, gridy], dim=-1) # (H', W', 2)
-        map_embedding = map_embedding + self.positional_encoding(gridxy) # (H', W', model_dim)
+        map_embedding = self.map_embedder(map.unsqueeze(-1)) # (W', H', model_dim)
+        xx = torch.linspace(xmin, xmax, map_embedding.size(0), device=map_embedding.device)
+        yy = torch.linspace(ymin, ymax, map_embedding.size(1), device=map_embedding.device)
+        gridx, gridy = torch.meshgrid(xx, yy, indexing='ij')
+        gridxy = torch.stack([gridx, gridy], dim=-1) # (W', H', 2)
+        map_embedding = map_embedding + self.positional_encoding(gridxy) # (W', H', model_dim)
         ltn_embedding = self.latent_attntn(self.latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
         self.map_embedding = map_embedding
         self.ltn_embedding = ltn_embedding
@@ -325,12 +346,52 @@ class Model(nn.Module):
         xmax, xmin = self.xmax, self.xmin
         ymax, ymin = self.ymax, self.ymin
         map_embedding = self.map_embedding
-        idx = pos[..., 1].sub(ymin).div(ymax-ymin).mul(map_embedding.size(0)).round().long().clamp(0, map_embedding.size(0) - 1)  # (batch_size, #pedestrian)
-        jdx = pos[..., 0].sub(xmin).div(xmax-xmin).mul(map_embedding.size(1)).round().long().clamp(0, map_embedding.size(1) - 1)  # (batch_size, #pedestrian)
-        idx = map_embedding.size(0) - 1 - idx # (batch_size, #pedestrian)
+        idx = pos[..., 0].sub(xmin).div(xmax-xmin).mul(map_embedding.size(0)).round().long().clamp(0, map_embedding.size(0) - 1)  # (batch_size, #pedestrian)
+        jdx = pos[..., 1].sub(ymin).div(ymax-ymin).mul(map_embedding.size(1)).round().long().clamp(0, map_embedding.size(1) - 1)  # (batch_size, #pedestrian)
         sur_info = map_embedding[idx, jdx] # (batch_size, #pedestrian, model_dim)
         sur_info = F.layer_norm(sur_info, sur_info.shape[-1:])
         self.sur_info = sur_info
+        # """设置行人周边环境信息 sur_info (手动双线性插值 + 越界置零)"""
+        # W, H = map_embedding.size(0), map_embedding.size(1)
+        # EPS = 1e-6
+        # # 1. 计算原始浮点坐标 (不截断，用于判断是否越界)
+        # raw_grid_x = (pos[..., 0] - xmin).div(xmax - xmin).mul(W)
+        # raw_grid_y = (pos[..., 1] - ymin).div(ymax - ymin).mul(H)
+        # # 2. 生成有效性掩码 (Valid Mask)
+        # # 只有在 [0, W-1] 和 [0, H-1] 范围内的才是有效点
+        # # 注意：这里认为 W-0.5 依然在 W-1 的像素覆盖范围内，但 > W-1 即视为越界
+        # # (根据具体定义，也可以用 W 或 W-0.5 作为边界，这里使用像素中心对齐的一般逻辑)
+        # is_valid = (raw_grid_x >= 0) & (raw_grid_x <= W - 1) & \
+        #            (raw_grid_y >= 0) & (raw_grid_y <= H - 1) # (batch, ped)
+        # # 3. 截断坐标用于安全索引 (Safe Indexing)
+        # # 即使是无效点，为了下面代码不报错，也得给它一个合法的索引(比如边缘)
+        # grid_x = raw_grid_x.clamp(0, W - 1 - EPS)
+        # grid_y = raw_grid_y.clamp(0, H - 1 - EPS)
+        # x0 = grid_x.long()
+        # y0 = grid_y.long()
+        # x1 = (x0 + 1).clamp(max=W - 1)
+        # y1 = (y0 + 1).clamp(max=H - 1)
+        # # 4. 计算插值权重
+        # wa = (grid_x - x0.float()).unsqueeze(-1) # (batch, ped, 1)
+        # wb = (grid_y - y0.float()).unsqueeze(-1)
+        # # 5. Gather 特征
+        # Q00 = map_embedding[x0, y0] 
+        # Q10 = map_embedding[x1, y0]
+        # Q01 = map_embedding[x0, y1]
+        # Q11 = map_embedding[x1, y1]
+        # # 6. 双线性插值
+        # sur_info = (
+        #     Q00 * (1 - wa) * (1 - wb) +
+        #     Q10 * wa * (1 - wb) +
+        #     Q01 * (1 - wa) * wb +
+        #     Q11 * wa * wb
+        # )
+        # # 7. LayerNorm (通常建议在 Mask 之前做，或者 Mask 后不再做 LN)
+        # sur_info = F.layer_norm(sur_info, sur_info.shape[-1:])
+        # # 8. 应用掩码：将越界区域强制置为 0
+        # # is_valid 需要扩展维度以匹配 sur_info: (batch, ped) -> (batch, ped, 1)
+        # sur_info = sur_info * is_valid.unsqueeze(-1).float()
+        # self.sur_info = sur_info
 
     def forward(
         self, 
@@ -357,6 +418,7 @@ class Model(nn.Module):
         denoise_t_embedding = denoise_t_embedding.unsqueeze(1) # (batch_size, 1, model_dim)
         noisy_acc_embedding = self.noisy_acc_embedder(noisy_acc) # (batch_size, #pedestrian, model_dim)
         ped_embedding = self.ped_encoder(ped_embedding + denoise_t_embedding + noisy_acc_embedding) # (batch_size, #pedestrian, model_dim)
+        # ped_embedding = ped_embedding + denoise_t_embedding + noisy_acc_embedding # (batch_size, #pedestrian, model_dim)
         if timer: 
             torch.cuda.synchronize(device=self.args.device)
             timer.add('Embedding Pedestrian')
@@ -389,6 +451,7 @@ class Model(nn.Module):
         if timer: 
             torch.cuda.synchronize(device=self.args.device)
             timer.add('Social Attention')
+        # ped_info = 0
 
         # Vehicle Attention
         veh_info = self.veh_attention(
@@ -400,6 +463,7 @@ class Model(nn.Module):
         if timer: 
             torch.cuda.synchronize(device=self.args.device)
             timer.add('Vehicle Attention')
+        # veh_info = 0
 
         # Map Attention
         pe = self.pe

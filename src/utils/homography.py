@@ -39,16 +39,16 @@ def affine_transformation(src, H):
 def image_to_world(src, H, dot_per_meter=5):
     """
     使用透视变换矩阵 H 变换点集 src 并双线性插值为 2D 网格
-    src: shape (h, w, ...)
+    src: shape (w=x_dim, h=y_dim, ...)
     H: shape (3, 3)
-    返回 dst: shape (h, w, ...)
+    返回 dst: shape (w, h, ...)
     """
-    h, w = src.shape[:2]
-    value = src.reshape(h*w, *src.shape[2:])  # (h*w, ...)
+    w, h = src.shape[:2]
+    value = src.reshape(w*h, *src.shape[2:])  # (w*h, ...)
 
-    ii, jj = np.meshgrid(np.arange(h), np.arange(w), indexing="ij") # (h, w)
-    src_coord = np.stack([ii, jj], axis=-1).astype(np.float32)  # (h, w, 2)
-    tgt_coord = affine_transformation(src_coord, H)  # (h, w, 2)
+    ii, jj = np.meshgrid(np.arange(w), np.arange(h), indexing="ij") # (w, h)
+    src_coord = np.stack([ii, jj], axis=-1).astype(np.float32)  # (w, h, 2)
+    tgt_coord = affine_transformation(src_coord, H)  # (w, h, 2)
     x = tgt_coord[..., 0].reshape(-1)
     y = tgt_coord[..., 1].reshape(-1)
     xmin, xmax = x.min(), x.max()
@@ -56,6 +56,7 @@ def image_to_world(src, H, dot_per_meter=5):
     xx, yy = np.meshgrid(
         np.arange(xmin, xmax+1/dot_per_meter, 1/dot_per_meter)[:-1],
         np.arange(ymin, ymax+1/dot_per_meter, 1/dot_per_meter)[:-1],
+        indexing='ij',
     )
     map = griddata(
         points=np.stack([x, y], axis=-1),

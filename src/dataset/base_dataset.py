@@ -50,6 +50,16 @@ class BaseDataset(D.Dataset):
         self.df_data = df_data
         self.map_data = map_data
         self.samples = self.split_samples(df_data)
+
+        delta_x = map_data.xmax - map_data.xmin
+        delta_y = map_data.ymax - map_data.ymin
+        w, h = map_data.map.shape
+        if not (0.8 < (ratio := (delta_x / w) / (delta_y / h)) < 1.2):
+            _logger.warning(
+                f"Map aspect ratio of {name} mismatch: "
+                f"data ratio={ratio:.4f} (xrange={delta_x:.4f}, yrange={delta_y:.4f}, "
+                f"map shape={map_data.map.shape}), may cause distortion."
+            )
     
     @classmethod
     def load_data(cls, args) -> 'BaseDataset':

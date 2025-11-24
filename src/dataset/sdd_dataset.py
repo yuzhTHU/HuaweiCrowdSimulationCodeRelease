@@ -105,7 +105,7 @@ class SDDDataset(BaseDataset):
         ## 读取地图
         map_path = data_path.parent / f"map.png"
         if map_path.exists():
-            image = np.array(Image.open(map_path).convert('L'))  # (H, W)  第一维向下，第二维向右
+            image = np.array(Image.open(map_path).convert('L')) / 255.0 # (H, W)  第一维向下，第二维向右
             image_ = image.T # 转置，使得第一维向右，第二维向下，与 df_data 中的坐标系对齐
             map, xmin, xmax, ymin, ymax = image_to_world(image_, H, dot_per_meter=args.dot_per_meter)  # 第一维向右，第二维向上，即 xy 坐标
         else:

@@ -52,11 +52,11 @@ class WayMoDataset(BaseDataset):
             'OTHER': 'vehicle',
         })
 
-        ## 清除离行人太远的车辆
-        df_data = cls.filter_vehicle_trajectories(df_data, distance_threshold=5.0)
-
         ## 清除始末距离太短的轨迹
         df_data = cls.filter_short_trajectories(df_data, distance_threshold=3.0)
+
+        ## 清除离行人太远的车辆
+        df_data = cls.filter_vehicle_trajectories(df_data, distance_threshold=5.0)
 
         ## 数据重采样
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
@@ -73,7 +73,7 @@ class WayMoDataset(BaseDataset):
         if total_pixels > max_pixels:
             scale = (max_pixels / total_pixels) ** 0.5
             image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-        image = np.array(image)  # (H, W)  第一维向下，第二维向右
+        image = np.array(image) / 255.0  # (H, W)  第一维向下，第二维向右
         h, w = image.shape
         xmin0, xmax0, ymin0, ymax0 = np.loadtxt(data_path.parent / 'map_range.txt')
         H = calc_homography_mat(

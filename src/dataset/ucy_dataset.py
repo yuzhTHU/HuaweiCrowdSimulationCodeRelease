@@ -75,7 +75,7 @@ class UCYDataset(BaseDataset):
         ## 创建地图
         image_path = data_path.parent / f"{data_path.stem}.png"
         if image_path.exists():
-            image = np.array(Image.open(image_path).convert('L'))  # (H, W)
+            image = np.array(Image.open(image_path).convert('L')) / 255.0 # (H, W)
             image = image[::-1].T # 转置并上下翻转，使得第一维向右，第二维向上，与 df_data 中的坐标系对齐
             map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=args.dot_per_meter)
         else:

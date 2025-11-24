@@ -55,7 +55,7 @@ class ETHDataset(BaseDataset):
 
         ## 创建地图
         H = np.loadtxt(data_path.parent / "H.txt")  # (3, 3)
-        image = np.array(Image.open(data_path.parent / 'map.png').convert('L')) # (H, W)
+        image = np.array(Image.open(data_path.parent / 'map.png').convert('L')) / 255.0 # (H, W)
         map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=args.dot_per_meter)
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
 
