@@ -156,7 +156,7 @@ class Model(nn.Module):
             MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
-        self.positional_encoding = FourierPositionalEncoding(out_dim=args.model_dim, num_bands=args.model_dim, max_freq=10.0)
+        self.positional_encoding = FourierPositionalEncoding(out_dim=args.model_dim, num_bands=args.model_dim, min_freq=1e-3)
 
         self.pos_embedder = nn.Sequential(
             nn.Linear(2, args.model_dim),
