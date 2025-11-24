@@ -17,7 +17,7 @@ from socket import gethostname
 from argparse import ArgumentParser
 from setproctitle import setproctitle
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset
-from src.model.model import Model
+from src.model.model import Model, RelativeModel
 from src.diffusion import DDPM, DDIM
 from src.utils.logger import init_logger
 from src.utils.seed import seed_all
@@ -32,33 +32,46 @@ _logger = logging.getLogger("src.train")
 def main(args):
     ## Load Dataset
     # 加载数据集
-    if args.debug:
-        dataset_list = [UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")]
-    elif args.datasets == "ETH/UCY":
-        dataset_list = [
-            *UCYDataset.load_data_batch(args, "./data/UCY/data/"),
-            *ETHDataset.load_data_batch(args, "./data/ETH/"),
-        ]
-    elif args.datasets == "GC":
-        dataset_list = [GCDataset.load_data(args, "./data/GC/Annotation")]
-    elif args.datasets == "SDD":
-        dataset_list = SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
-    elif args.datasets == 'WayMo':
-        dataset_list = WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
-    elif args.datasets == 'All':
-        dataset_list = [
-            *UCYDataset.load_data_batch(args, "./data/UCY/data/"),
-            *ETHDataset.load_data_batch(args, "./data/ETH/"),
-            GCDataset.load_data(args, "./data/GC/Annotation"),
-            *SDDDataset.load_data_batch(args, "./data/SDD/annotations/"),
-            *WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100),
-        ]
-    elif args.datasets == 'debug':
-        # dataset_list = [SDDDataset.load_data(args, "./data/SDD/annotations/hyang/video0/annotations.txt")]
-        dataset_list = [WayMoDataset.load_data(args, './data/WayMo/Processed/00002_47_93c31aa2d098f5e6/data.csv.gz')]
-        dataset_list[0].samples = dataset_list[0].samples[int(len(dataset_list[0].samples) * 0.8):]
-    else:
-        raise ValueError(f"Unknown dataset {args.datasets}!")
+    dataset_list = []
+    if 'All' in args.datasets:
+        args.datasets.remove('All')
+        args.datasets += ['ETH', 'UCY', 'GC', 'SDD', 'WayMo']
+    if "ETH" in args.datasets:
+        dataset_list += ETHDataset.load_data_batch(args, "./data/ETH/")
+        args.datasets.remove("ETH")
+    if "UCY" in args.datasets:
+        dataset_list += UCYDataset.load_data_batch(args, "./data/UCY/data/")
+        args.datasets.remove("UCY")
+    if "GC" in args.datasets:
+        dataset_list += [GCDataset.load_data(args, "./data/GC/Annotation")]
+        args.datasets.remove("GC")
+    if "SDD" in args.datasets:
+        dataset_list += SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
+        args.datasets.remove("SDD")
+    if 'WayMo' in args.datasets:
+        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
+        args.datasets.remove("WayMo")
+    if 'debug' in args.datasets:
+        # dataset_list += [UCYDataset.load_data(args, './data/UCY/data/data_university_students/students003.vsp')]
+        # dataset_list += [SDDDataset.load_data(args, "./data/SDD/annotations/hyang/video0/annotations.txt")]
+        dataset_list += [WayMoDataset.load_data(args, './data/WayMo/Processed/00000_1_2aa43fad083efbf3/data.csv.gz')]
+        # dataset_list[0].samples = dataset_list[0].samples[int(len(dataset_list[0].samples) * 0.8):]
+        args.datasets.remove('debug')
+    if len(args.datasets) > 0:
+        raise ValueError(f"Unknown datase: {args.datasets}!")
+    # 检查地图
+    for dataset in dataset_list:
+        map_data = dataset.map_data
+        delta_x = map_data.xmax - map_data.xmin
+        delta_y = map_data.ymax - map_data.ymin
+        w, h = map_data.map.shape
+        if not (0.8 < (ratio := (delta_x / w) / (delta_y / h)) < 1.2):
+            _logger.warning(
+                f"Map aspect ratio of {dataset.name} mismatch: "
+                f"data ratio={ratio:.4f} (xrange={delta_x:.4f}, yrange={delta_y:.4f}, "
+                f"map shape={map_data.map.shape}), may cause distortion."
+            )
+            exit(1)
     # 划分训练集和测试集
     if args.test_name is not None:
         # 将名称中包含指定字符串的场景划分到测试集
@@ -125,7 +138,10 @@ def main(args):
     )
 
     ## Load Model
-    model = Model(args).to(args.device)
+    if args.use_relative_model:
+        model = RelativeModel(args).to(args.device)
+    else:
+        model = Model(args).to(args.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = torch.nn.MSELoss()
     if args.sampling_method == "DDIM":
@@ -721,7 +737,7 @@ if __name__ == "__main__":
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo', 'All', 'debug'])
+    parser.add_argument('--datasets', type=str, default=["ETH"], choices=['ETH', 'UCY', 'GC', 'SDD', 'WayMo', 'All', 'debug'], nargs='*')
     parser.add_argument('--test_name', type=str, default=None, nargs='+')
     parser.add_argument('--test_ratio', type=float, default=None)
     parser.add_argument('--split_by_scenario', action='store_true')
@@ -731,6 +747,7 @@ if __name__ == "__main__":
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
     parser.add_argument('--predict_noise', action='store_true', default=True)
     parser.add_argument('--required_memory_MB', type=int, default=6000)
+    parser.add_argument('--use_relative_model', action='store_true', default=False)
     parser = add_negation_flags(parser)
     args, unknown = parser.parse_known_args()
 

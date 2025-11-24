@@ -494,3 +494,152 @@ class Model(nn.Module):
             torch.cuda.synchronize(device=self.args.device)
             timer.add('Output')
         return output
+
+
+
+class RelativeModel(Model):
+    def set_ped_embedding(
+        self,
+        pos: torch.FloatTensor, 
+        vel: torch.FloatTensor,
+        hst: torch.FloatTensor,
+        des: torch.FloatTensor,
+        spd: torch.FloatTensor,
+    ):
+        """设置行人嵌入向量 ped_embedding
+        Args:
+            pos (torch.FloatTensor): 行人当前位置 (batch_size, #pedestrian, 2)
+            vel (torch.FloatTensor): 行人当前速度 (batch_size, #pedestrian, 2)
+            hst (torch.FloatTensor): 行人历史轨迹 (batch_size, #pedestrian, hist_step, 2)
+            des (torch.FloatTensor): 行人终点位置 (batch_size, #pedestrian, 2)
+            spd (torch.FloatTensor): 行人预期速度 (batch_size, #pedestrian, 1)
+        """
+        # 不使用 pos 中的绝对位置，而是使用 FourierPositionalEncoding 将 pos 编码到 pe 中
+        # pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
+        vel_embedding = self.vel_embedder(vel) # (batch_size, #pedestrian, model_dim)
+        hst_embedding = self.hst_embedder(hst-pos.unsqueeze(-2)) # (batch_size, #pedestrian, model_dim)
+        des_embedding = self.des_embedder(des-pos) # (batch_size, #pedestrian, model_dim)
+        spd_embedding = self.spd_embedder(spd) # (batch_size, #pedestrian, model_dim)
+        fourier_pe = self.positional_encoding(pos) # (batch_size, #pedestrian, model_dim)
+        ped_embedding = vel_embedding + hst_embedding + des_embedding + spd_embedding + fourier_pe
+        self.ped_embedding = ped_embedding
+        self.pos = pos
+
+    def set_veh_embedding(
+        self,
+        veh: torch.FloatTensor,
+    ):
+        """设置车辆嵌入向量 veh_embedding
+        Args:
+            veh (torch.FloatTensor): 车辆历史轨迹 (batch_size, #vehicle, hist_step + 1, 2)
+        """
+        shape = list(veh.shape)
+        if shape[1] == 0:
+            shape[1] = 1
+            veh = torch.full(shape, float('nan'), device=veh.device)
+        # 不使用 veh 中的绝对位置，而是使用 FourierPositionalEncoding 将 veh_pos 编码到 pe 中
+        rel_veh_embedding = self.veh_embedder(veh - veh[..., (-1,), :]) # (batch_size, #vehicle, model_dim)
+        fourier_pe = self.positional_encoding(veh[..., -1, :]) # (batch_size, #vehicle, model_dim)
+        veh_embedding = rel_veh_embedding + fourier_pe
+        self.veh_embedding = veh_embedding
+
+    def forward(
+        self, 
+        denoise_t: torch.LongTensor,
+        noisy_acc: torch.FloatTensor,
+        ped_length: torch.LongTensor,
+        veh_length: torch.LongTensor,
+        timer: NamedTimer = None,
+    ):
+        """根据行人、车辆、场景信息对行人下一步加速度 acc 进行去噪
+        调用前需要先调用 set_ped_embedding(), set_veh_embedding(), set_map_embedding() 和 set_sur_info() 以设置对应的信息
+        Args:
+            denoise_t (torch.LongTensor): 当前去噪时间步 (batch_size,)
+            noisy_acc (torch.FloatTensor): （带噪的）行人下步加速度 (batch_size, #pedestrian, pred_step, 2)
+            ped_length (torch.LongTensor): 每个batch中行人数量 (batch_size,)
+            veh_length (torch.LongTensor): 每个batch中车辆数量 (batch_size,)
+        Returns:
+            output (torch.FloatTensor): 去噪后的行人下步加速度 / 用于去噪的噪声 (batch_size, #pedestrian, pred_step, 2)
+        """
+
+        # Embedding Pedestrian
+        ped_embedding = self.ped_embedding
+        denoise_t_embedding = self.denoise_t_embedder(denoise_t) # (batch_size, model_dim)
+        denoise_t_embedding = denoise_t_embedding.unsqueeze(1) # (batch_size, 1, model_dim)
+        noisy_acc_embedding = self.noisy_acc_embedder(noisy_acc) # (batch_size, #pedestrian, model_dim)
+        ped_embedding = self.ped_encoder(ped_embedding + denoise_t_embedding + noisy_acc_embedding) # (batch_size, #pedestrian, model_dim)
+        # ped_embedding = ped_embedding + denoise_t_embedding + noisy_acc_embedding # (batch_size, #pedestrian, model_dim)
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Embedding Pedestrian')
+
+        # Embedding Vehicle
+        veh_embedding = self.veh_embedding # (batch_size, #vehicle, model_dim)
+
+        # Embedding Map
+        ltn_embedding = self.ltn_embedding.unsqueeze(0).expand(ped_embedding.size(0), *self.ltn_embedding.shape) # (batch_size, #latent_token, model_dim)
+
+        # Build Mask
+        batch_size = ped_embedding.size(0)
+        max_ped_num = ped_embedding.size(1)
+        max_veh_num = veh_embedding.size(1)
+        ped_mask = torch.arange(max_ped_num, device=ped_length.device).unsqueeze(0).expand(batch_size, max_ped_num) # (batch_size, max_ped_num)
+        ped_mask = ped_mask >= ped_length.unsqueeze(1) # (batch_size, max_ped_num)
+        veh_mask = torch.arange(max_veh_num, device=veh_length.device).unsqueeze(0).expand(batch_size, max_veh_num) # (batch_size, max_veh_num)
+        veh_mask = veh_mask >= veh_length.unsqueeze(1) # (batch_size, max_veh_num)
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Build Mask')
+
+        # Social Attention
+        ped_info = self.ped_attention(
+            ped_embedding, ped_embedding,
+            memory_key_padding_mask=ped_mask,
+            tgt_key_padding_mask=ped_mask,
+        ) # (batch_size, #pedestrian, model_dim)
+        ped_info = F.layer_norm(ped_info, ped_info.shape[-1:])
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Social Attention')
+        # ped_info = 0
+
+        # Vehicle Attention
+        veh_info = self.veh_attention(
+            ped_embedding, veh_embedding,
+            memory_key_padding_mask=veh_mask,
+            tgt_key_padding_mask=ped_mask,
+        ) # (batch_size, #pedestrian, model_dim)
+        veh_info = F.layer_norm(veh_info, veh_info.shape[-1:])
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Vehicle Attention')
+        # veh_info = 0
+
+        # Map Attention
+        map_info = self.map_attention(
+            ped_embedding, ltn_embedding,
+            tgt_key_padding_mask=ped_mask,
+        ) # (batch_size, #pedestrian, model_dim)
+        map_info = F.layer_norm(map_info, map_info.shape[-1:])
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Map Attention')
+
+        # Surrounding Info
+        sur_info = self.sur_info
+
+        # Fusion
+        ped_embedding = self.fusion_fc(
+            ped_embedding + ped_info + veh_info + map_info + sur_info + denoise_t_embedding
+        ) # (batch_size, #pedestrian, model_dim)
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Fusion')
+
+        # Output
+        output = self.output_fc(ped_embedding) # (batch_size, #pedestrian, pred_step*2)
+        output = output.view(*output.shape[:-1], self.args.pred_step, 2) # (batch_size, #pedestrian, pred_step, 2)
+        if timer: 
+            torch.cuda.synchronize(device=self.args.device)
+            timer.add('Output')
+        return output
