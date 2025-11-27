@@ -22,7 +22,7 @@ from socket import gethostname
 from argparse import ArgumentParser
 from setproctitle import setproctitle
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset
-from src.model.model import Model, FourierPositionalEncoding
+from src.model.model import Model, RelativeModel, FourierPositionalEncoding
 from src.diffusion import DDPM, DDIM
 from src.utils.logger import init_logger
 from src.utils.seed import seed_all
@@ -59,7 +59,7 @@ class Model2(nn.Module):
             nn.ReLU(),
             nn.Linear(args.model_dim, args.model_dim),
             nn.ReLU(),
-            nn.Linear(args.model_dim, 4),
+            nn.Linear(args.model_dim, 6),
         )
 
     def forward(self, ltn_embedding, w, h, xmin, xmax, ymin, ymax):
@@ -72,15 +72,41 @@ class Model2(nn.Module):
         return z
 
 class Criterion(nn.Module):
+    def quantize(self, x):
+        is_zero = (x == 0)
+        is_dot1 = (0.05 < x) & (x < 0.15)
+        is_dot2 = (0.15 < x) & (x < 0.25)
+        is_one = (x == 1)
+        is_nan = torch.isnan(x)
+        is_others = (~is_zero) & (~is_nan) & (~is_one)
+        quantize_x = (
+            0 * is_zero.long()
+            + 1 * is_dot1.long()
+            + 2 * is_dot2.long()
+            + 3 * is_one.long()
+            + 4 * is_others.long()
+            + 5 * is_nan.long()
+        )
+        return quantize_x
+
     def forward(self, pred, true):
         """ true: (B, ...), pred: (B, ..., 4) """
-        is_nan = torch.isnan(true)
-        is_zero = (true == 0)
-        is_one = (true == 1)
-        others = (~is_zero) & (~is_nan) & (~is_one)
-        true_class = 0 * is_zero.long() + 1 * is_one.long() + 2 * others.long() + 3 * is_nan # 0: zero, 1: one, 2: others, 3: nan
-        return nn.functional.cross_entropy(pred.unsqueeze(0).permute(0, 3, 1, 2), true_class.unsqueeze(0))
-
+        true_class = self.quantize(true)
+        # --- 动态计算权重 ---
+        # 统计当前 batch (map) 中各像素的数量
+        # flat_target = true_class.view(-1)
+        # counts = torch.bincount(flat_target, minlength=4).float()
+        # 或者使用预设的经验权重 (推荐，更稳定)
+        # 0(空地): 1.0
+        # 1(障碍物): 20.0 (强迫恢复障碍)
+        # 2(草坪): 20.0 (强迫恢复草坪)
+        # 3(NaN): 0.0
+        weights = torch.tensor([1.0, 5.0, 10.0, 20.0, 20.0, 0.0], device=pred.device)
+        return nn.functional.cross_entropy(
+            pred.unsqueeze(0).permute(0, 3, 1, 2), 
+            true_class.unsqueeze(0),
+            weight=weights,
+        )
 
 def main(args):
     ## Load Dataset
@@ -216,9 +242,18 @@ def main(args):
     )
 
     ## Load Model
-    model = Model(args).to(args.device)
+    if args.use_relative_model:
+        model = RelativeModel(args).to(args.device)
+    else:
+        model = Model(args).to(args.device)
     model2 = Model2(args).to(args.device)
-    optimizer = torch.optim.Adam(list(model.parameters()) + list(model2.parameters()), lr=args.lr)
+    params_to_train = [*model2.parameters()]
+    if args.finetune_model:
+        params_to_train += [*model.parameters()]
+        _logger.info("Finetune the model.map_embedder as well.")
+    else:
+        _logger.info("Freeze the model.map_embedder parameters.")
+    optimizer = torch.optim.Adam(params_to_train, lr=args.lr)
     criterion = Criterion()
     if args.sampling_method == "DDIM":
         diffusion = DDIM(args)
@@ -249,6 +284,12 @@ def main(args):
         if 'args' in checkpoint:
             saved_args = checkpoint['args']
             for key in sorted(set(saved_args.keys()) | set(vars(args).keys())):
+                if key in [
+                    'save_dir', 'save_path', 'reload_checkpoint', 'command',
+                    'device', 'required_memory_MB', 'test_name', 'test_ratio', 'split_by_scenario',
+                    'num_workers', 'test_per_epoch', 'test_before_train'
+                ]:
+                    continue
                 val1 = saved_args.get(key, None)
                 val2 = getattr(args, key, None)
                 if val1 != val2:
@@ -258,7 +299,7 @@ def main(args):
                     )
         model.load_state_dict(checkpoint["model"])
         _logger.note(tag2ansi(f"Checkpoint loaded from [underline green]{checkpoint_path}[reset], resume from epoch [underline green]{start_epoch}[reset]."))
-        if "optimizer" in checkpoint:
+        if False and "optimizer" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer"])
         else:
             _logger.warning("Optimizer state not found in checkpoint, optimizer re-initialized.")
@@ -475,18 +516,28 @@ def test_once(args, test_loaders, model, model2, criterion, diffusion, epoch):
         # 可视化
         if True:
             save_path = Path(f"{args.save_path}/visualize/epoch{epoch}/{loader.dataset.name}.png")
-            fi, fig, axes = get_fig(1, 3, AW=12, AH=12, dpi=100, fontsize=14, lw=1)
-            ax = axes[0]
+            fi, fig, axes = get_fig(3, 3, AW=12, AH=12, dpi=100, fontsize=14, lw=1)
+            ax_loader = iter(axes)
+
+            ax = next(ax_loader)
             cmap = plt.get_cmap('gray_r').copy()
             cmap.set_bad(color='#596275')
             ax.imshow(map_true.cpu().numpy().T, cmap=cmap, origin='lower', vmin=0, vmax=1, extent=[map_data.xmin, map_data.xmax, map_data.ymin, map_data.ymax])
             ax.set_title("Ground Truth Map")
-            # ax = axes[1]
-            # ax.imshow(map_pred.argmax(dim=-1).detach().cpu().numpy().T, origin='lower', vmin=0, vmax=1, extent=[map_data.xmin, map_data.xmax, map_data.ymin, map_data.ymax])
-            # ax.set_title("Predicted Map")
-            ax = axes[2]
-            ax.imshow(map_pred.argmax(dim=-1).detach().cpu().numpy().T, origin='lower', extent=[map_data.xmin, map_data.xmax, map_data.ymin, map_data.ymax])
+
+            ax = next(ax_loader)
+            ax.imshow(criterion.quantize(map_true).cpu().numpy().T, origin='lower', vmin=0, vmax=5, extent=[map_data.xmin, map_data.xmax, map_data.ymin, map_data.ymax])
+            ax.set_title("Quantized Ground Truth Map")
+
+            ax = next(ax_loader)
+            ax.imshow(map_pred.argmax(dim=-1).detach().cpu().numpy().T, origin='lower', vmin=0, vmax=5, extent=[map_data.xmin, map_data.xmax, map_data.ymin, map_data.ymax])
             ax.set_title("Predicted Map w/o Normalization")
+
+            for i in range(6):
+                ax = next(ax_loader)
+                ax.imshow(map_pred.softmax(dim=-1)[..., i].detach().cpu().numpy().T, origin='lower', vmin=0, vmax=1, extent=[map_data.xmin, map_data.xmax, map_data.ymin, map_data.ymax])
+                ax.set_title(f"Predicted Map Prob. of Class {i}")
+
             save_path.parent.mkdir(parents=True, exist_ok=True)
             fig.savefig(save_path)
             plt.close(fig)
@@ -561,6 +612,9 @@ if __name__ == "__main__":
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
     parser.add_argument('--predict_noise', action='store_true', default=True)
     parser.add_argument('--required_memory_MB', type=int, default=6000)
+    parser.add_argument('--finetune_model', action='store_true', default=False)
+    parser.add_argument('--use_relative_model', action='store_true', default=True)
+    parser.add_argument('--use_spatial_anchor', action='store_true', default=False)
     parser = add_negation_flags(parser)
     args, unknown = parser.parse_known_args()
 

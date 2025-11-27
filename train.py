@@ -747,7 +747,8 @@ if __name__ == "__main__":
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
     parser.add_argument('--predict_noise', action='store_true', default=True)
     parser.add_argument('--required_memory_MB', type=int, default=6000)
-    parser.add_argument('--use_relative_model', action='store_true', default=False)
+    parser.add_argument('--use_relative_model', action='store_true', default=True)
+    parser.add_argument('--use_spatial_anchor', action='store_true', default=False)
     parser = add_negation_flags(parser)
     args, unknown = parser.parse_known_args()
 

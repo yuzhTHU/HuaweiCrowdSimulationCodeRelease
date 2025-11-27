@@ -127,7 +127,7 @@ class FourierPositionalEncoding(nn.Module):
             max_freq: 最大频率
         """
         super().__init__()
-        self.freqs = torch.linspace(min_freq, 1.0, num_bands)
+        self.freqs = torch.linspace(min_freq, 0.5, num_bands)
         self.proj = nn.Linear(num_bands * 4, out_dim)
 
     def forward(self, x: torch.Tensor):
@@ -141,6 +141,7 @@ class FourierPositionalEncoding(nn.Module):
             torch.sin(y_proj),
             torch.cos(y_proj),
         ], dim=-1)  # (..., num_bands*4)
+        fourier = torch.nan_to_num(fourier, nan=0.0)
         pe = self.proj(fourier)
         return pe
 
@@ -192,6 +193,7 @@ class Model(nn.Module):
         )
         self.map_embedder = nn.Sequential(
             NanEmbedding(1, args.map_feature_dim//4),
+            nn.ReLU(),
             Permuted(2, 0, 1),  # (H, W, C) -> (C, H, W)
             nn.Conv2d(args.map_feature_dim//4, args.map_feature_dim//2, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -252,6 +254,19 @@ class Model(nn.Module):
         self.latent_tokens = nn.Parameter(
             torch.randn(args.latent_token_num, args.model_dim)
         )
+        if args.use_spatial_anchor:
+            # 确保 token 数量是平方数 (e.g., 16, 64)
+            grid_size = int(math.sqrt(args.latent_token_num))
+            if grid_size ** 2 != args.latent_token_num:
+                raise ValueError(f"latent_token_num ({args.latent_token_num}) must be a square number when use_spatial_anchor is True.")
+            self.grid_size = grid_size
+            # 生成 0~1 的相对坐标网格，用于后续映射到物理尺寸
+            # 使用 buffer 注册，这样它会被保存到 state_dict 但不会作为参数更新
+            x = torch.linspace(0, 1, grid_size)
+            y = torch.linspace(0, 1, grid_size)
+            xx, yy = torch.meshgrid(x, y, indexing='ij')
+            anchor_norm = torch.stack([xx, yy], dim=-1) # (S, S, 2)
+            self.register_buffer('anchor_norm', anchor_norm)
         self.fusion_fc = Residual(
             nn.LayerNorm(args.model_dim),
             nn.Linear(args.model_dim, 4*args.model_dim),
@@ -332,7 +347,14 @@ class Model(nn.Module):
         gridx, gridy = torch.meshgrid(xx, yy, indexing='ij')
         gridxy = torch.stack([gridx, gridy], dim=-1) # (W', H', 2)
         map_embedding = map_embedding + self.positional_encoding(gridxy) # (W', H', model_dim)
-        ltn_embedding = self.latent_attntn(self.latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
+        latent_tokens = self.latent_tokens
+        if self.args.use_spatial_anchor:
+            anchor_phys_x = xmin + self.anchor_norm[..., 0] * (xmax - xmin)
+            anchor_phys_y = ymin + self.anchor_norm[..., 1] * (ymax - ymin)
+            anchor_phys = torch.stack([anchor_phys_x, anchor_phys_y], dim=-1) # (S, S, 2)
+            anchor_pe = self.positional_encoding(anchor_phys) # (S, S, model_dim)
+            latent_tokens = latent_tokens + anchor_pe.flatten(0, 1) # (S, S, D) -> (K, D)
+        ltn_embedding = self.latent_attntn(latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
         self.map_embedding = map_embedding
         self.ltn_embedding = ltn_embedding
         self.xmax = xmax
@@ -535,7 +557,7 @@ class RelativeModel(Model):
         """
         shape = list(veh.shape)
         if shape[1] == 0:
-            shape[1] = 1
+            shape[1] = 2
             veh = torch.full(shape, float('nan'), device=veh.device)
         # 不使用 veh 中的绝对位置，而是使用 FourierPositionalEncoding 将 veh_pos 编码到 pe 中
         rel_veh_embedding = self.veh_embedder(veh - veh[..., (-1,), :]) # (batch_size, #vehicle, model_dim)
