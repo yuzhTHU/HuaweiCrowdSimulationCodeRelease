@@ -74,11 +74,11 @@ class Model2(nn.Module):
 class Criterion(nn.Module):
     def quantize(self, x):
         is_zero = (x == 0)
-        is_dot1 = (0.05 < x) & (x < 0.15)
-        is_dot2 = (0.15 < x) & (x < 0.25)
+        is_dot1 = (0.05 < x) & (x < 0.15) & False
+        is_dot2 = (0.15 < x) & (x < 0.25) & False
         is_one = (x == 1)
         is_nan = torch.isnan(x)
-        is_others = (~is_zero) & (~is_nan) & (~is_one)
+        is_others = (~is_zero) & (~is_dot1) & (~is_dot2) & (~is_nan) & (~is_one)
         quantize_x = (
             0 * is_zero.long()
             + 1 * is_dot1.long()
