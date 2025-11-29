@@ -19,7 +19,7 @@ class WayMoDataset(BaseDataset):
     raw_fps = 10
 
     @classmethod
-    def load_data(cls, args: Namespace, data_path: str) -> "WayMoDataset":
+    def load_data(cls, args: Namespace, data_path: str, with_shape=False) -> "WayMoDataset":
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")

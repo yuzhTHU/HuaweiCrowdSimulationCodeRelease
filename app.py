@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from src.model.model import Model
 from src.diffusion import DDPM, DDIM
-from src.dataset import UCYDataset, ETHDataset, GCDataset, SDDDataset, WayMoDataset
+from src.dataset import UCYDataset, ETHDataset, GCDataset, SDDDataset, WayMoDataset, ORCADataset
 from src.utils.logger import init_logger
 from src.utils.auto_gpu import AutoGPU
 from src.web.utils.json_compatible import json_compatible
@@ -24,6 +24,18 @@ from src.web.utils.simulate import init_simulation, simulate_one_step
 _logger = logging.getLogger("src")
 init_logger('src')
 
+DEFAULT_ARGS = Namespace(
+    # **json.load(open('logs/train/20251127_RelativeModel_添加ReLU_修改Freq_添加Anchor_153734_DL4/args.json', 'r')),
+    use_relative_model=False,
+    use_spatial_anchor=False,
+    dest_importance=0.0,
+    des_cfg=0.0,
+    map_cfg=0.0,
+    des_guidance=0.0,
+    energy_guidance=0.0,
+    energy2_guidance=0.0,
+    sfm_guidance=0.0,
+)
 OVERWRITE_ARGS = Namespace(
     sampling_method='DDIM',
     beta_schedule='linear',
@@ -86,17 +98,20 @@ async def load_dataset(idx: int, name: str):
         dataset = WayMoDataset.load_data(ARGS, row['path'])
     elif row['dataset'] == 'GCDataset':
         dataset = GCDataset.load_data(ARGS, row['path'])
+    elif row['dataset'] == 'ORCADataset':
+        dataset = ORCADataset.load_data(ARGS, row['path'])
     else:
         raise ValueError(f"Unknown dataset type: {row['dataset']}")
     global DATASET_DICT
     DATASET_DICT[name] = dataset
     response = {
         "name": name,
+        "fps": ARGS.fps,
         "frames": { # {frame: {id: {"type":..., "x":..., "y":...}, ...}, ...}
             f: (
                 group.set_index("id")
                 .sort_index()[["type", "x", "y"]]
-                .to_dict(orient="records")
+                .to_dict(orient="index")
             ) for f, group in dataset.df_data.groupby("f", sort=True)
         },
         "map": {
@@ -115,15 +130,29 @@ async def load_model(idx: int):
     path = MODEL_DIR / MODEL_LIST[idx] / 'best.pth'
     checkpoint = torch.load(path, map_location='cpu', weights_only=True)
     global ARGS
-    ARGS = Namespace(**(checkpoint["args"] | OVERWRITE_ARGS.__dict__))
+    ARGS = Namespace(**(vars(DEFAULT_ARGS) | checkpoint["args"] | vars(OVERWRITE_ARGS)))
     global MODEL
     MODEL = Model(ARGS).to(ARGS.device)
     MODEL.load_state_dict(checkpoint["model"])
     MODEL.eval()
     torch.set_grad_enabled(False)
-    return JSONResponse(content={
-        "status": "ok", "response": ARGS, "msg": f"Model checkpoint loaded from {path}."
-    })
+    return JSONResponse(content=json_compatible({
+        "status": "ok", "response": vars(ARGS), "msg": f"Model checkpoint loaded from {path}."
+    }))
+
+
+@app.post("/api/update_args")
+async def update_args(new_args: dict):
+    """ 更新全局 ARGS 参数 """
+    global ARGS
+    if ARGS is None:
+        return JSONResponse(content={"status": "error", "msg": "Model not loaded yet."})
+    
+    # 更新参数 (仅更新 ARGS 中已有的或新传入的)
+    vars(ARGS).update(new_args)
+    
+    _logger.info(f"Args updated via API: {new_args}")
+    return JSONResponse(content={"status": "ok", "msg": "Parameters updated successfully."})
 
 
 @app.websocket("/ws")
@@ -171,13 +200,14 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
     try:
         if save_name not in DATASET_DICT:
             DATASET_DICT[save_name] = deepcopy(DATASET_DICT[dataset_name])
-            DATASET_DICT[save_name].df_data = DATASET_DICT[save_name].df_data[DATASET_DICT[save_name].df_data['f'] <= frame_idx]
-            df_data = DATASET_DICT[save_name].df_data
             map_data = DATASET_DICT[save_name].map_data
+            df_data = DATASET_DICT[save_name].df_data
+            df_data = df_data[(df_data['f'] <= frame_idx) & (df_data['f'] >= frame_idx - ARGS.hist_step)]
+            DATASET_DICT[save_name].df_data = df_data
             response = {
                 "name": save_name,
                 "frames": {
-                    f: group.set_index("id").sort_index()[["type", "x", "y"]].to_dict(orient="records")
+                    f: group.set_index("id").sort_index()[["type", "x", "y"]].to_dict(orient="index")
                     for f, group in df_data.groupby("f", sort=True)
                 },
                 "map": {
@@ -190,10 +220,13 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
             }))
         while True:
             df_new_frame = await result_queue.get()
+            # _logger.info(str(df_new_frame))
+            # df_new_frame['f'] = df_new_frame['f'].astype(int)
+            # df_new_frame['id'] = df_new_frame['id'].astype(int)
             DATASET_DICT[save_name].df_data = pd.concat([DATASET_DICT[save_name].df_data, df_new_frame], ignore_index=True)
             response = {
                 'name': save_name, 'map': None, 'frames': {
-                    f: group.set_index('id').sort_index()[['type', 'x', 'y']].to_dict(orient='records') 
+                    f: group.set_index('id').sort_index()[['type', 'x', 'y']].to_dict(orient='index') 
                     for f, group in df_new_frame.groupby('f', sort=True)
                 },
             }

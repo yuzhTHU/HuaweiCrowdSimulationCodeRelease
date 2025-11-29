@@ -357,6 +357,7 @@ class Model(nn.Module):
         ltn_embedding = self.latent_attntn(latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
         self.map_embedding = map_embedding
         self.ltn_embedding = ltn_embedding
+        self.map = map
         self.xmax = xmax
         self.xmin = xmin
         self.ymax = ymax
@@ -651,6 +652,14 @@ class RelativeModel(Model):
         sur_info = self.sur_info
 
         # Fusion
+        _logger.note(
+            f"ped_embedding.shape={ped_embedding.shape}, "
+            f"ped_info.shape={ped_info.shape}, "
+            f"veh_info.shape={veh_info.shape}, "
+            f"map_info.shape={map_info.shape}, "
+            f"sur_info.shape={sur_info.shape}, "
+            f"denoise_t_embedding.shape={denoise_t_embedding.shape}"
+        )
         ped_embedding = self.fusion_fc(
             ped_embedding + ped_info + veh_info + map_info + sur_info + denoise_t_embedding
         ) # (batch_size, #pedestrian, model_dim)

@@ -1,9 +1,7 @@
-import re
 import sys
 import time
 import json
 import torch
-import shlex
 import random
 import logging
 import numpy as np
@@ -16,15 +14,15 @@ from datetime import datetime
 from socket import gethostname
 from argparse import ArgumentParser
 from setproctitle import setproctitle
-from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset, ORCADataset
-from src.model.model import Model, RelativeModel
+from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset
+from src.model.model import Model
 from src.diffusion import DDPM, DDIM
 from src.utils.logger import init_logger
 from src.utils.seed import seed_all
 from src.utils.timer import NamedTimer
 from src.utils.plot import get_fig
 from src.utils.auto_gpu import AutoGPU
-from src.utils.fix_parser import add_negation_flags, add_minus_flags
+from src.utils.negation_flags import add_negation_flags
 from src.utils.tag2ansi import tag2ansi
 
 _logger = logging.getLogger("src.train")
@@ -32,49 +30,33 @@ _logger = logging.getLogger("src.train")
 def main(args):
     ## Load Dataset
     # 加载数据集
-    dataset_list = []
-    if 'All' in args.datasets:
-        args.datasets.remove('All')
-        args.datasets += ['ETH', 'UCY', 'GC', 'SDD', 'WayMo', 'ORCA']
-    if "ETH" in args.datasets:
-        dataset_list += ETHDataset.load_data_batch(args, "./data/ETH/")
-        args.datasets.remove("ETH")
-    if "UCY" in args.datasets:
-        dataset_list += UCYDataset.load_data_batch(args, "./data/UCY/data/")
-        args.datasets.remove("UCY")
-    if "GC" in args.datasets:
-        dataset_list += [GCDataset.load_data(args, "./data/GC/Annotation")]
-        args.datasets.remove("GC")
-    if "SDD" in args.datasets:
-        dataset_list += SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
-        args.datasets.remove("SDD")
-    if 'WayMo' in args.datasets:
-        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
-        args.datasets.remove("WayMo")
-    if 'ORCA' in args.datasets:
-        dataset_list += ORCADataset.load_data_batch(args, "./data/ORCA/")
-        args.datasets.remove("ORCA")
-    if 'debug' in args.datasets:
-        # dataset_list += [UCYDataset.load_data(args, './data/UCY/data/data_university_students/students003.vsp')]
-        # dataset_list += [SDDDataset.load_data(args, "./data/SDD/annotations/hyang/video0/annotations.txt")]
-        dataset_list += [WayMoDataset.load_data(args, './data/WayMo/Processed/00000_1_2aa43fad083efbf3/data.csv.gz')]
-        # dataset_list[0].samples = dataset_list[0].samples[int(len(dataset_list[0].samples) * 0.8):]
-        args.datasets.remove('debug')
-    if len(args.datasets) > 0:
-        raise ValueError(f"Unknown datase: {args.datasets}!")
-    # 检查地图
-    for dataset in dataset_list:
-        map_data = dataset.map_data
-        delta_x = map_data.xmax - map_data.xmin
-        delta_y = map_data.ymax - map_data.ymin
-        w, h = map_data.map.shape
-        if not (0.8 < (ratio := (delta_x / w) / (delta_y / h)) < 1.2):
-            _logger.warning(
-                f"Map aspect ratio of {dataset.name} mismatch: "
-                f"data ratio={ratio:.4f} (xrange={delta_x:.4f}, yrange={delta_y:.4f}, "
-                f"map shape={map_data.map.shape}), may cause distortion."
-            )
-            exit(1)
+    if args.debug:
+        dataset_list = [UCYDataset.load_data(args, "./data/UCY/data/data_zara/crowds_zara01.vsp")]
+    elif args.datasets == "ETH/UCY":
+        dataset_list = [
+            *UCYDataset.load_data_batch(args, "./data/UCY/data/"),
+            *ETHDataset.load_data_batch(args, "./data/ETH/"),
+        ]
+    elif args.datasets == "GC":
+        dataset_list = [GCDataset.load_data(args, "./data/GC/Annotation")]
+    elif args.datasets == "SDD":
+        dataset_list = SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
+    elif args.datasets == 'WayMo':
+        dataset_list = WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
+    elif args.datasets == 'All':
+        dataset_list = [
+            *UCYDataset.load_data_batch(args, "./data/UCY/data/"),
+            *ETHDataset.load_data_batch(args, "./data/ETH/"),
+            GCDataset.load_data(args, "./data/GC/Annotation"),
+            *SDDDataset.load_data_batch(args, "./data/SDD/annotations/"),
+            *WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100),
+        ]
+    elif args.datasets == 'debug':
+        # dataset_list = [SDDDataset.load_data(args, "./data/SDD/annotations/hyang/video0/annotations.txt")]
+        dataset_list = [WayMoDataset.load_data(args, './data/WayMo/Processed/00002_47_93c31aa2d098f5e6/data.csv.gz')]
+        dataset_list[0].samples = dataset_list[0].samples[int(len(dataset_list[0].samples) * 0.8):]
+    else:
+        raise ValueError(f"Unknown dataset {args.datasets}!")
     # 划分训练集和测试集
     if args.test_name is not None:
         # 将名称中包含指定字符串的场景划分到测试集
@@ -141,10 +123,7 @@ def main(args):
     )
 
     ## Load Model
-    if args.use_relative_model:
-        model = RelativeModel(args).to(args.device)
-    else:
-        model = Model(args).to(args.device)
+    model = Model(args).to(args.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = torch.nn.MSELoss()
     if args.sampling_method == "DDIM":
@@ -705,15 +684,15 @@ if __name__ == "__main__":
     parser.add_argument("--name", type=str, default="train")
     parser.add_argument("--exp_name", type=str, default=None)
     parser.add_argument("--device", type=str, default="auto")
-    parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--epochs", type=int, default=10000)
     parser.add_argument('--patience', type=int, default=20)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'])
     parser.add_argument("--T", type=int, default=100, help="训练时的扩散步数")
     parser.add_argument('--sample_num', type=int, default=20, help="测试时每个轨迹采样 {sample_num} 次")
-    parser.add_argument('--denoise_step', type=int, default=2, help="采样时进行 {denoise_step} 次去噪")
-    parser.add_argument('--step_offset', type=int, default=10, help="最后一步去噪从 x_{step_offset} 到 x_0")
+    parser.add_argument('--denoise_step', type=int, default=10, help="采样时进行 {denoise_step} 次去噪")
+    parser.add_argument('--step_offset', type=int, default=1, help="最后一步去噪从 x_{step_offset} 到 x_0")
     parser.add_argument('--antithetic_sampling', action='store_true', default=True)
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'])
     parser.add_argument('--rollout_lambda', type=float, default=1.0, help="rollout loss 衰减系数，设置 <1 以赋予未来更高权重")
@@ -731,16 +710,16 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--save_dir", type=str, default="./logs/train")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument('--model_dim', type=int, default=64)
+    parser.add_argument('--model_dim', type=int, default=128)
     parser.add_argument('--map_feature_dim', type=int, default=64)
     parser.add_argument('--head_num', type=int, default=4)
     parser.add_argument('--attention_layer_num', type=int, default=1)
-    parser.add_argument('--lstm_layer_num', type=int, default=1)
-    parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--lstm_layer_num', type=int, default=3)
+    parser.add_argument('--dropout', type=float, default=0.3)
     parser.add_argument('--latent_token_num', type=int, default=16)
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument('--datasets', type=str, default=["ETH"], choices=['ETH', 'UCY', 'GC', 'SDD', 'WayMo', 'ORCA', 'All', 'debug'], nargs='*')
+    parser.add_argument('--datasets', type=str, default="ETH/UCY", choices=['ETH/UCY', 'GC', 'SDD', 'WayMo', 'All', 'debug'])
     parser.add_argument('--test_name', type=str, default=None, nargs='+')
     parser.add_argument('--test_ratio', type=float, default=None)
     parser.add_argument('--split_by_scenario', action='store_true')
@@ -750,29 +729,30 @@ if __name__ == "__main__":
     parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth')
     parser.add_argument('--predict_noise', action='store_true', default=True)
     parser.add_argument('--required_memory_MB', type=int, default=6000)
-    parser.add_argument('--use_relative_model', action='store_true', default=True)
-    parser.add_argument('--use_spatial_anchor', action='store_true', default=True)
-    parser = add_minus_flags(parser) ## --key_name -> --key-name
-    parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true
+    parser = add_negation_flags(parser)
     args, unknown = parser.parse_known_args()
 
     ## Build Save Path
     if args.exp_name is None:
         now = datetime.now()
         date = now.strftime("%Y%m%d")
-        curr = now.strftime("%H%M%S")
+        hour = now.strftime("%H%M%S")
         host = gethostname()
-        exp_name = f'{date}_{args.name}_{curr}_{host}'
-        exp_name = re.compile(r'[ <>:"/\\|?*\x00-\x1f]').sub('_', exp_name.strip())
-        exp_name = exp_name or 'unnamed'
-        exp_name = exp_name[:255] # Max filename length on most filesystems
-        args.exp_name = exp_name
+        invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
+        for char in invalid_chars:
+            args.name = args.name.replace(char, '_')
+        args.exp_name = f'{date}_{args.name}_{hour}_{host}'
     save_path = Path(args.save_dir) / args.exp_name
     if not save_path.exists():
         save_path.mkdir(parents=True, exist_ok=True)
     else:
         _logger.warning(f"Save path {save_path} already exists.")
     args.save_path = str(save_path)
+
+    ## Set Seed
+    if args.seed is None:
+        args.seed = random.randint(1, 10000)
+    seed_all(args.seed)
 
     ## Init Logger
     init_logger(
@@ -782,16 +762,13 @@ if __name__ == "__main__":
         info_level="debug" if args.debug else "info",
     )
 
+    ## Save Command
+    args.command = ' '.join([sys.executable, *sys.argv])
+
     ## Warm Unknown Args
     if unknown:
         _logger.warning(f"Unknown args: {unknown}")
 
-    ## Set Seed
-    if args.seed is None:
-        args.seed = random.randint(1, 10000)
-    seed_all(args.seed)
-    ## Set Command
-    args.command = ' '.join(map(shlex.quote, [sys.executable, *sys.argv]))
     ## Select GPU
     if args.device == "auto":
         args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)

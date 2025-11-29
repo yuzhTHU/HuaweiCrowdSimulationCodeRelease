@@ -79,24 +79,24 @@ class SDDDataset(BaseDataset):
                 raise ValueError(f"ID {pid} has multiple types: {group['type'].unique()}")
             if group.iloc[0]['type'] != 'pedestrian':
                 df_list.append(group.assign(id=len(df_list)))  # 重新编号
-
-            traj = group[['f', 'x', 'y']].values
-            traj[:, 0] /= args.fps  # convert to seconds
-            cleaned_segs = cls.clean_trajectory(
-                traj,
-                median_k=5,
-                do_savgol=True, sg_win=9, sg_poly=2,
-                do_loess=False, loess_frac=0.08,
-                speed_window=11, speed_k=5.0,
-                angle_window=11, angle_k=5.0,
-                theta_thresh=np.deg2rad(90.0),
-                split_angle_thresh=np.deg2rad(120.0),
-                split_speed_delta=0.5, 
-                split_time_thresh=1.0
-            )
-            for seg in cleaned_segs:
-                seg[:, 0] *= args.fps  # convert back to frame index
-                df_list.append(pd.DataFrame(seg, columns=['f', 'x', 'y']).assign(id=len(df_list), type='pedestrian'))
+            else:
+                traj = group[['f', 'x', 'y']].values
+                traj[:, 0] /= args.fps  # convert to seconds
+                cleaned_segs = cls.clean_trajectory(
+                    traj,
+                    median_k=5,
+                    do_savgol=True, sg_win=9, sg_poly=2,
+                    do_loess=False, loess_frac=0.08,
+                    speed_window=11, speed_k=5.0,
+                    angle_window=11, angle_k=5.0,
+                    theta_thresh=np.deg2rad(90.0),
+                    split_angle_thresh=np.deg2rad(120.0),
+                    split_speed_delta=0.5, 
+                    split_time_thresh=1.0
+                )
+                for seg in cleaned_segs:
+                    seg[:, 0] *= args.fps  # convert back to frame index
+                    df_list.append(pd.DataFrame(seg, columns=['f', 'x', 'y']).assign(id=len(df_list), type='pedestrian'))
         df_data = pd.concat(df_list, ignore_index=True)
 
         ## 数据重采样
