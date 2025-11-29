@@ -47,12 +47,12 @@ class ORCADataset(BaseDataset):
             # 将黑白反转，变成白色障碍物，黑色道路
             image = ImageOps.invert(image)
             # 缩小图片，防止 image_to_world 内存爆炸
-            # h, w = image.size
-            # total_pixels = h * w
-            # max_pixels = 1e5
-            # if total_pixels > max_pixels:
-            #     scale = (max_pixels / total_pixels) ** 0.5
-            #     image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+            h, w = image.size
+            total_pixels = h * w
+            max_pixels = 1e5
+            if total_pixels > max_pixels:
+                scale = (max_pixels / total_pixels) ** 0.5
+                image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
             image = np.array(image) / 255.0  # (H, W)  第一维向下，第二维向右
             h, w = image.shape
             xmin0, xmax0, ymin0, ymax0 = np.loadtxt(data_path.parent / 'map_range.txt')
