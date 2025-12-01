@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from src.model.model import Model
+from src.model.model import Model, RelativeModel, NewModel
 from src.diffusion import DDPM, DDIM
 from src.dataset import UCYDataset, ETHDataset, GCDataset, SDDDataset, WayMoDataset, ORCADataset
 from src.utils.logger import init_logger
@@ -26,6 +26,7 @@ init_logger('src')
 
 DEFAULT_ARGS = Namespace(
     # **json.load(open('logs/train/20251127_RelativeModel_添加ReLU_修改Freq_添加Anchor_153734_DL4/args.json', 'r')),
+    use_new_model=False,
     use_relative_model=False,
     use_spatial_anchor=False,
     dest_importance=0.0,
@@ -42,13 +43,10 @@ OVERWRITE_ARGS = Namespace(
     denoise_step=10,
     cache_dataset=True,
 )
-DATASET_LIST = pd.read_csv('./data/datasets.csv', sep='\t') # 所有可用的 Dataset
-DATASET_LIST['full_name'] = '[' + DATASET_LIST['dataset'] + '] ' + DATASET_LIST['name']
+DATASET_FILE = Path('./data/datasets.csv')
+DATASET_LIST = None # 所有可用的 Dataset
 MODEL_DIR = Path('logs/train')
-MODEL_LIST = [p.name for p in sorted(MODEL_DIR.glob('*')) if (p / 'best.pth').exists()][::-1] # 所有可用的 Model
-DEFAULT_MODEL = '20251103_new-1-CFG_111635_DL4'
-if DEFAULT_MODEL in MODEL_LIST: # 将指定模型放在第一位
-    MODEL_LIST.insert(0, MODEL_LIST.pop(MODEL_LIST.index(DEFAULT_MODEL)))
+MODEL_LIST = None # 所有可用的 Model
 DATASET_DICT = {} # 缓存加载的真实数据集以及模拟的仿真数据集
 MANAGER_DICT = {} # 缓存每个 WebSocket 连接对应的仿真任务
 MODEL = None
@@ -75,12 +73,21 @@ async def get_index():
 @app.get("/api/dataset_list")
 async def dataset_list():
     """ 获取所有可用的数据集列表 """
+    global DATASET_LIST
+    if DATASET_LIST is None:
+        DATASET_LIST = pd.read_csv(DATASET_FILE, sep='\t')
+        DATASET_LIST['full_name'] = '[' + DATASET_LIST['dataset'] + '] ' + DATASET_LIST['name']
     return JSONResponse(content=json_compatible(DATASET_LIST['full_name'].to_dict()))
 
 
 @app.get("/api/model_list")
 async def model_list():
     """ 获取所有可用的模型列表 """
+    global MODEL_LIST
+    if MODEL_LIST is None:
+        MODEL_LIST = [p.name for p in sorted(MODEL_DIR.glob('*'), key=lambda x: x.stat().st_mtime, reverse=False) if (p / 'best.pth').exists()][::-1]
+        # if (DEFAULT_MODEL := '20251103_new-1-CFG_111635_DL4') in MODEL_LIST: # 将指定模型放在第一位
+        #     MODEL_LIST.insert(0, MODEL_LIST.pop(MODEL_LIST.index(DEFAULT_MODEL)))
     return JSONResponse(content=json_compatible({i: s for i, s in enumerate(MODEL_LIST)}))
 
 
@@ -132,7 +139,12 @@ async def load_model(idx: int):
     global ARGS
     ARGS = Namespace(**(vars(DEFAULT_ARGS) | checkpoint["args"] | vars(OVERWRITE_ARGS)))
     global MODEL
-    MODEL = Model(ARGS).to(ARGS.device)
+    if ARGS.use_new_model:
+        MODEL = NewModel(ARGS).to(ARGS.device)
+    elif ARGS.use_relative_model:
+        MODEL = RelativeModel(ARGS).to(ARGS.device)
+    else:
+        MODEL = Model(ARGS).to(ARGS.device)
     MODEL.load_state_dict(checkpoint["model"])
     MODEL.eval()
     torch.set_grad_enabled(False)
@@ -254,6 +266,7 @@ async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         dataset = DATASET_DICT[dataset_name]
         ARGS.device = AutoGPU().choice_gpu(3000, force=False)
         MODEL.to(ARGS.device)
+        diffusion.to(ARGS.device)
         _logger.info(f"Simulation worker using device {ARGS.device}")
         ws.send_json({'status': 'ok', 'msg': f'Simulation worker using device {ARGS.device}.'})
         now = await asyncio.to_thread(init_simulation, ARGS, dataset, frame_idx, MODEL) # 运行 100~200ms

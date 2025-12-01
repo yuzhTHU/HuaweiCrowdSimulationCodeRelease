@@ -22,6 +22,12 @@ class DDPM:
         self.alpha = 1 - self.beta
         self.alpha_bar = self.alpha.cumprod(dim=0)
         self.flexibility = flexibility
+    
+    def to(self, device):
+        self.beta = self.beta.to(device)
+        self.alpha = self.alpha.to(device)
+        self.alpha_bar = self.alpha_bar.to(device)
+        return self
 
     def add_noise(self, x0, denoise_t=None):
         """ DDPM forward: 给未来轨迹加噪 """

@@ -17,7 +17,7 @@ from socket import gethostname
 from argparse import ArgumentParser
 from setproctitle import setproctitle
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset, ORCADataset
-from src.model.model import Model, RelativeModel
+from src.model.model import Model, RelativeModel, NewModel
 from src.diffusion import DDPM, DDIM
 from src.utils.logger import init_logger
 from src.utils.seed import seed_all
@@ -141,7 +141,9 @@ def main(args):
     )
 
     ## Load Model
-    if args.use_relative_model:
+    if args.use_new_model:
+        model = NewModel(args).to(args.device)
+    elif args.use_relative_model:
         model = RelativeModel(args).to(args.device)
     else:
         model = Model(args).to(args.device)
@@ -752,6 +754,7 @@ if __name__ == "__main__":
     parser.add_argument('--required_memory_MB', type=int, default=6000)
     parser.add_argument('--use_relative_model', action='store_true', default=True)
     parser.add_argument('--use_spatial_anchor', action='store_true', default=True)
+    parser.add_argument('--use_new_model', action='store_true', default=False)
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true
     args, unknown = parser.parse_known_args()
