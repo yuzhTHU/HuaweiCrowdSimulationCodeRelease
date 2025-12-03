@@ -6,6 +6,8 @@ from argparse import Namespace
 from src.model.model import Model
 from src.diffusion import DDPM
 from src.dataset import BaseDataset
+from src.utils.get_force_map import get_force_map
+from src.utils.extract_patches import extract_patches_torch
 
 
 def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model: Model):
@@ -133,7 +135,11 @@ def simulate_one_step(
         x0 = diffusion.noise_to_x0(xt, denoise_t, output) if args.predict_noise else output
 
         ## 尝试各种引导，各种 guidance 应为 0~1 左右的系数
-        # 试试 CFG
+        total_guidance = 0.0
+        future_acc = x0 / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
+        future_vel = vel_now.unsqueeze(-2) + future_acc.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+        future_pos = pos_now.unsqueeze(-2) + future_vel.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+        # 目的地 CFG 引导
         if (des_cfg := getattr(args, 'des_cfg', 0.0)) > 0:
             if 'model_wo_des' not in locals():
                 dst_nan = torch.full_like(des_now, torch.nan)
@@ -152,8 +158,8 @@ def simulate_one_step(
                 veh_length=veh_length_repeat,
             )  # (S*B, #pedestrian, pred_step, 2)
             x0_wo_des = diffusion.noise_to_x0(xt, denoise_t, output_wo_des) if args.predict_noise else output_wo_des
-            x0 = x0 + des_cfg * (x0 - x0_wo_des)
-        # 试试 CFG
+            total_guidance = total_guidance + des_cfg * (x0 - x0_wo_des)
+        # 障碍物 CFG 引导
         if (map_cfg := getattr(args, 'map_cfg', 0.0)) > 0:
             if 'model_wo_map' not in locals():
                 map_nan = torch.full_like(model.map, torch.nan)
@@ -171,36 +177,99 @@ def simulate_one_step(
                 veh_length=veh_length_repeat,
             )  # (S*B, #pedestrian, pred_step, 2)
             x0_wo_map = diffusion.noise_to_x0(xt, denoise_t, output_wo_map) if args.predict_noise else output_wo_map
-            x0 = x0 + map_cfg * (x0 - x0_wo_map)
-        # 引导 acc 方向指向 pos_now 与 des_now 连线的方向
-        if (des_guidance := getattr(args, 'des_guidance', 0.0)) > 0:
-            direction = F.normalize(des_now - pos_now, dim=-1).nan_to_num(0.0).unsqueeze(-2) # (S*B, #pedestrian, 1, 2)
-            x0 = x0 + des_guidance * direction
-        # 基于能量，以 pos_now 与 des_now 的距离作为能量项对 acc 进行引导
-        if (energy_guidance := getattr(args, 'energy_guidance', 0.0)) > 0:
-            direction = (des_now - pos_now).nan_to_num(0.0).unsqueeze(-2)  # (S*B, #pedestrian, 1, 2)
-            x0 = x0 + energy_guidance * direction
-        # 基于能量，但是以 pos_now + vel_now * dt + 0.5 * acc * dt^2 与 des_now 的距离作为能量项对 acc 进行引导
-        if (energy2_guidance := getattr(args, 'energy2_guidance', 0.0)) > 0:
-            future_acc = x0 / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
-            future_vel = vel_now.unsqueeze(-2) + future_acc.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
-            future_pos = pos_now.unsqueeze(-2) + future_vel.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
-            direction = (des_now.unsqueeze(-2) - future_pos).nan_to_num(0.0)  # (S, ped, pred_step, 2)
-            x0 = x0 + energy2_guidance * direction
-        # 基于社会力，以 (spd_now * normalize(des_now - pos_now) - vel_now) / 0.5 对 acc 进行引导
-        if (sfm_guidance := getattr(args, 'sfm_guidance', 0.0)) > 0:
-            future_acc = x0 / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
-            future_vel = vel_now.unsqueeze(-2) + future_acc.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
-            future_pos = pos_now.unsqueeze(-2) + future_vel.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
-            desire_vel = F.normalize(des_now.unsqueeze(-2) - future_pos, dim=-1).nan_to_num(0.0) * spd_now.unsqueeze(-2)  # (S*B, #pedestrian, pred_step, 2)
-            direction = (desire_vel - future_vel) / 0.5  # (S*B, #pedestrian, pred_step, 2)
-            x0 = x0 + sfm_guidance * direction
+            total_guidance = total_guidance + map_cfg * (x0 - x0_wo_map)
+        # 目的地 CG 引导 (acc 方向应指向 pos_now 与 des_now 连线的方向)
+        if (direction_cg := getattr(args, 'direction_cg', 0.0)) > 0:
+            direction = F.normalize(des_now.unsqueeze(-2) - future_pos, dim=-1).nan_to_num(0.0)  # (S*B, #pedestrian, pred_step, 2)
+            # loss = F.mse_loss(future_acc, direction.detach())
+            # grad = torch.autograd.grad(loss, x0)[0]
+            grad = 2 * (future_acc - direction) / args.scale_accelerate  # 可以直接手算
+            total_guidance = total_guidance - direction_cg * grad
+        # 目的地 CG 引导 (acc 应使得在目的地形成的势阱中能量更低)
+        if (energy_cg := getattr(args, 'energy_cg', 0.0)) > 0:
+            with torch.enable_grad():
+                x0_grad = x0.detach().requires_grad_(True)
+                future_acc_grad = x0_grad / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
+                future_vel_grad = vel_now.unsqueeze(-2) + future_acc_grad.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+                future_pos_grad = pos_now.unsqueeze(-2) + future_vel_grad.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+                loss = (des_now.unsqueeze(-2) - future_pos_grad).nan_to_num(0.0).pow(2).sum()
+                grad = torch.autograd.grad(loss, x0_grad)[0]
+            total_guidance = total_guidance - energy_cg * grad
+        # 社会力-目的地引导力 CG 引导 (acc 应类似于社会力中的目标导向力)
+        if (sfm_des_cg := getattr(args, 'sfm_des_cg', 0.0)) > 0:
+            desire_vel = F.normalize(des_now.unsqueeze(-2) - future_pos, dim=-1) * spd_now.unsqueeze(-2)  # (S*B, #pedestrian, pred_step, 2)
+            des_force = (desire_vel - future_vel).nan_to_num(0.0) / args.t_des_force  # (S*B, #pedestrian, pred_step, 2)
+            # loss = F.mse_loss(future_acc, des_force.detach())
+            # grad = torch.autograd.grad(loss, x0)[0]
+            grad = 2 * (future_acc - des_force) / args.scale_accelerate  # 可以直接手算
+            total_guidance = total_guidance - sfm_des_cg * grad
+        # 基于社会力，引导 acc 方向远离障碍物
+        if (sfm_map_cg := getattr(args, 'sfm_map_cg', 0.0)) > 0:
+            # 场景障碍物排斥力
+            F_map = get_force_map(r=args.r, A=args.a_map_force, B=args.d_map_force, device=args.device)  # (2r+1, 2r+1, 2)
+            idx = future_pos[..., 0].sub(model.xmin).div(model.xmax - model.xmin).mul(model.map.shape[0]).round().long().clamp(0, model.map.shape[0] - 1)  # (S*B, #pedestrian, pred_step)
+            jdx = future_pos[..., 1].sub(model.ymin).div(model.ymax - model.ymin).mul(model.map.shape[1]).round().long().clamp(0, model.map.shape[1] - 1)  # (S*B, #pedestrian, pred_step)
+            patches = extract_patches_torch(model.map, idx.reshape(-1), jdx.reshape(-1), r=10).reshape(*idx.shape, 2*args.r+1, 2*args.r+1) # (S*B, #pedestrian, pred_step, 2r+1, 2r+1)
+            map_force = (patches[..., None] * F_map).nan_to_num(0.0).flatten(-3, -2).sum(-2) # (S*B, #pedestrian, pred_step, 2)
+            # loss = F.mse_loss(future_acc, map_force.detach())
+            # grad = torch.autograd.grad(loss, x0)[0]
+            grad = 2 * (future_acc - map_force) / args.scale_accelerate  # 可以直接手算
+            total_guidance = total_guidance - sfm_map_cg * grad
+        # 基于社会力，引导 acc 方向远离其他行人和车辆
+        if (sfm_social_cg := getattr(args, 'sfm_social_cg', 0.0)) > 0:
+            # 其他行人排斥力
+            p = future_pos[:, None, :, :, :] - future_pos[:, :, None, :, :] # (S*B, #focal-pedestrian, #other-pedestrian, pred_step, 2)
+            d = torch.norm(p, dim=-1, keepdim=True)
+            n = -p / d.clamp(min=1e-6)
+            F_ped = args.a_ped_force * torch.exp(-d / args.d_ped_force) * n
+            ped_force = F_ped.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
+            # 其它车辆排斥力 (车辆用最后一帧位置)
+            p = veh_now[:, :, None, -1:, :] - future_pos[:, None, :, :, :] # (S*B, #vehicle, #pedestrian, pred_step, 2)
+            d = torch.norm(p, dim=-1, keepdim=True)
+            n = -p / d.clamp(min=1e-6)
+            F_veh = args.a_veh_force * torch.exp(-d / args.d_veh_force) * n
+            veh_force = F_veh.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
+            # 合力
+            social_force = ped_force + veh_force  # (S*B, #pedestrian, pred_step, 2)
+            # loss = F.mse_loss(future_acc, social_force.detach())
+            # grad = torch.autograd.grad(loss, x_in)[0]
+            grad = 2 * (future_acc - social_force) / args.scale_accelerate  # 可以直接手算
+            total_guidance = total_guidance - sfm_social_cg * grad
+        x0 = x0 + total_guidance
 
         ## 去噪
         xt = diffusion.denoise(xt, t, x0=x0, stride=min(stride, t))
-    # _logger.info(f"  Denoising completed.")
-    
     acc_new = xt / args.scale_accelerate
+    
+    if args.use_sfm:
+        future_vel = vel_now.unsqueeze(-2)
+        future_pos = pos_now.unsqueeze(-2)
+        # 目的地导向力
+        desire_vel = F.normalize(des_now.unsqueeze(-2) - future_pos, dim=-1) * spd_now.unsqueeze(-2)  # (S*B, #pedestrian, pred_step, 2)
+        des_force = (desire_vel - future_vel).nan_to_num(0.0) / args.t_des_force  # (S*B, #pedestrian, pred_step, 2)
+        # 场景障碍物排斥力
+        F_map = get_force_map(r=args.r, A=args.a_map_force, B=args.d_map_force, device=args.device)  # (2r+1, 2r+1, 2)
+        idx = future_pos[..., 0].sub(model.xmin).div(model.xmax - model.xmin).mul(model.map.shape[0]).round().long().clamp(0, model.map.shape[0] - 1)  # (S*B, #pedestrian, pred_step)
+        jdx = future_pos[..., 1].sub(model.ymin).div(model.ymax - model.ymin).mul(model.map.shape[1]).round().long().clamp(0, model.map.shape[1] - 1)  # (S*B, #pedestrian, pred_step)
+        patches = extract_patches_torch(model.map, idx.reshape(-1), jdx.reshape(-1), r=10).reshape(*idx.shape, 2*args.r+1, 2*args.r+1) # (S*B, #pedestrian, pred_step, 2r+1, 2r+1)
+        map_force = (patches[..., None] * F_map).nan_to_num(0.0).flatten(-3, -2).sum(-2) # (S*B, #pedestrian, pred_step, 2)
+        # 其他行人排斥力
+        p = future_pos[:, None, :, :, :] - future_pos[:, :, None, :, :] # (S*B, #focal-pedestrian, #other-pedestrian, pred_step, 2)
+        d = torch.norm(p, dim=-1, keepdim=True)
+        n = -p / d.clamp(min=1e-6)
+        F_ped = args.a_ped_force * torch.exp(-d / args.d_ped_force) * n
+        ped_force = F_ped.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
+        # 其它车辆排斥力 (车辆用最后一帧位置)
+        p = veh_now[:, :, None, -1:, :] - future_pos[:, None, :, :, :] # (S*B, #vehicle, #pedestrian, pred_step, 2)
+        d = torch.norm(p, dim=-1, keepdim=True)
+        n = -p / d.clamp(min=1e-6)
+        F_veh = args.a_veh_force * torch.exp(-d / args.d_veh_force) * n
+        veh_force = F_veh.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
+        # 阻尼力
+        vel_force = -args.vel_damping * future_vel  # (S*B, #pedestrian, pred_step, 2)
+        # 合力
+        acc_new = des_force + map_force + ped_force + veh_force + vel_force
+
     vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
     pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
     veh_new = torch.from_numpy(

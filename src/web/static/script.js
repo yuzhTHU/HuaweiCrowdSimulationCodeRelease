@@ -12,8 +12,10 @@
     const slidersDiv = document.getElementById('sliders');
     const mapDiv = document.getElementById('map');
     const trailSlider = document.getElementById('trailSlider');
+    const simDurationSlider = document.getElementById('simDurationSlider');
     const trailValue = document.getElementById('trailValue');
-    const lockViewCheckbox = document.getElementById('lockViewCheckbox');
+    const simDurationValue = document.getElementById('simDurationValue');
+    const autoViewCheckbox = document.getElementById('autoViewCheckbox');
 
     // WebSocket 相关状态
     let ws = null;
@@ -38,27 +40,14 @@
         if (ACTIVE_NAME) render(ACTIVE_NAME);
     });
 
-    // Lock View Control: 状态改变时立即重绘以应用设置（例如取消勾选时立即复位视图）
-    lockViewCheckbox.addEventListener('change', () => {
+    // Simulation Duration Control
+    simDurationSlider.addEventListener('input', (e) => {
+        simDurationValue.textContent = e.target.value;
+    });
+
+    // Auto View Control: 状态改变时立即重绘以应用设置（例如取消勾选时立即复位视图）
+    autoViewCheckbox.addEventListener('change', () => {
         if (ACTIVE_NAME) render(ACTIVE_NAME);
-        // if (!myPlot) { return; }
-        // let updateLayout = {};
-        // if (lockViewCheckbox.checked) {
-        //     updateLayout = {
-        //         'xaxis.autorange': false,
-        //         'yaxis.autorange': false,
-        //         'xaxis.range': myPlot.layout.xaxis.range, // 显式锁定当前的 X 范围
-        //         'yaxis.range': myPlot.layout.yaxis.range,  // 显式锁定当前的 Y 范围
-        //         'uirevision': 'constant',
-        //     };
-        // } else {
-        //     updateLayout = {
-        //         'xaxis.autorange': true, // 启用自动定标
-        //         'yaxis.autorange': true,  // 启用自动定标
-        //         'uirevision': undefined,
-        //     };
-        // }
-        // Plotly.relayout(myPlot, updateLayout)
     });
 
     // 日志输出
@@ -522,14 +511,14 @@
                 showlegend: true,
             });
         }
-        if (lockViewCheckbox.checked) { 
-            layout.uirevision = 'constant';
-            layout.xaxis.range = myPlot ? myPlot.layout.xaxis.range : undefined;
-            layout.yaxis.range = myPlot ? myPlot.layout.yaxis.range : undefined;
-        } else { 
+        if (autoViewCheckbox.checked) { 
             layout.uirevision = undefined; 
             layout.xaxis.range = undefined;
             layout.yaxis.range = undefined;
+        } else { 
+            layout.uirevision = 'constant';
+            layout.xaxis.range = myPlot ? myPlot.layout.xaxis.range : undefined;
+            layout.yaxis.range = myPlot ? myPlot.layout.yaxis.range : undefined;
         }
         if (myPlot) {
             Plotly.react(myPlot, plotData, layout);
@@ -796,9 +785,10 @@
         const datasetName = ACTIVE_NAME;
         const item = DATA_CACHE[datasetName];
         const startFrame = item.currentFrame != null ? Number(item.currentFrame) : Number(Object.keys(item.frames)[0] || 0);
+        const totalFrame = Math.round(Number(simDurationValue.textContent) * item.fps);
         try {
             log(`发送指令以开始模拟: 从 ${datasetName} 的第 ${startFrame} 帧开始...`);
-            ws.send(JSON.stringify({ action: 'start', dataset_name: datasetName, frame_idx: startFrame }));
+            ws.send(JSON.stringify({ action: 'start', dataset_name: datasetName, frame_idx: startFrame, frame_num: totalFrame }));
             SIMULATION_RUNNING = true;
         } catch (e) {
             log('发送开始模拟指令失败:', e);

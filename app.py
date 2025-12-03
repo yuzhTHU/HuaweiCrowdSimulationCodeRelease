@@ -36,6 +36,16 @@ DEFAULT_ARGS = Namespace(
     energy_guidance=0.0,
     energy2_guidance=0.0,
     sfm_guidance=0.0,
+    use_sfm=False,
+    r=10,
+    t_des_force=0.5,
+    a_map_force=3.0,
+    d_map_force=0.6,
+    a_ped_force=2.0,
+    d_ped_force=0.3,
+    a_veh_force=5.0,
+    d_veh_force=0.5,
+    vel_damping=0.5,
 )
 OVERWRITE_ARGS = Namespace(
     sampling_method='DDIM',
@@ -179,13 +189,14 @@ async def websocket_endpoint(ws: WebSocket):
             elif action == "start":
                 dataset_name = data["dataset_name"]
                 frame_idx = data["frame_idx"]
+                frame_num = data['frame_num']
                 save_name = f'sim-{dataset_name}-from-{frame_idx}'
                 result_queue = asyncio.Queue() # maxsize=10
                 sendclient_worker_task = asyncio.create_task(
                     sendclient_worker(ws, dataset_name, frame_idx, save_name, result_queue)
                 )
                 simulation_worker_task = asyncio.create_task(
-                    simulation_worker(ws, dataset_name, frame_idx, save_name, result_queue)
+                    simulation_worker(ws, dataset_name, frame_idx, save_name, result_queue, frame_num)
                 )
                 MANAGER_DICT[ws] = (sendclient_worker_task, simulation_worker_task)
                 _logger.info(f"Started simulation for dataset {dataset_name} from frame {frame_idx}, saving to {save_name}. Current #simulations: {len(MANAGER_DICT)}")
@@ -218,13 +229,20 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
             DATASET_DICT[save_name].df_data = df_data
             response = {
                 "name": save_name,
+                "fps": ARGS.fps,
                 "frames": {
-                    f: group.set_index("id").sort_index()[["type", "x", "y"]].to_dict(orient="index")
-                    for f, group in df_data.groupby("f", sort=True)
+                    f: (
+                        group.set_index("id")
+                        .sort_index()[["type", "x", "y"]]
+                        .to_dict(orient="index")
+                    ) for f, group in df_data.groupby("f", sort=True)
                 },
                 "map": {
-                    "grid": map_data.map, "xmin": map_data.xmin, "xmax": map_data.xmax,
-                    "ymin": map_data.ymin, "ymax": map_data.ymax,
+                    "grid": map_data.map, 
+                    "xmin": map_data.xmin, 
+                    "xmax": map_data.xmax,
+                    "ymin": map_data.ymin, 
+                    "ymax": map_data.ymax,
                 },
             }
             await ws.send_json(json_compatible({
@@ -254,7 +272,7 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         _logger.error(msg)
         raise
 
-async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, save_name: str, result_queue: asyncio.Queue):
+async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, save_name: str, result_queue: asyncio.Queue, frame_num: int):
     """ 从 dataset_name 的 frame_idx 帧开始进行模拟 """
     try:
         if ARGS.sampling_method == 'DDPM':
@@ -271,7 +289,7 @@ async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         ws.send_json({'status': 'ok', 'msg': f'Simulation worker using device {ARGS.device}.'})
         now = await asyncio.to_thread(init_simulation, ARGS, dataset, frame_idx, MODEL) # 运行 100~200ms
         _logger.info(f"Frame {frame_idx}: {len(now[0])} pedestrians, {len(now[1])} vehicles.")
-        while True:
+        for _ in range(frame_num):
             df_new, now = await asyncio.to_thread(simulate_one_step, ARGS, MODEL, diffusion, *now) # 运行 100~200ms
             await result_queue.put(df_new)
     except asyncio.CancelledError:
