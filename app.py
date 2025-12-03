@@ -32,15 +32,16 @@ DEFAULT_ARGS = Namespace(
     dest_importance=0.0,
     des_cfg=0.0,
     map_cfg=0.0,
-    des_guidance=0.0,
-    energy_guidance=0.0,
-    energy2_guidance=0.0,
-    sfm_guidance=0.0,
     use_sfm=False,
-    r=10,
+    direction_cg=0.0,
+    energy_cg=0.0,
+    sfm_des_cg=0.0,
     t_des_force=0.5,
+    sfm_map_cg=0.0,
+    r=10,
     a_map_force=3.0,
     d_map_force=0.6,
+    sfm_social_cg=0.0,
     a_ped_force=2.0,
     d_ped_force=0.3,
     a_veh_force=5.0,
@@ -79,6 +80,11 @@ async def get_index():
         html_content = f.read()
     return HTMLResponse(content=html_content, status_code=200)
 
+@app.get("/favicon.ico")
+async def get_favicon():
+    with open("src/web/static/favicon.ico", "rb") as f:
+        icon_content = f.read()
+    return HTMLResponse(content=icon_content, status_code=200)
 
 @app.get("/api/dataset_list")
 async def dataset_list():
