@@ -311,19 +311,43 @@ def main(args):
         
         # 提前终止
         if 'patience' in locals() and patience <= 0:
-            _logger.warning(tag2ansi(
-                f"Early stopping at epoch [lightred]{epoch}/{args.epochs}[reset], "
-                f"[bold underline orange]best Accuracy={best_records['accuracy']:.2%}[reset] "
-                f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
-                f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
-                f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
-                f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
-                f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
-                f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-                f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}"
-            ))
+            _logger.warning(tag2ansi(f"Early stopping at epoch [lightred]{epoch}/{args.epochs}[reset], "))
             break
 
+    ## Log Best Result
+    _logger.note(tag2ansi(
+        f"[bold underline orange]best Accuracy={best_records['accuracy']:.2%}[reset] "
+        f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
+        f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
+        f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
+        f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
+        f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
+        f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}"
+    ))
+    if len(set(best_records['dataset_class'])) > 1:
+        for klass in sorted(list(set(best_records['dataset_class']))):
+            idxs = [i for i, k in enumerate(best_records['dataset_class']) if k == klass]
+            ade = np.array([best_records['ade'][i] for i in idxs])
+            fde = np.array([best_records['fde'][i] for i in idxs])
+            trajlen = np.array([best_records['trajlen'][i] for i in idxs])
+            ped_num = np.array([best_records['ped_num'][i] for i in idxs])
+            veh_num = np.array([best_records['veh_num'][i] for i in idxs])
+            rollout_time = np.array([best_records['rollout_time'][i] for i in idxs])
+            w = np.array([best_records['sample_nums'][i] for i in idxs], dtype=float)
+            w /= w.sum()
+            acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
+            _logger.info(tag2ansi(
+                f"[#66CCFF][Epoch {epoch}/{args.epochs}] Overall on {klass} datasets: "
+                f"[bold underline orange]Accuracy={acc:.2%}[reset], "
+                f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
+                f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
+                f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
+                f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
+                f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
+                f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
+                f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
+            ))
     _logger.note(f"Training finished. Re-run: {args.command}")
 
 
@@ -642,7 +666,7 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
         f"[#66CCFF]Time={test_timer}"
     ))
     if len(set(all_records['dataset_class'])) > 1:
-        for klass in set(all_records['dataset_class']):
+        for klass in sorted(list(set(all_records['dataset_class']))):
             idxs = [i for i, k in enumerate(all_records['dataset_class']) if k == klass]
             ade = np.array([all_records['ade'][i] for i in idxs])
             fde = np.array([all_records['fde'][i] for i in idxs])
