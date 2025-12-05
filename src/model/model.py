@@ -147,6 +147,20 @@ class FourierPositionalEncoding(nn.Module):
 
 
 class Model(nn.Module):
+    """
+    基于 Transformer 的时空扩散去噪模型。
+    
+    该模型结合了行人历史状态、车辆状态以及环境地图信息，通过注意力机制融合特征，
+    预测扩散过程中的噪声或去噪后的加速度。
+
+    Attributes:
+        args (Namespace): 全局配置参数。
+        pos_embedder (nn.Sequential): 位置信息的嵌入层。
+        ped_attention (nn.TransformerDecoder): 处理行人-行人交互的注意力模块。
+        map_attention (nn.TransformerDecoder): 处理行人-环境交互的注意力模块。
+        fusion_fc (Residual): 多模态特征融合层。
+    """
+
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -289,13 +303,17 @@ class Model(nn.Module):
         des: torch.FloatTensor,
         spd: torch.FloatTensor,
     ):
-        """设置行人嵌入向量 ped_embedding
+        """
+        计算并缓存行人的嵌入特征向量。
+        
+        将位置、速度、历史轨迹、目的地和期望速度分别编码后相加。
+
         Args:
-            pos (torch.FloatTensor): 行人当前位置 (batch_size, #pedestrian, 2)
-            vel (torch.FloatTensor): 行人当前速度 (batch_size, #pedestrian, 2)
-            hst (torch.FloatTensor): 行人历史轨迹 (batch_size, #pedestrian, hist_step, 2)
-            des (torch.FloatTensor): 行人终点位置 (batch_size, #pedestrian, 2)
-            spd (torch.FloatTensor): 行人预期速度 (batch_size, #pedestrian, 1)
+            pos (torch.FloatTensor): 当前时刻行人位置，形状 (B, N, 2)。
+            vel (torch.FloatTensor): 当前时刻行人速度，形状 (B, N, 2)。
+            hst (torch.FloatTensor): 历史轨迹相对坐标，形状 (B, N, T_hist, 2)。
+            des (torch.FloatTensor): 目的地坐标，形状 (B, N, 2)。
+            spd (torch.FloatTensor): 期望速率标量，形状 (B, N, 1)。
         """
         pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
         vel_embedding = self.vel_embedder(vel) # (batch_size, #pedestrian, model_dim)
@@ -423,15 +441,22 @@ class Model(nn.Module):
         veh_length: torch.LongTensor,
         timer: NamedTimer = None,
     ):
-        """根据行人、车辆、场景信息对行人下一步加速度 acc 进行去噪
-        调用前需要先调用 set_ped_embedding(), set_veh_embedding(), set_map_embedding() 和 set_sur_info() 以设置对应的信息
+        """
+        模型前向传播函数。
+
+        根据当前的噪声水平和上下文信息，预测噪声或重建原始信号。
+        调用此方法前，必须先调用 set_*_embedding 系列方法设置上下文。
+
         Args:
-            denoise_t (torch.LongTensor): 当前去噪时间步 (batch_size,)
-            noisy_acc (torch.FloatTensor): （带噪的）行人下步加速度 (batch_size, #pedestrian, pred_step, 2)
-            ped_length (torch.LongTensor): 每个batch中行人数量 (batch_size,)
-            veh_length (torch.LongTensor): 每个batch中车辆数量 (batch_size,)
+            denoise_t (torch.LongTensor): 当前的扩散时间步 t，形状 (B,)。
+            noisy_acc (torch.FloatTensor): 加噪后的未来加速度序列，形状 (B, N, pred_step, 2)。
+            ped_length (torch.LongTensor): 每个 Batch 中的有效行人数，用于 Mask，形状 (B,)。
+            veh_length (torch.LongTensor): 每个 Batch 中的有效车辆数，用于 Mask，形状 (B,)。
+            timer (NamedTimer, optional): 用于性能分析的计时器对象。
+
         Returns:
-            output (torch.FloatTensor): 去噪后的行人下步加速度 / 用于去噪的噪声 (batch_size, #pedestrian, pred_step, 2)
+            torch.FloatTensor: 模型预测输出，形状 (B, N, pred_step, 2)。
+                               具体含义取决于 args.predict_noise (预测噪声 epsilon 或 原始信号 x0)。
         """
 
         # Embedding Pedestrian

@@ -10,3 +10,6 @@ seaborn
 fastapi
 uvicorn[standard]
 websockets
+sphinx
+sphinx-book-theme
+myst-parser

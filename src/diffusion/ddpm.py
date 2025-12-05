@@ -10,7 +10,20 @@ _logger = logging.getLogger(__name__)
 
 
 class DDPM:
+    """
+    Denoising Diffusion Probabilistic Models (DDPM) 实现类。
+    
+    实现了扩散模型的前向加噪过程 (Forward Process) 和反向去噪采样过程 (Reverse Process)。
+    支持线性 (Linear) 和余弦 (Cosine) 两种 Beta 调度策略。
+    """
+
     def __init__(self, args: Namespace, flexibility=0.0):
+        """
+        初始化 DDPM 调度器。
+        Args:
+            args (Namespace): 参数配置，需包含 T (总步数), beta_schedule (调度策略) 等。
+            flexibility (float): 采样时的随机性系数 (eta)。0.0 为理论最优随机性, 1.0 为实践最优随机性 (标准 DDPM)。
+        """
         self.args = args
         if args.beta_schedule == "cosine":
             beta = self.cosine_beta_schedule(args.T)
