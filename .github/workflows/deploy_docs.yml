@@ -33,15 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # 安装项目运行依赖
-          # python -m pip install --upgrade pip
-          # pip install -r requirements.txt
-          # 安装文档构建依赖
-          if [ -f docs/requirements.txt ]; then 
-            pip install -r docs/requirements.txt
-          else 
-            pip install sphinx sphinx-rtd-theme myst-parser
-          fi
+          pip install sphinx sphinx-rtd-theme myst-parser
 
       - name: Build Documentation
         run: |
