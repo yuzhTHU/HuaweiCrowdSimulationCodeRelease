@@ -1,0 +1,839 @@
+
+<!DOCTYPE html>
+
+
+<html lang="zh-CN" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.dataset.base_dataset &#8212; 人群模拟仿真系统 API 文档</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=eba8b062" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../../../_static/documentation_options.js?v=c893ba89"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script src="../../../_static/translations.js?v=beaddf03"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/src/dataset/base_dataset';</script>
+    <link rel="index" title="索引" href="../../../genindex.html" />
+    <link rel="search" title="搜索" href="../../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="zh-CN"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">人群模拟仿真系统 API 文档</p>
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="搜索" aria-label="搜索" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">搜索</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../design.html">华为人群模拟项目 - 设计与架构文档</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../data_prepare.html">数据准备指南 (Data Preparation Guide)</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../src.dataset.html">数据加载与处理 (Dataset)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../src.model.html">核心预测模型 (Model)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.fourier_positional_encoding.html">src.model.fourier_positional_encoding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.mean_pooling_lstm.html">src.model.mean_pooling_lstm module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.model.html">src.model.model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.multiscale_cnn.html">src.model.multiscale_cnn module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.nan_embedding.html">src.model.nan_embedding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.new_model.html">src.model.new_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.permuted.html">src.model.permuted module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.relative_model.html">src.model.relative_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.residual.html">src.model.residual module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.model.sinusoidal_embedding.html">src.model.sinusoidal_embedding module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../src.diffusion.html">扩散生成算法 (Diffusion)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../src.utils.html">通用工具组件 (Utils)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.auto_gpu.html">src.utils.auto_gpu module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.extract_patches.html">src.utils.extract_patches module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.fix_parser.html">src.utils.fix_parser module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.get_force_map.html">src.utils.get_force_map module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.homography.html">src.utils.homography module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.logger.html">src.utils.logger module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.plot.html">src.utils.plot module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.seed.html">src.utils.seed module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.tag2ansi.html">src.utils.tag2ansi module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../src.utils.timer.html">src.utils.timer module</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="全屏模式"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="搜索" aria-label="搜索" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>src.dataset.base_dataset 源代码</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">D</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">reduce</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">argparse</span><span class="w"> </span><span class="kn">import</span> <span class="n">Namespace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.utils.rnn</span><span class="w"> </span><span class="kn">import</span> <span class="n">pad_sequence</span>
+
+<span class="n">_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RasterizedMap">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap">[文档]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">RasterizedMap</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    栅格化地图数据结构。</span>
+<span class="sd">    </span>
+<span class="sd">    Attributes:</span>
+<span class="sd">        map (np.array): 二维栅格地图数组，通常 0 表示可通行区域，1 表示障碍物。</span>
+<span class="sd">        xmin (float): 地图在世界坐标系下的 x 轴最小值。</span>
+<span class="sd">        ymin (float): 地图在世界坐标系下的 y 轴最小值。</span>
+<span class="sd">        xmax (float): 地图在世界坐标系下的 x 轴最大值。</span>
+<span class="sd">        ymax (float): 地图在世界坐标系下的 y 轴最大值。</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nb">map</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">xmin</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">ymin</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">xmax</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">ymax</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="BaseDataset">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset">[文档]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BaseDataset</span><span class="p">(</span><span class="n">D</span><span class="o">.</span><span class="n">Dataset</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    所有行人轨迹预测数据集的基类。</span>
+<span class="sd">    </span>
+<span class="sd">    提供了通用的样本切分、数据重采样、坐标标准化、缓存管理以及 PyTorch DataLoader 的 collate_fn。</span>
+<span class="sd">    具体的加载逻辑由子类通过实现 `load_data` 类方法来完成。</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="BaseDataset.__init__">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.__init__">[文档]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">args</span><span class="p">:</span> <span class="n">Namespace</span><span class="p">,</span> 
+        <span class="n">df_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">map_data</span><span class="p">:</span> <span class="n">RasterizedMap</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        初始化数据集。</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name (str): 数据集名称（例如 &quot;eth&quot;, &quot;zara01&quot;）。</span>
+<span class="sd">            args (Namespace): 全局参数配置，需包含 fps, hist_step, pred_step 等。</span>
+<span class="sd">            df_data (pd.DataFrame): 包含所有轨迹数据的 DataFrame。</span>
+<span class="sd">                必须包含列: [&#39;f&#39;, &#39;id&#39;, &#39;x&#39;, &#39;y&#39;, &#39;type&#39;]。</span>
+<span class="sd">                - f: 帧号</span>
+<span class="sd">                - id: 轨迹 ID</span>
+<span class="sd">                - x, y: 坐标</span>
+<span class="sd">                - type: &#39;pedestrian&#39; 或 &#39;vehicle&#39;</span>
+<span class="sd">            map_data (RasterizedMap, optional): 对应的场景地图数据。默认为 None。</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="n">args</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">df_data</span> <span class="o">=</span> <span class="n">df_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">map_data</span> <span class="o">=</span> <span class="n">map_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_samples</span><span class="p">(</span><span class="n">df_data</span><span class="p">)</span>
+
+        <span class="n">delta_x</span> <span class="o">=</span> <span class="n">map_data</span><span class="o">.</span><span class="n">xmax</span> <span class="o">-</span> <span class="n">map_data</span><span class="o">.</span><span class="n">xmin</span>
+        <span class="n">delta_y</span> <span class="o">=</span> <span class="n">map_data</span><span class="o">.</span><span class="n">ymax</span> <span class="o">-</span> <span class="n">map_data</span><span class="o">.</span><span class="n">ymin</span>
+        <span class="n">w</span><span class="p">,</span> <span class="n">h</span> <span class="o">=</span> <span class="n">map_data</span><span class="o">.</span><span class="n">map</span><span class="o">.</span><span class="n">shape</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="mf">0.8</span> <span class="o">&lt;</span> <span class="p">(</span><span class="n">ratio</span> <span class="o">:=</span> <span class="p">(</span><span class="n">delta_x</span> <span class="o">/</span> <span class="n">w</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">delta_y</span> <span class="o">/</span> <span class="n">h</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1.2</span><span class="p">):</span>
+            <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Map aspect ratio of </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> mismatch: &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;data ratio=</span><span class="si">{</span><span class="n">ratio</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (xrange=</span><span class="si">{</span><span class="n">delta_x</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, yrange=</span><span class="si">{</span><span class="n">delta_y</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;map shape=</span><span class="si">{</span><span class="n">map_data</span><span class="o">.</span><span class="n">map</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">), may cause distortion.&quot;</span>
+            <span class="p">)</span></div>
+
+    
+<div class="viewcode-block" id="BaseDataset.load_data">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.load_data">[文档]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_data</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;BaseDataset&#39;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        [抽象方法] 从文件路径加载数据并返回数据集实例。</span>
+<span class="sd">        </span>
+<span class="sd">        子类必须实现此方法以处理特定的原始数据格式。</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            args (Namespace): 全局参数配置。</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            BaseDataset: 加载好的数据集实例。</span>
+<span class="sd">        </span>
+<span class="sd">        Raises:</span>
+<span class="sd">            NotImplementedError: 如果子类未实现此方法。</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+        <span class="n">df_data</span> <span class="o">=</span> <span class="o">...</span>
+        <span class="n">map_data</span> <span class="o">=</span> <span class="o">...</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;unknown&quot;</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="n">df_data</span><span class="o">=</span><span class="n">df_data</span><span class="p">,</span> <span class="n">map_data</span><span class="o">=</span><span class="n">map_data</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;返回数据集中的样本数量。&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;获取指定索引的样本数据。&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+
+<div class="viewcode-block" id="BaseDataset.split_samples">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.split_samples">[文档]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split_samples</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">df_data</span><span class="p">,</span> <span class="n">use_tqdm</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        将连续的轨迹数据切分为用于训练/测试的滑动窗口样本。</span>
+
+<span class="sd">        根据 args.hist_step (历史步长) 和 args.pred_step (预测步长) </span>
+<span class="sd">        以及 args.skip_step (滑窗步长) 生成样本。每个样本包含当前场景下的</span>
+<span class="sd">        所有行人和车辆的历史轨迹、未来轨迹标签以及相关的上下文信息。</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            df_data (pd.DataFrame): 包含完整轨迹的 DataFrame。</span>
+<span class="sd">            use_tqdm (bool, optional): 是否显示进度条。默认为 True。</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            List[dict]: 样本列表，每个样本是一个字典，包含：</span>
+<span class="sd">                - pos: 当前时刻位置 (#ped, 2)</span>
+<span class="sd">                - vel: 当前时刻速度 (#ped, 2)</span>
+<span class="sd">                - des: 目的地 (#ped, 2)</span>
+<span class="sd">                - spd: 期望速度 (#ped, 1)</span>
+<span class="sd">                - hst: 历史轨迹 (#ped, hist_step, 2)</span>
+<span class="sd">                - veh: 车辆历史 (#veh, hist_step+1, 2)</span>
+<span class="sd">                - future_acc: 未来加速度标签 (#ped, pred_step, 2)</span>
+<span class="sd">                - ...</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">hist_step</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">hist_step</span>
+        <span class="n">pred_step</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">pred_step</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">roll_step</span>
+        <span class="n">skip_step</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">skip_step</span>
+        <span class="n">fps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="o">.</span><span class="n">fps</span>
+
+        <span class="n">df_data</span> <span class="o">=</span> <span class="n">df_data</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">,</span> <span class="s1">&#39;id&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">([</span><span class="s1">&#39;pedestrian&#39;</span><span class="p">,</span> <span class="s1">&#39;vehicle&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Data type must be &#39;pedestrian&#39; or &#39;vehicle&#39;, found </span><span class="si">{</span><span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">samples</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">f_min</span><span class="p">,</span> <span class="n">f_max</span> <span class="o">=</span> <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">f_min</span> <span class="o">+</span> <span class="n">hist_step</span><span class="p">,</span> <span class="n">f_max</span> <span class="o">-</span> <span class="n">pred_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">skip_step</span><span class="p">),</span> <span class="n">disable</span><span class="o">=</span><span class="ow">not</span> <span class="n">use_tqdm</span><span class="p">):</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="n">df_data</span><span class="p">[</span><span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">ge</span><span class="p">(</span><span class="n">f</span> <span class="o">-</span> <span class="n">hist_step</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">lt</span><span class="p">(</span><span class="n">f</span> <span class="o">+</span> <span class="n">pred_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+
+            <span class="c1">## 行人数据整理</span>
+            <span class="n">ped_data</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">&#39;pedestrian&#39;</span><span class="p">)]</span>
+            <span class="n">ped_list</span> <span class="o">=</span> <span class="n">ped_data</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">ped_table</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">ped_data</span>
+                <span class="o">.</span><span class="n">pivot_table</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="s1">&#39;f&#39;</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">])</span>
+                <span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="n">f</span> <span class="o">-</span> <span class="n">hist_step</span><span class="p">,</span> <span class="n">f</span> <span class="o">+</span> <span class="n">pred_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> 
+                         <span class="n">columns</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_product</span><span class="p">([[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">],</span> <span class="n">ped_list</span><span class="p">]))</span>
+                <span class="o">.</span><span class="n">swaplevel</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">sort_index</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span>
+            <span class="p">)</span>
+
+            <span class="c1"># 插值</span>
+            <span class="n">ped_table</span> <span class="o">=</span> <span class="n">ped_table</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="s1">&#39;linear&#39;</span><span class="p">,</span> <span class="n">limit_area</span><span class="o">=</span><span class="s1">&#39;inside&#39;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+            <span class="c1"># 排除 f 时刻不在场的行人</span>
+            <span class="n">ped_list</span> <span class="o">=</span> <span class="n">ped_table</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">f</span><span class="p">]</span><span class="o">.</span><span class="n">unstack</span><span class="p">()</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span>
+            <span class="n">ped_list</span> <span class="o">=</span> <span class="n">ped_list</span><span class="p">[</span><span class="n">ped_list</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">ped_table</span> <span class="o">=</span> <span class="n">ped_table</span><span class="p">[</span><span class="n">ped_list</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ped_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No pedestrian at frame </span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2"> in dataset </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">, skip.&quot;</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="c1"># 填充 NaN</span>
+            <span class="c1"># ped_table = ped_table.ffill().bfill()</span>
+
+            <span class="c1"># 当前状态</span>
+            <span class="n">pos</span> <span class="o">=</span> <span class="n">ped_table</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">f</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ped_list</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># (#ped, 2)</span>
+            <span class="n">vel</span> <span class="o">=</span> <span class="n">ped_table</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">f</span><span class="p">]</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">fps</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ped_list</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># (#ped, 2)</span>
+
+            <span class="c1"># 未来加速度作为标签</span>
+            <span class="n">future_acc</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">ped_table</span>
+                <span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">fps</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">fps</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="n">pred_step</span><span class="p">:]</span>
+                <span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">values</span>
+                <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">pred_step</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ped_list</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">)</span>  <span class="c1"># (#ped, pred_step, 2)</span>
+            <span class="c1"># 未来轨迹</span>
+            <span class="n">future_pos</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">ped_table</span>
+                <span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="n">pred_step</span><span class="p">:]</span>
+                <span class="o">.</span><span class="n">values</span>
+                <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">pred_step</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ped_list</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">)</span>  <span class="c1"># (#ped, pred_step, 2)</span>
+
+            <span class="c1"># 历史轨迹</span>
+            <span class="n">hst</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">ped_table</span>
+                <span class="o">.</span><span class="n">iloc</span><span class="p">[:</span><span class="n">hist_step</span><span class="p">]</span>
+                <span class="o">.</span><span class="n">values</span>
+                <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">hist_step</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ped_list</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">)</span>  <span class="c1"># (#ped, hist_step, 2)</span>
+
+            <span class="c1"># 未来 5s 平均速度</span>
+            <span class="n">future_5s</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">df_data</span><span class="p">[</span>
+                    <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">ge</span><span class="p">(</span><span class="n">f</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span>  <span class="c1"># 包含当前帧，以允许计算下一步的速度</span>
+                    <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">lt</span><span class="p">(</span><span class="n">f</span> <span class="o">+</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">fps</span><span class="p">)</span> <span class="o">&amp;</span>
+                    <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ped_list</span><span class="p">)</span>
+                <span class="p">]</span>
+                <span class="o">.</span><span class="n">pivot_table</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="s1">&#39;f&#39;</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">])</span>
+                <span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="n">f</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">f</span> <span class="o">+</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">fps</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> 
+                         <span class="n">columns</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_product</span><span class="p">([[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">],</span> <span class="n">ped_list</span><span class="p">]))</span>
+                <span class="o">.</span><span class="n">swaplevel</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">sort_index</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="s1">&#39;linear&#39;</span><span class="p">,</span> <span class="n">limit_area</span><span class="o">=</span><span class="s1">&#39;inside&#39;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s1">&#39;rows&#39;</span><span class="p">)</span>
+                <span class="c1"># .ffill().bfill()</span>
+            <span class="p">)</span>
+            <span class="n">spd</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">future_5s</span>
+                <span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">fps</span><span class="p">)</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>  <span class="c1"># 去掉第一行 NaN（对应于当前第 f 帧的速度），只剩未来 5s</span>
+                <span class="o">.</span><span class="n">swaplevel</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">future_stack</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">unstack</span><span class="p">()</span>
+                <span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;rows&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>
+                <span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+            <span class="p">)</span>  <span class="c1"># (#ped, 1)</span>
+            
+            <span class="c1"># 目的地 (最后出现位置) 作为条件</span>
+            <span class="n">des</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">df_data</span><span class="p">[</span><span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">ped_list</span><span class="p">)]</span>
+                <span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">tail</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">ped_list</span><span class="p">)</span>
+                <span class="p">[[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">values</span>
+            <span class="p">)</span>  <span class="c1"># (#ped, 2)</span>
+
+            <span class="c1"># 车辆信息作为条件</span>
+            <span class="n">veh_data</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="s1">&#39;vehicle&#39;</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">ge</span><span class="p">(</span><span class="n">f</span> <span class="o">-</span> <span class="n">hist_step</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">lt</span><span class="p">(</span><span class="n">f</span> <span class="o">+</span> <span class="n">pred_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+            <span class="n">veh_list</span> <span class="o">=</span> <span class="n">veh_data</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">veh_table</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">veh_data</span>
+                <span class="o">.</span><span class="n">pivot_table</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="s1">&#39;f&#39;</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">])</span>
+                <span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="n">f</span> <span class="o">-</span> <span class="n">hist_step</span><span class="p">,</span> <span class="n">f</span> <span class="o">+</span> <span class="n">pred_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span>
+                         <span class="n">columns</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_product</span><span class="p">([[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">],</span> <span class="n">veh_list</span><span class="p">]))</span>
+                <span class="o">.</span><span class="n">swaplevel</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">sort_index</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;columns&#39;</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="s1">&#39;linear&#39;</span><span class="p">,</span> <span class="n">limit_area</span><span class="o">=</span><span class="s1">&#39;inside&#39;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="s1">&#39;rows&#39;</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">veh</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">veh_table</span>
+                <span class="o">.</span><span class="n">iloc</span><span class="p">[:</span><span class="n">hist_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+                <span class="o">.</span><span class="n">values</span>
+                <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">hist_step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">veh_list</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">)</span>  <span class="c1"># (#vehicle, hist_step + 1, 2)</span>
+            <span class="n">future_veh</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">veh_table</span>
+                <span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="n">pred_step</span><span class="p">:]</span>
+                <span class="o">.</span><span class="n">values</span>
+                <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">pred_step</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">veh_list</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">)</span>  <span class="c1"># (#ped, pred_step, 2)</span>
+
+            <span class="n">samples</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s1">&#39;pos&#39;</span><span class="p">:</span> <span class="n">pos</span><span class="p">,</span> <span class="c1"># (#ped, 2)</span>
+                <span class="s1">&#39;vel&#39;</span><span class="p">:</span> <span class="n">vel</span><span class="p">,</span> <span class="c1"># (#ped, 2)</span>
+                <span class="s1">&#39;des&#39;</span><span class="p">:</span> <span class="n">des</span><span class="p">,</span> <span class="c1"># (#ped, 2)</span>
+                <span class="s1">&#39;spd&#39;</span><span class="p">:</span> <span class="n">spd</span><span class="p">,</span> <span class="c1"># (#ped, 1)</span>
+                <span class="s1">&#39;hst&#39;</span><span class="p">:</span> <span class="n">hst</span><span class="p">,</span> <span class="c1"># (#ped, hist_step, 2)</span>
+                <span class="s1">&#39;veh&#39;</span><span class="p">:</span> <span class="n">veh</span><span class="p">,</span> <span class="c1"># (#veh, hist_step + 1, 2)</span>
+                <span class="s1">&#39;future_acc&#39;</span><span class="p">:</span> <span class="n">future_acc</span><span class="p">,</span> <span class="c1"># (#ped, pred_step, 2)</span>
+                <span class="s1">&#39;future_pos&#39;</span><span class="p">:</span> <span class="n">future_pos</span><span class="p">,</span> <span class="c1"># (#ped, pred_step, 2)</span>
+                <span class="s1">&#39;future_veh&#39;</span><span class="p">:</span> <span class="n">future_veh</span><span class="p">,</span> <span class="c1"># (#veh, pred_step, 2)</span>
+                <span class="s1">&#39;f&#39;</span><span class="p">:</span> <span class="n">f</span><span class="p">,</span> <span class="c1"># int</span>
+                <span class="s1">&#39;ped_id&#39;</span><span class="p">:</span> <span class="n">ped_list</span><span class="p">,</span> <span class="c1"># (#ped,)</span>
+                <span class="s1">&#39;veh_id&#39;</span><span class="p">:</span> <span class="n">veh_list</span><span class="p">,</span> <span class="c1"># (#veh,)</span>
+            <span class="p">})</span>
+
+        <span class="k">return</span> <span class="n">samples</span></div>
+
+
+<div class="viewcode-block" id="BaseDataset.collate_fn">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.collate_fn">[文档]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">collate_fn</span><span class="p">(</span><span class="n">batch</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        DataLoader 的自定义整理函数，用于处理变长序列的 Padding。</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            batch (List[dict]): 由 __getitem__ 返回的样本列表。</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            dict: 整理后的批次数据，所有张量已 Padding 并堆叠。</span>
+<span class="sd">                包含 &#39;pos&#39;, &#39;vel&#39;, &#39;ped_length&#39;, &#39;veh_length&#39; 等键。</span>
+<span class="sd">                Padding 值通常为 0 (对于坐标) 或 -1 (对于 ID)。</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;pos&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">vel</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;vel&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">des</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;des&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">spd</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;spd&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">hst</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;hst&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">veh</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;veh&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">future_acc</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;future_acc&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">future_pos</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;future_pos&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">future_veh</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;future_veh&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">ped_length</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">LongTensor</span><span class="p">([</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;pos&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">])</span>
+        <span class="n">veh_length</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">LongTensor</span><span class="p">([</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;veh&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">])</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">LongTensor</span><span class="p">([</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">])</span>
+        <span class="n">ped_id</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">LongTensor</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;ped_id&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">veh_id</span> <span class="o">=</span> <span class="n">pad_sequence</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">LongTensor</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s1">&#39;veh_id&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">batch</span><span class="p">],</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">padding_value</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s1">&#39;pos&#39;</span><span class="p">:</span> <span class="n">pos</span><span class="p">,</span>
+            <span class="s1">&#39;vel&#39;</span><span class="p">:</span> <span class="n">vel</span><span class="p">,</span>
+            <span class="s1">&#39;des&#39;</span><span class="p">:</span> <span class="n">des</span><span class="p">,</span>
+            <span class="s1">&#39;spd&#39;</span><span class="p">:</span> <span class="n">spd</span><span class="p">,</span>
+            <span class="s1">&#39;hst&#39;</span><span class="p">:</span> <span class="n">hst</span><span class="p">,</span>
+            <span class="s1">&#39;veh&#39;</span><span class="p">:</span> <span class="n">veh</span><span class="p">,</span>
+            <span class="s1">&#39;future_acc&#39;</span><span class="p">:</span> <span class="n">future_acc</span><span class="p">,</span>
+            <span class="s1">&#39;future_pos&#39;</span><span class="p">:</span> <span class="n">future_pos</span><span class="p">,</span>
+            <span class="s1">&#39;future_veh&#39;</span><span class="p">:</span> <span class="n">future_veh</span><span class="p">,</span>
+            <span class="s1">&#39;ped_length&#39;</span><span class="p">:</span> <span class="n">ped_length</span><span class="p">,</span>
+            <span class="s1">&#39;veh_length&#39;</span><span class="p">:</span> <span class="n">veh_length</span><span class="p">,</span>
+            <span class="s1">&#39;f&#39;</span><span class="p">:</span> <span class="n">f</span><span class="p">,</span>
+            <span class="s1">&#39;ped_id&#39;</span><span class="p">:</span> <span class="n">ped_id</span><span class="p">,</span>
+            <span class="s1">&#39;veh_id&#39;</span><span class="p">:</span> <span class="n">veh_id</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="BaseDataset.resample_dataframe">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.resample_dataframe">[文档]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resample_dataframe</span><span class="p">(</span><span class="n">df_data</span><span class="p">,</span> <span class="n">raw_fps</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">target_fps</span><span class="o">=</span><span class="mf">2.5</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        对轨迹数据进行重采样，以匹配模型所需的目标帧率。</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            df_data (pd.DataFrame): 原始轨迹数据。</span>
+<span class="sd">            raw_fps (float): 原始数据的帧率。默认为 30。</span>
+<span class="sd">            target_fps (float): 目标帧率。默认为 2.5。</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            pd.DataFrame: 重采样后的 DataFrame，包含插值后的坐标和更新的帧号。</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">raw_fps</span> <span class="o">==</span> <span class="n">target_fps</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">df_data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="n">new_df_data</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="nb">id</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">df_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">group</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ID </span><span class="si">{</span><span class="nb">id</span><span class="si">}</span><span class="s2"> has multiple types: </span><span class="si">{</span><span class="n">group</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span><span class="si">}</span><span class="s2">, use the first one.&quot;</span><span class="p">)</span>
+            <span class="n">t_raw</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">raw_fps</span>
+            <span class="n">f_new</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">t_raw</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">*</span> <span class="n">target_fps</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">t_raw</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">*</span> <span class="n">target_fps</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+            <span class="n">t_new</span> <span class="o">=</span> <span class="n">f_new</span> <span class="o">/</span> <span class="n">target_fps</span>
+            <span class="n">x_new</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">t_new</span><span class="p">,</span> <span class="n">t_raw</span><span class="p">,</span> <span class="n">group</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">])</span>
+            <span class="n">y_new</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">t_new</span><span class="p">,</span> <span class="n">t_raw</span><span class="p">,</span> <span class="n">group</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">])</span>
+            <span class="n">new_group</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+                <span class="s1">&#39;f&#39;</span><span class="p">:</span> <span class="n">f_new</span><span class="p">,</span>
+                <span class="s1">&#39;x&#39;</span><span class="p">:</span> <span class="n">x_new</span><span class="p">,</span>
+                <span class="s1">&#39;y&#39;</span><span class="p">:</span> <span class="n">y_new</span>
+            <span class="p">})</span>
+            <span class="n">new_group</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">id</span>
+            <span class="n">new_group</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">new_df_data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_group</span><span class="p">)</span>
+        <span class="n">new_df_data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">new_df_data</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">new_df_data</span><span class="o">.</span><span class="n">duplicated</span><span class="p">(</span><span class="n">subset</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">,</span> <span class="s1">&#39;id&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">df_data</span><span class="o">.</span><span class="n">duplicated</span><span class="p">(</span><span class="n">subset</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">,</span> <span class="s1">&#39;id&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Input df_data has duplicate (f, id) entries.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Resampling resulted in duplicate (f, id) entries.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_df_data</span></div>
+
+
+
+<div class="viewcode-block" id="BaseDataset.normalize_xy">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.normalize_xy">[文档]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">normalize_xy</span><span class="p">(</span><span class="n">df_data</span><span class="p">,</span> <span class="n">map_data</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        对坐标数据进行 Z-Score 标准化（归一化）。</span>
+
+<span class="sd">        计算轨迹数据的均值和标准差，并将轨迹数据和地图边界同时进行标准化。</span>
+<span class="sd">        注意：目前实现中 std 默认为 1.0 (仅去均值)，注释掉的代码为标准差归一化。</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            df_data (pd.DataFrame): 轨迹数据。</span>
+<span class="sd">            map_data (RasterizedMap): 地图数据。</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            tuple: (标准化后的 df_data, 更新后的 map_data)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">x_mean</span> <span class="o">=</span> <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">x_std</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="c1"># df_data[&#39;x&#39;].std()</span>
+        <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="n">x_mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">x_std</span>
+        <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Normalized x with mean=</span><span class="si">{</span><span class="n">x_mean</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, std=</span><span class="si">{</span><span class="n">x_std</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">y_mean</span> <span class="o">=</span> <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">y_std</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="c1"># df_data[&#39;y&#39;].std()</span>
+        <span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">df_data</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="n">y_mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">y_std</span>
+        <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Normalized y with mean=</span><span class="si">{</span><span class="n">y_mean</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, std=</span><span class="si">{</span><span class="n">y_std</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">map_data</span><span class="o">.</span><span class="n">xmin</span> <span class="o">=</span> <span class="p">(</span><span class="n">map_data</span><span class="o">.</span><span class="n">xmin</span> <span class="o">-</span> <span class="n">x_mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">x_std</span>
+        <span class="n">map_data</span><span class="o">.</span><span class="n">xmax</span> <span class="o">=</span> <span class="p">(</span><span class="n">map_data</span><span class="o">.</span><span class="n">xmax</span> <span class="o">-</span> <span class="n">x_mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">x_std</span>
+        <span class="n">map_data</span><span class="o">.</span><span class="n">ymin</span> <span class="o">=</span> <span class="p">(</span><span class="n">map_data</span><span class="o">.</span><span class="n">ymin</span> <span class="o">-</span> <span class="n">y_mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">y_std</span>
+        <span class="n">map_data</span><span class="o">.</span><span class="n">ymax</span> <span class="o">=</span> <span class="p">(</span><span class="n">map_data</span><span class="o">.</span><span class="n">ymax</span> <span class="o">-</span> <span class="n">y_mean</span><span class="p">)</span> <span class="o">/</span> <span class="n">y_std</span>
+        <span class="n">_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Normalized map into xmin=</span><span class="si">{</span><span class="n">map_data</span><span class="o">.</span><span class="n">xmin</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, xmax=</span><span class="si">{</span><span class="n">map_data</span><span class="o">.</span><span class="n">xmax</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;ymin=</span><span class="si">{</span><span class="n">map_data</span><span class="o">.</span><span class="n">ymin</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, ymax=</span><span class="si">{</span><span class="n">map_data</span><span class="o">.</span><span class="n">ymax</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">df_data</span><span class="p">,</span> <span class="n">map_data</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_make_cache_path</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">data_path</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">cache_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./data/.cache&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        生成唯一的数据集缓存文件路径。</span>
+
+<span class="sd">        缓存文件名包含数据集名称及关键参数 (fps, steps)，以避免参数变更后读取旧缓存。</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            args (Namespace): 参数配置。</span>
+<span class="sd">            data_path (str): 原始数据路径 (未使用，仅作为签名参考)。</span>
+<span class="sd">            name (str): 数据集名称。</span>
+<span class="sd">            cache_dir (str, optional): 缓存目录。默认为 &quot;./data/.cache&quot;。</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Path: 缓存文件的完整路径。</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cache_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">cache_dir</span><span class="p">)</span>
+        <span class="n">cache_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">cache_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">fps</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">hist_step</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">pred_step</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">skip_step</span><span class="si">}</span><span class="s2">.pkl&quot;</span>
+        <span class="c1"># key = f&quot;{data_path}_{args.fps}_{args.hist_step}_{args.pred_step}_{args.skip_step}.pkl&quot;</span>
+        <span class="c1"># hash_key = hashlib.md5(key.encode()).hexdigest()[:10]</span>
+        <span class="c1"># cache_name = f&quot;{name}_{hash_key}.pkl&quot;</span>
+        <span class="n">cache_path</span> <span class="o">=</span> <span class="n">cache_dir</span> <span class="o">/</span> <span class="n">cache_name</span>
+        <span class="k">return</span> <span class="n">cache_path</span>
+
+<div class="viewcode-block" id="BaseDataset.save_cache">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.save_cache">[文档]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_cache</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">cache_path</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;将数据集对象序列化保存到磁盘缓存。&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">cache_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseDataset.load_cache">
+<a class="viewcode-back" href="../../../src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.load_cache">[文档]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_cache</span><span class="p">(</span><span class="n">cache_path</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;从磁盘缓存加载数据集对象。&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">cache_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+作者： FIB-Lab
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2025, FIB-Lab.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

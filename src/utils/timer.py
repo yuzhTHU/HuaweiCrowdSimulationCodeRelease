@@ -115,9 +115,21 @@ class AbsTimer(Timer):
 
 
 class NamedTimer(Timer):
+    """
+    命名计时器，用于分别统计多个不同代码段的耗时。
+    
+    适合在训练或推理循环中分析各个阶段（如数据加载、前向传播、后处理）的时间占比。
+    """
     def __init__(
         self, unit="iter", mode: Literal["pace", "speed", "counter", "timer"] = "pace"
     ):
+        """
+        Args:
+            unit (str): 时间显示的单位后缀，如 'iter'。
+            mode (str): 显示模式。
+                - 'pace': 每个单位的耗时 (e.g., 100ms/iter)
+                - 'speed': 每秒完成的单位数 (e.g., 10iter/s)
+        """
         self._count = {}
         self._time = {}
         self.unit = unit
@@ -149,6 +161,14 @@ class NamedTimer(Timer):
         return f'{prefix} ({"; ".join(detail)})'
 
     def add(self, name, n=1, update_time=True):
+        """
+        记录指定名称阶段的耗时。
+        
+        Args:
+            name (str): 阶段名称 (key)。
+            n (int, optional): 完成的工作量计数。默认为 1。
+            update_time (bool, optional): 是否重置起始时间。通常为 True。
+        """
         if name not in self._time:
             self._time[name] = self._count[name] = 0
         self._time[name] += time.time() - self.start_time

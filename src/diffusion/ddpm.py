@@ -10,7 +10,26 @@ _logger = logging.getLogger(__name__)
 
 
 class DDPM:
+    """
+    去噪扩散概率模型 (Denoising Diffusion Probabilistic Models, DDPM)。
+    
+    实现了 DDPM 的正向加噪过程 (Forward Process) 和反向去噪过程 (Reverse Process)。
+    支持线性 (Linear) 和余弦 (Cosine) 两种 Beta 调度策略。
+    """
+
     def __init__(self, args: Namespace, flexibility=0.0):
+        """
+        初始化 DDPM 模型的噪声调度表。
+
+        Args:
+            args (Namespace): 配置参数对象，需包含：
+                - beta_schedule (str): 'linear' 或 'cosine'。
+                - T (int): 扩散的总步数。
+                - device (str): 计算设备。
+                - antithetic_sampling (bool): 是否在 add_noise 中使用对偶采样以减少方差。
+            flexibility (float, optional): 方差插值系数，用于控制生成过程的随机性。
+                0.0 对应固定方差 (通常用于 DDIM)，1.0 对应完整方差 (标准 DDPM)。默认为 0.0。
+        """
         self.args = args
         if args.beta_schedule == "cosine":
             beta = self.cosine_beta_schedule(args.T)
@@ -24,13 +43,39 @@ class DDPM:
         self.flexibility = flexibility
     
     def to(self, device):
+        """
+        将噪声调度表（alpha, beta 等）移动到指定设备。
+
+        Args:
+            device (torch.device or str): 目标设备。
+
+        Returns:
+            self: 返回自身实例以支持链式调用。
+        """
         self.beta = self.beta.to(device)
         self.alpha = self.alpha.to(device)
         self.alpha_bar = self.alpha_bar.to(device)
         return self
 
     def add_noise(self, x0, denoise_t=None):
-        """ DDPM forward: 给未来轨迹加噪 """
+        """
+        DDPM 前向过程：给原始数据 x0 添加噪声，生成 t 时刻的带噪数据 xt。
+        
+        q(x_t | x_0) = N(x_t; sqrt(alpha_bar_t) * x_0, (1 - alpha_bar_t) * I)
+
+        Args:
+            x0 (torch.FloatTensor): 原始数据 (t=0)。
+                Shape: (batch_size, ...) 任意维度。
+            denoise_t (torch.LongTensor, optional): 指定的时间步 t。
+                如果为 None，则根据 args.antithetic_sampling 策略随机采样 t。
+                Shape: (batch_size, )。
+
+        Returns:
+            tuple:
+                - xt (torch.FloatTensor): 加噪后的数据。Shape 与 x0 相同。
+                - noise (torch.FloatTensor): 添加的标准高斯噪声 epsilon。Shape 与 x0 相同。
+                - denoise_t (torch.LongTensor): 实际使用的时间步 t。Shape: (batch_size, )。
+        """
         if denoise_t is not None:
             raise NotImplementedError("指定 denoise_t 的功能尚未实现")
             if (denoise_t == 0).any():
@@ -51,7 +96,26 @@ class DDPM:
         return xt, noise, denoise_t
 
     def denoise(self, xt, denoise_t, x0=None, noise=None, stride=1):
-        """ DDPM backward: 预测噪声并去噪 """
+        """
+        DDPM 反向过程：根据预测的 x0 或噪声，从 x_t 采样 x_{t-stride}。
+        
+        p_theta(x_{t-1} | x_t) = N(x_{t-1}; mu_theta(x_t, t), sigma_t^2 * I)
+        
+        Args:
+            xt (torch.FloatTensor): 当前时间步 t 的带噪数据。
+                Shape: (batch_size, ...)
+            denoise_t (torch.LongTensor): 当前时间步 t 的索引。
+                Shape: (batch_size, )
+            x0 (torch.FloatTensor, optional): 模型预测的原始数据 x0。
+            noise (torch.FloatTensor, optional): 模型预测的噪声 epsilon。
+                注意：x0 和 noise 必须且只能提供其中一个。
+            stride (int, optional): 反向去噪的步长，默认为 1。
+                用于加速采样的跳步策略。
+
+        Returns:
+            torch.FloatTensor: 去噪后的上一时刻数据 x_{t-stride}。
+                Shape 与 xt 相同。
+        """
         if not ((x0 is None) ^ (noise is None)):
             raise ValueError("x0 和 noise 只能传入一个")
         if denoise_t == 0:
@@ -76,7 +140,19 @@ class DDPM:
         return mean
 
     def noise_to_x0(self, xt, denoise_t, noise):
-        """ 根据 xt 和噪声预测 x0 """
+        """
+        根据当前带噪数据 xt 和预测的噪声 epsilon，推导原始数据 x0。
+        
+        x_0 = (x_t - sqrt(1 - alpha_bar_t) * epsilon) / sqrt(alpha_bar_t)
+
+        Args:
+            xt (torch.FloatTensor): 带噪数据 x_t。
+            denoise_t (torch.LongTensor or int): 时间步 t。
+            noise (torch.FloatTensor): 预测的噪声 epsilon。
+
+        Returns:
+            torch.FloatTensor: 估计的原始数据 x0。
+        """
         if (
             (isinstance(denoise_t, int) and (denoise_t == 0)) or
             (isinstance(denoise_t, torch.Tensor) and (denoise_t == 0).any())
@@ -89,7 +165,19 @@ class DDPM:
         return x0
 
     def x0_to_noise(self, xt, denoise_t, x0):
-        """ 根据 xt 和 x0 预测噪声 """
+        """
+        根据当前带噪数据 xt 和估计的 x0，反推隐含的噪声 epsilon。
+        
+        epsilon = (x_t - sqrt(alpha_bar_t) * x_0) / sqrt(1 - alpha_bar_t)
+
+        Args:
+            xt (torch.FloatTensor): 带噪数据 x_t。
+            denoise_t (torch.LongTensor or int): 时间步 t。
+            x0 (torch.FloatTensor): 估计的原始数据 x0。
+
+        Returns:
+            torch.FloatTensor: 隐含的噪声 epsilon。
+        """
         if (
             (isinstance(denoise_t, int) and (denoise_t == 0)) or
             (isinstance(denoise_t, torch.Tensor) and (denoise_t == 0).any())
@@ -103,6 +191,16 @@ class DDPM:
 
     @staticmethod
     def cosine_beta_schedule(T, s=0.008):
+        """
+        生成余弦退火的 Beta 调度表。
+        
+        Args:
+            T (int): 总时间步数。
+            s (float, optional): 偏移量，防止 t=0 时 beta 太小。默认为 0.008。
+
+        Returns:
+            torch.FloatTensor: Beta 值序列。Shape: (T,)
+        """
         # steps = T + 1
         # x = torch.linspace(0, T, steps)
         # alphas_cumprod = torch.cos(((x / T) + s) / (1 + s) * np.pi / 2) ** 2
@@ -120,4 +218,15 @@ class DDPM:
     
     @staticmethod
     def linear_beta_schedule(T, beta_start=0.0001, beta_end=0.05):
+        """
+        生成线性增长的 Beta 调度表。
+
+        Args:
+            T (int): 总时间步数。
+            beta_start (float, optional): 初始 Beta 值。默认为 1e-4。
+            beta_end (float, optional): 最终 Beta 值。默认为 0.05。
+
+        Returns:
+            torch.FloatTensor: Beta 值序列。Shape: (T,)
+        """
         return torch.linspace(beta_start, beta_end, T)

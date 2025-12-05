@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from src.model.model import Model, RelativeModel, NewModel
+from src.model import Model, RelativeModel, NewModel
 from src.diffusion import DDPM, DDIM
 from src.dataset import UCYDataset, ETHDataset, GCDataset, SDDDataset, WayMoDataset, ORCADataset
 from src.utils.logger import init_logger

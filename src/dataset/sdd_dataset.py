@@ -19,10 +19,30 @@ _logger = logging.getLogger(__name__)
 
 
 class SDDDataset(BaseDataset):
+    """
+    Stanford Drone Dataset (SDD) 数据集加载器。
+    
+    该数据集包含俯视视角的无人机航拍视频，包含行人、自行车、滑板、车辆等多种类别。
+    """
+
     raw_fps = 30
 
     @classmethod
     def load_data(cls, args: Namespace, data_path: str) -> "SDDDataset":
+        """
+        加载单个 SDD 视频场景的数据。
+
+        读取 annotations.txt，进行像素到米的坐标变换。
+        包含复杂的数据清洗逻辑（如去除异常速度、平滑轨迹）。
+        如果存在 map.png 则加载，否则创建空白地图。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): annotations.txt 文件路径。
+
+        Returns:
+            SDDDataset: 初始化后的数据集实例。
+        """
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
@@ -132,6 +152,7 @@ class SDDDataset(BaseDataset):
 
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["SDDDataset"]:
+        """批量加载 SDD 数据集。"""
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / f"{name}.pkl"
         if args.cache_dataset and os.path.exists(cache_path):
@@ -160,6 +181,17 @@ class SDDDataset(BaseDataset):
 
     @staticmethod
     def get_homography_mat(data_path):
+        """
+        根据数据集目录结构获取对应的单应性矩阵（像素/米 比例）。
+        
+        SDD 的不同场景（如 'bookstore', 'deathCircle'）有不同的缩放比例。
+
+        Args:
+            data_path (Path): 数据文件路径，用于推断场景名称。
+
+        Returns:
+            np.ndarray: 3x3 缩放矩阵 (实际上是对角矩阵)。
+        """
         image0 = np.array(Image.open(data_path.parent / 'reference.jpg'))
         meter_per_pixel_dict = {
             'bookstore': {
@@ -222,8 +254,19 @@ class SDDDataset(BaseDataset):
                         split_speed_delta=0.5, 
                         split_time_thresh=1.0):
         """
-        traj: (N,3) array of (t,x,y)
-        Returns: list of cleaned trajectory segments (each (M,3) array)
+        [静态工具方法] 轨迹清洗与平滑。
+
+        对原始轨迹进行去噪、平滑（Savitzky-Golay 或 LOESS）、
+        速度和角度异常检测，并将轨迹分割成合理的片段。
+
+        Args:
+            traj (np.ndarray): 原始轨迹 (N, 3)，列为 [t, x, y]。
+            median_k (int): 中值滤波窗口大小。
+            do_savgol (bool): 是否使用 Savitzky-Golay 滤波。
+            ... (其他平滑与分割阈值参数)
+
+        Returns:
+            List[np.ndarray]: 清洗后的轨迹片段列表。
         """
         # 1. sort & unique
         traj = np.array(traj)

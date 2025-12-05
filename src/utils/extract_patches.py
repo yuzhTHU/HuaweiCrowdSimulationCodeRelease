@@ -6,13 +6,23 @@ from numpy.lib.stride_tricks import as_strided
 
 def extract_patches_numpy(arr, idx, jdx, r=10):
     """
-    参数:
-    arr: (w, h) 输入的 2D np.ndarray
-    idx, jdx: (l,) 中心的行、列坐标
-    r: 半径 (默认10, 切片为 -10 到 +11, 窗口大小为 21x21)
+    从二维张量中高效提取以 (idx, jdx) 为中心的局部方形图块 (Patches)。
     
-    返回:
-    (l, 2r+1, 2r+1) 的数组，越界部分填充 NaN
+    使用 `torch.nn.functional.pad` 和高级索引实现，支持 GPU 加速和自动梯度。
+    越界区域会自动填充 NaN。
+
+    Args:
+        arr (torch.Tensor): 输入的二维大地图张量。
+            Shape: (H, W)
+        idx (torch.LongTensor): 中心点的行索引 (对应 map 的 x 坐标)。
+            Shape: (..., N) 任意维度。
+        jdx (torch.LongTensor): 中心点的列索引 (对应 map 的 y 坐标)。
+            Shape: (..., N) 维度需与 idx 一致。
+        r (int, optional): 提取半径。窗口大小将为 (2r+1)x(2r+1)。默认为 10。
+
+    Returns:
+        torch.Tensor: 提取出的局部图块堆叠。
+            Shape: (..., N, 2r+1, 2r+1)
     """
     # 1. 数据类型检查：为了填充 NaN，数组必须是浮点型
     # 如果为了极致速度且确定原数据已是 float，可跳过此步
