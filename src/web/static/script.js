@@ -1,13 +1,21 @@
-(() => {
+// (() => {
     const LOG = document.getElementById('log');
     const datasetSelect = document.getElementById('datasetSelect');
     const modelSelect = document.getElementById('modelSelect');
     const loadDatasetBtn = document.getElementById('loadDatasetBtn');
     const loadModelBtn = document.getElementById('loadModelBtn');
+    const editParamsBtn = document.getElementById('editParamsBtn');
+    const saveParamsBtn = document.getElementById('saveParamsBtn');
+    const paramsList = document.getElementById('paramsList');
     const startSimBtn = document.getElementById('startSimBtn');
     const stopSimBtn = document.getElementById('stopSimBtn');
     const slidersDiv = document.getElementById('sliders');
     const mapDiv = document.getElementById('map');
+    const trailSlider = document.getElementById('trailSlider');
+    const simDurationSlider = document.getElementById('simDurationSlider');
+    const trailValue = document.getElementById('trailValue');
+    const simDurationValue = document.getElementById('simDurationValue');
+    const autoViewCheckbox = document.getElementById('autoViewCheckbox');
 
     // WebSocket 相关状态
     let ws = null;
@@ -17,11 +25,30 @@
     let pingIntervalId = null;
     
     // 数据缓存与运行状态
-    const DATA_CACHE = {};  // { name: { name, map, frames: { frameNumber: { id: {type, x, y}, ... } }, currentFrame, sliderId } }
+    const DATA_CACHE = {};  // { name: { name, fps, map, frames: { frameNumber: { id: {type, x, y}, ... } }, currentFrame, sliderId } }
     let ACTIVE_NAME = null; // 当前选中的 name
     let ARGS_LOADED = null; // 当前加载的模型参数
     let MODEL_LOADED = null; // 当前加载的模型
     let SIMULATION_RUNNING = false; // 是否有模拟在运行中
+
+    // Plotly 图表实例
+    let myPlot;
+
+    // Trail Control
+    trailSlider.addEventListener('input', (e) => {
+        trailValue.textContent = e.target.value;
+        if (ACTIVE_NAME) render(ACTIVE_NAME);
+    });
+
+    // Simulation Duration Control
+    simDurationSlider.addEventListener('input', (e) => {
+        simDurationValue.textContent = e.target.value;
+    });
+
+    // Auto View Control: 状态改变时立即重绘以应用设置（例如取消勾选时立即复位视图）
+    autoViewCheckbox.addEventListener('change', () => {
+        if (ACTIVE_NAME) render(ACTIVE_NAME);
+    });
 
     // 日志输出
     function log(...args) {
@@ -111,11 +138,15 @@
                 frames: {},
                 currentFrame: null,
                 sliderId: null,
+                fps: response.fps || 10, 
             };
         }
         // 更新 map
         if (response.map) {
             DATA_CACHE[name].map = response.map;
+        }
+        if (response.fps) {
+            DATA_CACHE[name].fps = response.fps;
         }
         // 更新 frames 和 currentFrame
         const frames = response.frames || {};
@@ -142,10 +173,10 @@
         const max = frameKeys.length ? frameKeys[frameKeys.length - 1] : min;
         const cur = item.currentFrame != null ? item.currentFrame : min;
 
-        // DOM
+// DOM
         const wrap = document.createElement('div');
         wrap.className = 'slider-wrap';
-        wrap.draggable = false;  // 允许拖动
+        wrap.draggable = false;  // 允许拖动  
 
         const header = document.createElement('div');
         header.style.display = 'flex';
@@ -155,7 +186,7 @@
         const label = document.createElement('div');
         label.className = 'slider-label';
         label.textContent = name;
-        label.draggable = true; // 允许拖动
+        label.draggable = true; // 允许拖动 
 
         const closeBtn = document.createElement('button');
         closeBtn.textContent = '✖';
@@ -190,6 +221,7 @@
         closeBtn.addEventListener('click', () => {
             wrap.remove();
             delete DATA_CACHE[name]; // 可选
+            if (ACTIVE_NAME === name) ACTIVE_NAME = null;
         });
 
         // === 拖动事件 ===
@@ -259,6 +291,7 @@
     // UI: 高亮当前活动滑块
     function highlightSlider() {
         const item = DATA_CACHE[ACTIVE_NAME];
+        if(!item) return;
         const sliderWraps = slidersDiv.querySelectorAll('.slider-wrap');
         sliderWraps.forEach(wrap => {
             if (wrap.contains(document.getElementById(item.sliderId))) {
@@ -281,7 +314,7 @@
             highlightSlider();
         }
         renderTrace();
-    }
+        }
 
     // 渲染实体轨迹 (Plotly)
     function renderTrace() {
@@ -291,64 +324,41 @@
         }
         const plotData = [];
         const item = DATA_CACHE[ACTIVE_NAME];
-        const entities = item.frames[Number(item.currentFrame)];
+        const currentFrame = Number(item.currentFrame);
+        const fps = item.fps || 10;
+        const trailSec = Number(trailSlider.value);
+        const trailFrames = Math.round(trailSec * fps);
         // if (!entities) {
         //     Plotly.react(mapDiv, [], { title: `${ACTIVE_NAME} - 当前帧无数据` });
         //     return;
         // }
 
-        const byType = {};
-        entities.forEach(e => {
-            const t = e.type || 'pedestrian';
-            if (!byType[t]) byType[t] = [];
-            byType[t].push(e);
-        });
-
-        const traces = [];
-        Object.keys(byType).forEach(t => {
-            const arr = byType[t];
-            // const TYPE_STYLE = {
-            //     pedestrian: { marker: { size: 8, symbol: 'circle' } },
-            //     vehicle: { marker: { size: 12, symbol: 'square' } },
-            // };
-            // const type = TYPE_STYLE[t];
-            traces.push({
-                x: arr.map(e => e.x),
-                y: arr.map(e => e.y),
-                mode: 'markers+text',
-                name: `${t}`,
-                text: arr.map(e => e.id || ''),
-                textposition: 'top center',
-                marker: {
-                    size: (t === 'vehicle' ? 12 : 8),
-                    symbol: (t === 'vehicle' ? 'square' : 'circle'),
-                },
-                hoverinfo: 'text+name',
-                hovertext: arr.map(e => `ID: ${e.id || ''}<br>Type: ${t}<br>x: ${e.x}<br>y: ${e.y}`),
-            });
-        });
-        traces.forEach(t => plotData.push(t));
-    //     Plotly.react(mapDiv, plotData, { responsive: true });
-    // }
-
-    // // 渲染背景地图 (Plotly)
-    // function renderMap() {
-    //     if (!ACTIVE_NAME || !DATA_CACHE[ACTIVE_NAME]) {
-    //         Plotly.react(mapDiv, [], { title: "暂无数据" });
-    //         return;
-    //     }
-    //     const plotData = [];
-    //     const item = DATA_CACHE[ACTIVE_NAME];
+        // 1. Map Layer (Black/White, Sharp)
+        // 0=White (Road), 1=Black (Obstacle)
         let layout = {
-            margin: { t: 20, b: 40, l: 40, r: 10 },
-            xaxis: { title: 'x', autorange: true, scaleratio: 1 },
-            yaxis: { title: 'y', autorange: true, scaleanchor: "x" },
-            legend: { orientation: 'h', x: 0, y: 1.15 },
-            plot_bgcolor: '#fafafa'
+            margin: { t: 30, b: 30, l: 30, r: 30 },
+            xaxis: { title: 'x', scaleratio: 1, showgrid: false },
+            yaxis: { title: 'y', scaleanchor: "x", showgrid: false },
+            plot_bgcolor: '#ffffff',
+            hovermode: 'closest',
         };
         const mapInfo = item.map;
         if (mapInfo && mapInfo.grid) {
-            const z = mapInfo.grid;
+            // transpose grid so rows become columns
+            let z;
+            const g = mapInfo.grid;
+            if (!Array.isArray(g) || g.length === 0 || !Array.isArray(g[0])) {
+                z = g;
+            } else {
+                const rows = g.length;
+                const cols = Math.max(...g.map(r => Array.isArray(r) ? r.length : 0));
+                z = Array.from({ length: cols }, (_, c) =>
+                    Array.from({ length: rows }, (_, r) => {
+                        const row = g[r];
+                        return Array.isArray(row) ? row[c] : undefined;
+                    })
+                );
+            }
             const xmin = mapInfo.xmin, xmax = mapInfo.xmax;
             const ymin = mapInfo.ymin, ymax = mapInfo.ymax;
             const ny = z.length, nx = Array.isArray(z[0]) ? z[0].length : 0;
@@ -358,17 +368,164 @@
             plotData.push({
                 z: z,
                 type: 'heatmap',
+                colorscale: 'Greys', 
+                reversescale: true, // 0(Low)=White, 1(High)=Black
                 showscale: false,
-                zsmooth: 'fast',
+                zsmooth: false, // Sharp pixels
                 x: xcoords,
                 y: ycoords,
                 hoverinfo: 'none',
-                opacity: 0.7
+                opacity: 1.0
             });
-            layout.xaxis.range = [xmin, xmax];
-            layout.yaxis.range = [ymin, ymax];
         }
-        Plotly.react(mapDiv, plotData, layout, { responsive: true });
+        
+        const currentEntities = item.frames[currentFrame] || [];
+
+        // 1. 找到当前帧所有活动的个体，为每个个体维护一个 trace
+        const activeTraces = {};
+        for (const e in currentEntities) {
+            activeTraces[e] = { x: [], y: [] };
+        }
+
+        // 2. 从当前帧向历史枚举指定长度的帧
+        const startF = Math.max(0, currentFrame - trailFrames);
+        for (let f = currentFrame; f >= startF; f--) {
+            const frameData = item.frames[f];
+            if (!frameData) continue;
+            // 3. 对于选定的历史帧，检查活动个体在这一帧是否出现
+            for (const e in frameData) {
+                if (activeTraces[e]) {
+                    activeTraces[e].x.push(frameData[e].x);
+                    activeTraces[e].y.push(frameData[e].y);
+                }
+            }
+        }
+
+        // 4. 枚举完后，将每个个体的 trace 添加到绘图
+        for (const e in currentEntities) {
+            const trace = activeTraces[e];
+            if (trace.x.length > 1) {
+                const color = (currentEntities[e].type === 'vehicle') ? 'rgba(200, 80, 0, 0.4)' : 'rgba(0, 100, 255, 0.4)';
+                plotData.push({
+                    x: trace.x,
+                    y: trace.y,
+                    mode: 'lines',
+                    line: { color, width: 2 },
+                    name: `${currentEntities[e].type} ID: ${e}`,
+                    showlegend: false,
+                });
+            }
+        }
+
+        // 3. Entity Layer (Vehicles as Rects, Pedestrians as Dots)
+        const vehX = [], vehY = []; // Vehicle Polygons
+        const pedX = [], pedY = [], pedText = []; // Pedestrians
+        const vehMarkersX = [], vehMarkersY = [], vehText = []; // Vehicle Centers (for ID)
+
+        for (const id in currentEntities) {
+            const e = currentEntities[id];
+            if (e.type === 'vehicle' && e.length && e.width && e.heading != null) {
+                // Calculate rectangle corners
+                // Heading: angle in radians. 
+                const cosT = Math.cos(e.heading);
+                const sinT = Math.sin(e.heading);
+                const l2 = e.length / 2;
+                const w2 = e.width / 2;
+                
+                // Corners relative to center (unrotated): (l, w), (l, -w), (-l, -w), (-l, w)
+                // Rotated: x' = x cos - y sin, y' = x sin + y cos
+                const corners = [
+                    { x: l2, y: w2 },
+                    { x: l2, y: -w2 },
+                    { x: -l2, y: -w2 },
+                    { x: -l2, y: w2 },
+                    { x: l2, y: w2 } // Close loop
+                ];
+                
+                corners.forEach(c => {
+                    const rx = e.x + (c.x * cosT - c.y * sinT);
+                    const ry = e.y + (c.x * sinT + c.y * cosT);
+                    vehX.push(rx);
+                    vehY.push(ry);
+                });
+                vehX.push(null);
+                vehY.push(null);
+
+                // Add center for hover ID
+                vehMarkersX.push(e.x);
+                vehMarkersY.push(e.y);
+                vehText.push(`ID: ${id}<br>Veh`);
+
+            } else if (e.type === 'vehicle') {
+                // Fallback for vehicle without dims -> Dot
+                vehMarkersX.push(e.x);
+                vehMarkersY.push(e.y);
+                vehText.push(`ID: ${id}<br>Veh (No Dim)`);
+            } else {
+                // Pedestrian without dims -> Dot
+                pedX.push(e.x);
+                pedY.push(e.y);
+                pedText.push(`ID: ${id}<br>Ped`);
+            }
+        }
+
+        // Vehicle Polygons
+        if (vehX.length > 0) {
+            plotData.push({
+                x: vehX,
+                y: vehY,
+                mode: 'lines',
+                fill: 'toself',
+                fillcolor: 'rgba(255, 100, 0, 0.5)',
+                line: { color: 'rgb(200, 80, 0)', width: 1 },
+                hoverinfo: 'none',
+                name: 'Vehicle',
+                showlegend: true,
+            });
+        }
+
+        // Vehicle Markers (Centers)
+        if (vehMarkersX.length > 0) {
+            plotData.push({
+                x: vehMarkersX,
+                y: vehMarkersY,
+                mode: 'markers',
+                marker: { size: 6, color: 'rgb(200, 80, 0)', symbol: 'square' },
+                text: vehText,
+                hoverinfo: 'text',
+                name: 'Vehicle',
+                showlegend: true,
+            });
+        }
+
+        // Pedestrian Dots
+        if (pedX.length > 0) {
+            plotData.push({
+                x: pedX,
+                y: pedY,
+                mode: 'markers',
+                marker: { size: 6, color: 'rgb(0, 100, 255)' },
+                text: pedText,
+                hoverinfo: 'text',
+                name: 'Pedestrian',
+                showlegend: true,
+            });
+        }
+        if (autoViewCheckbox.checked) { 
+            layout.uirevision = undefined; 
+            layout.xaxis.range = undefined;
+            layout.yaxis.range = undefined;
+        } else { 
+            layout.uirevision = 'constant';
+            layout.xaxis.range = myPlot ? myPlot.layout.xaxis.range : undefined;
+            layout.yaxis.range = myPlot ? myPlot.layout.yaxis.range : undefined;
+        }
+        if (myPlot) {
+            Plotly.react(myPlot, plotData, layout);
+        } else {
+            Plotly.newPlot(mapDiv, plotData, layout, { responsive: true })
+                .then((plotElement) => {myPlot = plotElement;});
+        }
     }
 
     // 拉取 dataset_list / model_list 并填充下拉框
@@ -439,11 +596,175 @@
                 MODEL_LOADED = name;
                 ARGS_LOADED = msg.response;
                 log('当前模型参数:', ARGS_LOADED);
+                editParamsBtn.classList.remove('d-none');
+                renderParamsEditor(ARGS_LOADED);
             } else {
                 log('加载模型失败:', msg.msg || msg);
             }
         } catch (e) {
             log('加载模型请求失败:', e);
+        }
+    });
+
+    // 渲染参数列表函数
+    function renderParamsEditor(args) {
+        paramsList.innerHTML = '';
+        const keys = Object.keys(args).sort();
+        keys.forEach(key => {
+            const val = args[key];
+            // 跳过复杂对象，只允许编辑基础类型
+            if (val !== null && typeof val === 'object') return;
+            const row = document.createElement('div');
+            row.className = 'mb-2 row g-1 align-items-center';
+
+            const labelCol = document.createElement('div');
+            labelCol.className = 'col-5 text-break';
+            labelCol.textContent = key;
+            labelCol.title = key; // hover 显示完整 key
+            
+            const inputCol = document.createElement('div');
+            inputCol.className = 'col-7';
+            
+            const input = document.createElement('input');
+            input.className = 'form-control form-control-sm param-input';
+            input.dataset.key = key;
+            input.dataset.original = val; // 存储原始值
+            input.value = val;
+            
+            // 根据类型设置 input 属性
+            if (typeof val === 'number') {
+                input.type = 'number';
+                input.step = 'any'; // 允许小数
+            } else if (typeof val === 'boolean') {
+                // 对于布尔值，可以做成下拉框或者 checkbox，这里简单用 text 模拟，或者 input type=text
+                // 为了 fancy 一点，我们用 select
+                const select = document.createElement('select');
+                select.className = 'form-select form-select-sm param-input';
+                select.dataset.key = key;
+                select.dataset.original = val;
+                
+                const optTrue = document.createElement('option');
+                optTrue.value = 'true'; optTrue.text = 'True';
+                const optFalse = document.createElement('option');
+                optFalse.value = 'false'; optFalse.text = 'False';
+                
+                select.appendChild(optTrue);
+                select.appendChild(optFalse);
+                select.value = val.toString();
+                
+                // 替换 input 为 select
+                inputCol.appendChild(select);
+                
+                // Select 事件
+                select.addEventListener('change', (e) => {
+                    const currentVal = (e.target.value === 'true');
+                    const originalVal = (e.target.dataset.original === 'true');
+                    if (currentVal !== originalVal) {
+                        e.target.classList.add('text-danger', 'fw-bold');
+                        e.target.style.borderColor = '#dc3545';
+                    } else {
+                        e.target.classList.remove('text-danger', 'fw-bold');
+                        e.target.style.borderColor = '';
+                    }
+                });
+                
+                row.appendChild(labelCol);
+                row.appendChild(inputCol);
+                paramsList.appendChild(row);
+                return; // 结束当前循环
+            } else {
+                input.type = 'text';
+            }
+            
+            // Input 事件：检测修改并标红
+            input.addEventListener('input', (e) => {
+                const currentVal = e.target.value;
+                const originalVal = String(e.target.dataset.original);
+                
+                // 简单比较字符串
+                if (currentVal !== originalVal) {
+                    e.target.classList.add('text-danger', 'fw-bold'); // Bootstrap 红色 + 加粗
+                    e.target.style.borderColor = '#dc3545'; // 边框也变红
+                } else {
+                    e.target.classList.remove('text-danger', 'fw-bold');
+                    e.target.style.borderColor = '';
+                }
+            });
+
+            inputCol.appendChild(input);
+            row.appendChild(labelCol);
+            row.appendChild(inputCol);
+            paramsList.appendChild(row);
+        });
+    }
+
+    saveParamsBtn.addEventListener('click', async () => {
+        const inputs = document.querySelectorAll('.param-input');
+        const newArgs = {};
+        let hasChanges = false;
+        
+        inputs.forEach(el => {
+            const key = el.dataset.key;
+            let val = el.value;
+            const originalStr = String(el.dataset.original);
+            
+            // 类型转换
+            if (el.tagName === 'SELECT') {
+                val = (val === 'true');
+            } else if (el.type === 'number') {
+                val = Number(val);
+            }
+            
+            // 只有修改过的才需要特别关注
+            if (String(val) !== originalStr) {
+                hasChanges = true;
+                newArgs[key] = val;
+            }
+        });
+            
+        if (!hasChanges) {
+            alert("未检测到任何参数修改。");
+            return;
+        }
+        
+        try {
+            const res = await fetch('/api/update_args', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newArgs)
+            });
+            const msg = await res.json();
+            
+            if (msg.status === 'ok') {
+                log('参数保存成功:', msg.msg);
+                
+                // 更新本地缓存 ARGS_LOADED
+                ARGS_LOADED = { ...ARGS_LOADED, ...newArgs };
+                
+                // 重置 UI 状态（去掉红色）
+                inputs.forEach(el => {
+                    // 更新 dataset.original 为当前新值
+                    if (el.tagName === 'SELECT') {
+                        el.dataset.original = (el.value === 'true');
+                    } else {
+                        el.dataset.original = el.value;
+                    }
+                    el.classList.remove('text-danger', 'fw-bold');
+                    el.style.borderColor = '';
+                });
+                // 将这个按钮标记为不可点击的
+                // saveParamsBtn.disabled = true;
+                    
+                // 关闭折叠面板
+                const bsCollapse = new bootstrap.Collapse(document.getElementById('paramsCollapse'), {toggle: false});
+                bsCollapse.hide();
+                
+            } else {
+                alert('保存失败: ' + msg.msg);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('保存请求发送失败');
         }
     });
 
@@ -464,9 +785,10 @@
         const datasetName = ACTIVE_NAME;
         const item = DATA_CACHE[datasetName];
         const startFrame = item.currentFrame != null ? Number(item.currentFrame) : Number(Object.keys(item.frames)[0] || 0);
+        const totalFrame = Math.round(Number(simDurationValue.textContent) * item.fps);
         try {
             log(`发送指令以开始模拟: 从 ${datasetName} 的第 ${startFrame} 帧开始...`);
-            ws.send(JSON.stringify({ action: 'start', dataset_name: datasetName, frame_idx: startFrame }));
+            ws.send(JSON.stringify({ action: 'start', dataset_name: datasetName, frame_idx: startFrame, frame_num: totalFrame }));
             SIMULATION_RUNNING = true;
         } catch (e) {
             log('发送开始模拟指令失败:', e);
@@ -474,10 +796,6 @@
     });
 
     stopSimBtn.addEventListener('click', () => {
-        if (!SIMULATION_RUNNING) {
-            alert('当前无运行中的模拟!');
-            return;
-        }
         try {
             ws.send(JSON.stringify({ action: 'stop' }));
             log('发送指令以停止模拟...');
@@ -504,4 +822,4 @@
         }
     });
 
-})();
+// })();

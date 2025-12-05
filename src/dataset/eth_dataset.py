@@ -18,10 +18,30 @@ _logger = logging.getLogger(__name__)
 
 
 class ETHDataset(BaseDataset):
+    """
+    ETH 行人数据集加载器。
+    
+    处理 BIWI Hotel (ETH) 和 ETH Univ 等场景的数据。
+    原始数据格式通常为观察矩阵 (obsmat.txt) 或类似格式。
+    """
+
     raw_fps = 25  # 官方 README 说是 25 fps，但是看视频感觉走起路来太快了不像真的
 
     @classmethod
     def load_data(cls, args: Namespace, data_path: str) -> "ETHDataset":
+        """
+        加载单个 ETH 场景数据。
+
+        支持读取缓存。如果无缓存，则读取原始 txt/csv 文件，
+        加载地图图像和单应性矩阵 (H matrix)，进行坐标映射和重采样。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): 数据文件路径 (通常是包含位置信息的 txt 文件)。
+
+        Returns:
+            ETHDataset: 初始化后的数据集实例。
+        """
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
@@ -55,7 +75,7 @@ class ETHDataset(BaseDataset):
 
         ## 创建地图
         H = np.loadtxt(data_path.parent / "H.txt")  # (3, 3)
-        image = np.array(Image.open(data_path.parent / 'map.png').convert('L')) # (H, W)
+        image = np.array(Image.open(data_path.parent / 'map.png').convert('L')) / 255.0 # (H, W)
         map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=args.dot_per_meter)
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
 
@@ -74,6 +94,17 @@ class ETHDataset(BaseDataset):
 
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["ETHDataset"]:
+        """
+        批量加载指定目录下的所有 ETH 场景数据。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): 根目录路径或 glob 模式字符串。
+            show_tqdm (bool, optional): 是否显示进度条。默认为 True。
+
+        Returns:
+            List[ETHDataset]: 数据集实例列表。
+        """
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / f"{name}.pkl"
         if args.cache_dataset and os.path.exists(cache_path):

@@ -11,7 +11,7 @@ from datetime import datetime
 from socket import gethostname
 from setproctitle import setproctitle
 from argparse import ArgumentParser, Namespace
-from src.model.model import Model
+from src.model import Model, RelativeModel, NewModel
 from src.utils.seed import seed_all
 from src.diffusion import DDPM, DDIM
 from src.utils.auto_gpu import AutoGPU
@@ -294,37 +294,50 @@ def main(args):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument("--name", type=str, default="sample")
-    parser.add_argument("--exp_name", type=str, default=None)
-    parser.add_argument("--device", type=str, default="auto")
-    parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'])
-    parser.add_argument("--T", type=int, default=100, help="训练时的扩散步数")
-    parser.add_argument('--sample_num', type=int, default=10, help="测试时每个轨迹采样 {sample_num} 次")
-    parser.add_argument('--denoise_step', type=int, default=2, help="采样时进行 {denoise_step} 次去噪")
-    parser.add_argument('--step_offset', type=int, default=10, help="最后一步去噪从 x_{step_offset} 到 x_0")
-    parser.add_argument('--scale_accelerate', type=float, default=1.0, help="加速度的缩放比例")
-    parser.add_argument("--hist_step", type=int, default=8)
-    parser.add_argument("--pred_step", type=int, default=1)
-    parser.add_argument("--skip_step", type=int, default=1)
-    parser.add_argument("--roll_step", type=int, default=12)
-    parser.add_argument("--fps", type=int, default=2.5)
-    parser.add_argument("--dot_per_meter", type=int, default=5)
-    parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--save_dir", type=str, default="./logs/sample")
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument('--model_dim', type=int, default=64)
-    parser.add_argument('--map_feature_dim', type=int, default=64)
-    parser.add_argument('--head_num', type=int, default=4)
-    parser.add_argument('--dropout', type=float, default=0.3)
-    parser.add_argument('--attention_layer_num', type=int, default=1)
-    parser.add_argument('--lstm_layer_num', type=int, default=1)
-    parser.add_argument('--latent_token_num', type=int, default=16)
-    parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'])
-    parser.add_argument('--cache_dataset', action='store_true', default=True)
-    parser.add_argument('--reload_checkpoint', type=str, default=None, help='/path/to/checkpoint.pth', required=True)
-    parser.add_argument('--predict_noise', action='store_true', default=True)
-    parser.add_argument('--no_destination', action='store_true', default=False, help="不使用目的地信息")
-    parser.add_argument('--no_speed', action='store_true', default=False, help="不使用速度信息")
+    
+    # 基础配置
+    parser.add_argument("--name", type=str, default="sample", help="实验任务名称，用于生成输出目录名")
+    parser.add_argument("--exp_name", type=str, default=None, help="手动指定实验名称（若不指定则根据时间自动生成）")
+    parser.add_argument("--device", type=str, default="auto", help="计算设备，可选 'cpu', 'cuda:0' 或 'auto'（自动选择）")
+    parser.add_argument("--seed", type=int, default=None, help="随机种子，用于复现采样结果")
+    parser.add_argument("--save_dir", type=str, default="./logs/sample", help="采样结果和可视化图片的保存目录")
+    parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出详细日志）")
+    
+    # 模型加载 (必须)
+    parser.add_argument('--reload_checkpoint', type=str, default=None, required=True, help="[必须] 预训练模型的权重文件路径 (.pth)")
+
+    # 采样/生成核心参数
+    parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'], help="使用的扩散采样算法")
+    parser.add_argument("--T", type=int, default=100, help="训练时设定的最大扩散步数 (Timesteps)")
+    parser.add_argument('--sample_num', type=int, default=10, help="为每个历史轨迹生成的未来轨迹样本数量 (多样性采样)")
+    parser.add_argument('--denoise_step', type=int, default=2, help="DDIM 推理时的实际去噪步数（步数越少速度越快，但质量可能下降）")
+    parser.add_argument('--step_offset', type=int, default=10, help="采样的起始偏移量（从 T-offset 步开始去噪，用于截断生成）")
+    parser.add_argument('--scale_accelerate', type=float, default=1.0, help="加速度的缩放因子（需与训练时保持一致）")
+    parser.add_argument('--predict_noise', action='store_true', default=True, help="模型是否预测噪声（需与训练配置一致）")
+    parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'cosine'], help="噪声调度表类型（需与训练配置一致）")
+
+    # 轨迹预测参数
+    parser.add_argument("--roll_step", type=int, default=12, help="需要预测的未来时间步长（循环预测次数）")
+    parser.add_argument("--hist_step", type=int, default=8, help="输入的历史轨迹长度（帧数）")
+    parser.add_argument("--pred_step", type=int, default=1, help="模型单次前向预测的未来帧数")
+    parser.add_argument("--skip_step", type=int, default=1, help="数据加载时的采样间隔")
+    parser.add_argument("--fps", type=int, default=2.5, help="模拟环境的帧率 (Hz)")
+    parser.add_argument("--dot_per_meter", type=int, default=5, help="栅格化地图的分辨率（像素/米）")
+    parser.add_argument('--cache_dataset', action='store_true', default=True, help="是否使用缓存的数据集文件")
+
+    # 消融实验/条件控制
+    parser.add_argument('--no_destination', action='store_true', default=False, help="[消融] 强制不使用目的地条件进行生成")
+    parser.add_argument('--no_speed', action='store_true', default=False, help="[消融] 强制不使用初始速度条件进行生成")
+
+    # 模型结构参数 (需与训练时一致，通常从 checkpoint 自动加载，但也允许覆盖)
+    parser.add_argument('--model_dim', type=int, default=64, help="模型的隐藏层维度")
+    parser.add_argument('--map_feature_dim', type=int, default=64, help="地图特征维度")
+    parser.add_argument('--head_num', type=int, default=4, help="Transformer 注意力头数")
+    parser.add_argument('--dropout', type=float, default=0.3, help="Dropout 比率")
+    parser.add_argument('--attention_layer_num', type=int, default=1, help="Transformer 层数")
+    parser.add_argument('--lstm_layer_num', type=int, default=1, help="LSTM 层数")
+    parser.add_argument('--latent_token_num', type=int, default=16, help="Latent Token 数量")
+
     args, unknown = parser.parse_known_args()
 
     ## Build Save Path

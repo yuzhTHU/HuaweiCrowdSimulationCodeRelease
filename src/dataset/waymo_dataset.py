@@ -16,10 +16,30 @@ from typing import List
 _logger = logging.getLogger(__name__)
 
 class WayMoDataset(BaseDataset):
+    """
+    Waymo Open Motion Dataset 加载器。
+    
+    处理包含行人和车辆的自动驾驶场景数据。
+    """
     raw_fps = 10
 
     @classmethod
-    def load_data(cls, args: Namespace, data_path: str) -> "WayMoDataset":
+    def load_data(cls, args: Namespace, data_path: str, with_shape=False) -> "WayMoDataset":
+        """
+        加载单个 Waymo 场景片段。
+
+        读取处理后的 csv 数据，重命名坐标列，映射类型标签。
+        过滤掉过短的轨迹和距离行人过远的无关车辆。
+        处理地图图片（反转颜色、缩放、投影到世界坐标）。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): data.csv.gz 文件路径。
+            with_shape (bool, optional): 是否加载物体形状信息 (暂未完全实现)。
+
+        Returns:
+            WayMoDataset: 初始化后的数据集实例。
+        """
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
@@ -31,9 +51,19 @@ class WayMoDataset(BaseDataset):
             _logger.info(f"Loading cached dataset from {cache_path}")
             dataset = cls.load_cache(cache_path)
             if len(dataset) == 0:
-                raise ValueError(f"Cached dataset {cache_path} is empty.")
+                raise ValueError(f"Cached dataset {cache_path} is empty.") # 全都是异常轨迹，再生成一遍也是徒劳，不如直接报错通知 load_data_batch 这个样本不要了
             try:
                 cls.collate_fn([dataset[0]]) # 测试能否正常使用
+                map_data = dataset.map_data
+                delta_x = map_data.xmax - map_data.xmin
+                delta_y = map_data.ymax - map_data.ymin
+                w, h = map_data.map.shape
+                if not (0.8 < (ratio := (delta_x / w) / (delta_y / h)) < 1.2):
+                    raise ValueError(
+                        f"Map aspect ratio of {name} mismatch: "
+                        f"data ratio={ratio:.4f} (xrange={delta_x:.4f}, yrange={delta_y:.4f}, "
+                        f"map shape={map_data.map.shape}), Re-create cache."
+                    )
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
@@ -52,11 +82,11 @@ class WayMoDataset(BaseDataset):
             'OTHER': 'vehicle',
         })
 
-        ## 清除离行人太远的车辆
-        df_data = cls.filter_vehicle_trajectories(df_data, distance_threshold=5.0)
-
         ## 清除始末距离太短的轨迹
         df_data = cls.filter_short_trajectories(df_data, distance_threshold=3.0)
+
+        ## 清除离行人太远的车辆
+        df_data = cls.filter_vehicle_trajectories(df_data, distance_threshold=5.0)
 
         ## 数据重采样
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
@@ -73,7 +103,7 @@ class WayMoDataset(BaseDataset):
         if total_pixels > max_pixels:
             scale = (max_pixels / total_pixels) ** 0.5
             image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-        image = np.array(image)  # (H, W)  第一维向下，第二维向右
+        image = np.array(image) / 255.0  # (H, W)  第一维向下，第二维向右
         h, w = image.shape
         xmin0, xmax0, ymin0, ymax0 = np.loadtxt(data_path.parent / 'map_range.txt')
         H = calc_homography_mat(
@@ -98,30 +128,23 @@ class WayMoDataset(BaseDataset):
 
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True, total=200) -> List["WayMoDataset"]:
-        ## 检查缓存
-        name = '-'.join(Path(data_path).relative_to('./data').parts)
-        cache_path = Path('./data/.cache') / Path(name).with_suffix(".pkl")
-        # if args.cache_dataset and os.path.exists(cache_path):
-        #     _logger.info(f"Loading cached dataset-list from {cache_path}")
-        #     files = cls.load_cache(cache_path)
-        # else:
-        #     data_path = Path(data_path)
-        #     if data_path.is_dir():
-        #         files = list(sorted(data_path.glob("**/data.csv.gz")))
-        #     elif "*" in str(data_path):
-        #         if data_path.is_absolute():
-        #             data_path = data_path.relative_to(".")
-        #         files = list(sorted(Path(".").glob(data_path)))
-        #     else:
-        #         files = [data_path]
-        #     _logger.info(f"Caching dataset-list to {cache_path}")
-        #     cls.save_cache(files, cache_path)
+        """
+        批量加载 Waymo 数据集。
+        
+        支持通过 summary.csv 根据行人数量排序并选择前 total 个场景。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): 数据根目录。
+            total (int, optional): 最大加载场景数。默认为 200。
+
+        Returns:
+            List[WayMoDataset]: 数据集列表。
+        """
         df = pd.read_csv('data/WayMo/summary.csv', sep=',')
         df = df.sort_values('num_pedestrians', ascending=False)
         files = []
         for idx, row in df.iterrows():
-            # filename,id,scenario_id,num_tracks,num_pedestrians
-            # training_20s.tfrecord-00000-of-01000
             a = row['filename'].split('-')[1]
             b = row['id']
             c = row['scenario_id']
@@ -131,7 +154,6 @@ class WayMoDataset(BaseDataset):
         datasets = []
         pbar = tqdm(files, disable=not show_tqdm, desc="Loading WayMo datasets")
         for file in pbar:
-            # if '00002_12_ebf50a0c84bbe2a' in str(file): continue
             if len(datasets) == total: break
             try:
                 pbar.set_postfix_str(file.parent.parent.name + "/" + file.parent.name)
@@ -147,7 +169,16 @@ class WayMoDataset(BaseDataset):
 
     @staticmethod
     def filter_vehicle_trajectories(df_data, distance_threshold=5.0):
-        """ 过滤掉与所有行人轨迹距离超过指定阈值的车辆轨迹。 """
+        """
+        过滤掉与所有行人轨迹距离都超过阈值的车辆轨迹，以减少无效数据量。
+
+        Args:
+            df_data (pd.DataFrame): 原始数据。
+            distance_threshold (float): 距离阈值（米）。
+
+        Returns:
+            pd.DataFrame: 过滤后的数据。
+        """
         if df_data.groupby('id')['type'].nunique().max() > 1:
             raise ValueError("Each id should correspond to a single type.")
 
@@ -165,7 +196,16 @@ class WayMoDataset(BaseDataset):
 
     @staticmethod
     def filter_short_trajectories(df_data, distance_threshold=3):
-        """ 过滤掉长度小于指定阈值的轨迹。 """
+        """
+        过滤掉位移（起点到终点距离）小于阈值的短轨迹。
+
+        Args:
+            df_data (pd.DataFrame): 原始数据。
+            distance_threshold (float): 最小位移阈值（米）。
+
+        Returns:
+            pd.DataFrame: 过滤后的数据。
+        """
         drop_id = []
         for pid, group in df_data.sort_values(['id', 'f']).groupby('id'):
             start_position = group.iloc[0][['x', 'y']].values

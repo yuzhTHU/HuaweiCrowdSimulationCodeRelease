@@ -18,10 +18,28 @@ _logger = logging.getLogger(__name__)
 
 
 class GCDataset(BaseDataset):
+    """
+    Grand Central Station (GC) 数据集加载器。
+    
+    这是一个高密度人群数据集。
+    """
     raw_fps = 25
 
     @classmethod
     def load_data(cls, args: Namespace, data_path: str) -> "GCDataset":
+        """
+        加载 GC 数据集。
+
+        读取目录下的所有 txt 文件，应用单应性变换，并移除速度异常的轨迹点。
+        加载并转置地图图像以对齐坐标系。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): 数据目录路径。
+
+        Returns:
+            GCDataset: 初始化后的数据集实例。
+        """
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
@@ -60,7 +78,7 @@ class GCDataset(BaseDataset):
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
 
         ## 创建地图
-        image = np.array(Image.open(data_path.parent / f"map.png").convert('L')) # (H, W) 第一维向下，第二维向右
+        image = np.array(Image.open(data_path.parent / f"map.png").convert('L')) / 255.0 # (H, W) 第一维向下，第二维向右
         image = image.T # 转置，使得第一维向右，第二维向下，与 df_data 中的坐标系对齐
         map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=args.dot_per_meter) # 第一维向右，第二维向上，即 xy 坐标
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
@@ -80,6 +98,12 @@ class GCDataset(BaseDataset):
 
     @classmethod
     def get_homography_mat(cls) -> np.ndarray:
+        """
+        获取 GC 数据集的固定单应性矩阵。
+
+        Returns:
+            np.ndarray: 3x3 单应性矩阵。
+        """
         H = np.array([
             [3.54477751e-02,  1.73477252e-02, -1.82112170e+01],
             [6.03523702e-04, -5.58259424e-02,  5.12654156e+01],
@@ -89,6 +113,19 @@ class GCDataset(BaseDataset):
     
     @classmethod
     def get_abnormal(cls, df: pd.DataFrame, min_abnormal_speed=5.0, min_abnormal_whis=3.0) -> pd.Series:
+        """
+        检测并标记异常轨迹点（如速度过快）。
+
+        使用基于四分位距 (IQR) 的离群点检测算法。
+
+        Args:
+            df (pd.DataFrame): 包含轨迹数据的 DataFrame。
+            min_abnormal_speed (float): 最小异常速度阈值。
+            min_abnormal_whis (float): IQR 乘数因子。
+
+        Returns:
+            pd.Series: 布尔序列，True 表示该行数据正常，False 表示异常（应被移除）。
+        """
         df_ = df.copy()
         while True:
             df_.sort_values(by='f').reset_index(drop=True)
