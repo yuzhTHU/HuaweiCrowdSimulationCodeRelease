@@ -63,14 +63,20 @@ def init_logger(
     file_max_size_MB: float = 50.0,
     file_backup_count: int = 100,
 ):
-    """Initialize the logger for the package.
+    """
+    初始化全局日志配置。
+    
+    配置控制台输出（带颜色）和文件输出（滚动覆盖）。
+    添加了一个自定义的日志级别 'NOTE' (level 25)，介于 INFO 和 WARNING 之间，
+    用于强调关键信息。
+
     Args:
-    - package_name: The name of the package / project, used in loggin.getLogger({package_name}.{path}.{to}.{file}).
-    - exp_name: The name of the experiment, used in log prefix.
-    - log_file: The path to the log file. If None, no file logging is performed.
-    - info_level: The level of info logging. Can be one of 'debug', 'info', 'note', 'warning', 'error', 'critical'.
-    - file_max_size_MB: The maximum size of the log file in MB. Default is 50MB.
-    - file_backup_count: The number of backup files to keep. Default is 100.
+        package_name (str): 记录器的名称，通常是包名。
+        exp_name (str, optional): 实验名称，将显示在日志前缀中。
+        log_file (str, optional): 日志文件路径。如果为 None，则不写入文件。
+        info_level (str, optional): 控制台输出的最低日志级别。默认为 'info'。
+        file_max_size_MB (float, optional): 单个日志文件的最大大小 (MB)。
+        file_backup_count (int, optional): 保留的历史日志文件数量。
     """
     start_time = time.time()
 

@@ -11,7 +11,7 @@ from datetime import datetime
 from socket import gethostname
 from setproctitle import setproctitle
 from argparse import ArgumentParser, Namespace
-from src.model.model import Model
+from src.model import Model, RelativeModel, NewModel
 from src.utils.seed import seed_all
 from src.diffusion import DDPM, DDIM
 from src.utils.auto_gpu import AutoGPU

@@ -17,7 +17,7 @@ from socket import gethostname
 from argparse import ArgumentParser
 from setproctitle import setproctitle
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset, ORCADataset
-from src.model.model import Model, RelativeModel, NewModel
+from src.model import Model, RelativeModel, NewModel
 from src.diffusion import DDPM, DDIM
 from src.utils.logger import init_logger
 from src.utils.seed import seed_all

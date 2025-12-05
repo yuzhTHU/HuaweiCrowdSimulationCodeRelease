@@ -17,10 +17,29 @@ _logger = logging.getLogger(__name__)
 
 
 class UCYDataset(BaseDataset):
+    """
+    UCY (University of Cyprus) 行人数据集加载器。
+    
+    包含 Zara01, Zara02, University Students 等场景。
+    原始数据通常为 .vsp 格式或包含样条控制点的文本格式。
+    """
     raw_fps = 25
 
     @classmethod
     def load_data(cls, args: Namespace, data_path: str) -> "UCYDataset":
+        """
+        加载单个 UCY 场景数据。
+
+        解析特定的文本格式（包含行人数、样条控制点等），
+        应用特定的坐标偏移（如 x+=360, y+=288）和单应性变换。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): .vsp 或数据文件路径。
+
+        Returns:
+            UCYDataset: 初始化后的数据集实例。
+        """
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
@@ -102,6 +121,7 @@ class UCYDataset(BaseDataset):
 
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["UCYDataset"]:
+        """批量加载 UCY 数据集。"""
         ## 检查缓存
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / f"{name}.pkl"
@@ -131,6 +151,17 @@ class UCYDataset(BaseDataset):
 
     @staticmethod
     def get_homography_mat(mat_name):
+        """
+        获取指定场景的预定义单应性矩阵。
+
+        UCY 数据集通常需要特定的 H 矩阵将像素坐标转换为世界坐标。
+
+        Args:
+            mat_name (str): 场景名称 (e.g., 'students003', 'crowds_zara01')。
+
+        Returns:
+            np.ndarray: 3x3 单应性矩阵。
+        """
         if mat_name in ['students001', 'students003', 'uni_examples']:
             length, width = 13, 12.6
             post1 = np.array([[132, 148], [602, 143], [166, 473], [561, 458]]) # - np.array([[360, 288]])

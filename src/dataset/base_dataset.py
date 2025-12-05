@@ -18,7 +18,16 @@ _logger = logging.getLogger(__name__)
 
 @dataclass
 class RasterizedMap:
-    """栅格化地图数据"""
+    """
+    栅格化地图数据结构。
+    
+    Attributes:
+        map (np.array): 二维栅格地图数组，通常 0 表示可通行区域，1 表示障碍物。
+        xmin (float): 地图在世界坐标系下的 x 轴最小值。
+        ymin (float): 地图在世界坐标系下的 y 轴最小值。
+        xmax (float): 地图在世界坐标系下的 x 轴最大值。
+        ymax (float): 地图在世界坐标系下的 y 轴最大值。
+    """
     map: np.array = None
     xmin: float = None
     ymin: float = None
@@ -27,6 +36,12 @@ class RasterizedMap:
 
 
 class BaseDataset(D.Dataset):
+    """
+    所有行人轨迹预测数据集的基类。
+    
+    提供了通用的样本切分、数据重采样、坐标标准化、缓存管理以及 PyTorch DataLoader 的 collate_fn。
+    具体的加载逻辑由子类通过实现 `load_data` 类方法来完成。
+    """
     def __init__(
         self, 
         name: str,
@@ -35,15 +50,18 @@ class BaseDataset(D.Dataset):
         map_data: RasterizedMap=None,
     ):
         """
-        Required columns in df_data: ['f', 'id', 'x', 'y', 'type']
-        Required fields in args:
-            - fps
-            - hist_step
-            - pred_step
-            - roll_step
-            - skip_step
-            - dot_per_meter
-            - cache_dataset 
+        初始化数据集。
+
+        Args:
+            name (str): 数据集名称（例如 "eth", "zara01"）。
+            args (Namespace): 全局参数配置，需包含 fps, hist_step, pred_step 等。
+            df_data (pd.DataFrame): 包含所有轨迹数据的 DataFrame。
+                必须包含列: ['f', 'id', 'x', 'y', 'type']。
+                - f: 帧号
+                - id: 轨迹 ID
+                - x, y: 坐标
+                - type: 'pedestrian' 或 'vehicle'
+            map_data (RasterizedMap, optional): 对应的场景地图数据。默认为 None。
         """
         self.args = args
         self.name = name
@@ -63,18 +81,56 @@ class BaseDataset(D.Dataset):
     
     @classmethod
     def load_data(cls, args) -> 'BaseDataset':
+        """
+        [抽象方法] 从文件路径加载数据并返回数据集实例。
+        
+        子类必须实现此方法以处理特定的原始数据格式。
+
+        Args:
+            args (Namespace): 全局参数配置。
+
+        Returns:
+            BaseDataset: 加载好的数据集实例。
+        
+        Raises:
+            NotImplementedError: 如果子类未实现此方法。
+        """
         raise NotImplementedError
         df_data = ...
         map_data = ...
         return cls(name="unknown", args=args, df_data=df_data, map_data=map_data)
 
     def __len__(self):
+        """返回数据集中的样本数量。"""
         return len(self.samples)
 
     def __getitem__(self, index):
+        """获取指定索引的样本数据。"""
         return self.samples[index]
 
     def split_samples(self, df_data, use_tqdm=True):
+        """
+        将连续的轨迹数据切分为用于训练/测试的滑动窗口样本。
+
+        根据 args.hist_step (历史步长) 和 args.pred_step (预测步长) 
+        以及 args.skip_step (滑窗步长) 生成样本。每个样本包含当前场景下的
+        所有行人和车辆的历史轨迹、未来轨迹标签以及相关的上下文信息。
+
+        Args:
+            df_data (pd.DataFrame): 包含完整轨迹的 DataFrame。
+            use_tqdm (bool, optional): 是否显示进度条。默认为 True。
+
+        Returns:
+            List[dict]: 样本列表，每个样本是一个字典，包含：
+                - pos: 当前时刻位置 (#ped, 2)
+                - vel: 当前时刻速度 (#ped, 2)
+                - des: 目的地 (#ped, 2)
+                - spd: 期望速度 (#ped, 1)
+                - hst: 历史轨迹 (#ped, hist_step, 2)
+                - veh: 车辆历史 (#veh, hist_step+1, 2)
+                - future_acc: 未来加速度标签 (#ped, pred_step, 2)
+                - ...
+        """
         hist_step = self.args.hist_step
         pred_step = self.args.pred_step * self.args.roll_step
         skip_step = self.args.skip_step
@@ -227,6 +283,17 @@ class BaseDataset(D.Dataset):
 
     @staticmethod
     def collate_fn(batch):
+        """
+        DataLoader 的自定义整理函数，用于处理变长序列的 Padding。
+
+        Args:
+            batch (List[dict]): 由 __getitem__ 返回的样本列表。
+
+        Returns:
+            dict: 整理后的批次数据，所有张量已 Padding 并堆叠。
+                包含 'pos', 'vel', 'ped_length', 'veh_length' 等键。
+                Padding 值通常为 0 (对于坐标) 或 -1 (对于 ID)。
+        """
         pos = pad_sequence([torch.from_numpy(item['pos']).float() for item in batch], batch_first=True, padding_value=0.0)
         vel = pad_sequence([torch.from_numpy(item['vel']).float() for item in batch], batch_first=True, padding_value=0.0)
         des = pad_sequence([torch.from_numpy(item['des']).float() for item in batch], batch_first=True, padding_value=0.0)
@@ -262,11 +329,15 @@ class BaseDataset(D.Dataset):
     @staticmethod
     def resample_dataframe(df_data, raw_fps=30, target_fps=2.5):
         """
-        对单个行人/车辆的数据进行重采样
+        对轨迹数据进行重采样，以匹配模型所需的目标帧率。
+
         Args:
-            df_data: 包含单个行人/车辆数据的 DataFrame，列包括 ['f', 'id', 'x', 'y', 'type']
-            raw_fps: 原始数据帧率
-            target_fps: 目标数据帧率
+            df_data (pd.DataFrame): 原始轨迹数据。
+            raw_fps (float): 原始数据的帧率。默认为 30。
+            target_fps (float): 目标帧率。默认为 2.5。
+
+        Returns:
+            pd.DataFrame: 重采样后的 DataFrame，包含插值后的坐标和更新的帧号。
         """
         if raw_fps == target_fps:
             return df_data.copy()
@@ -298,6 +369,19 @@ class BaseDataset(D.Dataset):
 
     @staticmethod
     def normalize_xy(df_data, map_data):
+        """
+        对坐标数据进行 Z-Score 标准化（归一化）。
+
+        计算轨迹数据的均值和标准差，并将轨迹数据和地图边界同时进行标准化。
+        注意：目前实现中 std 默认为 1.0 (仅去均值)，注释掉的代码为标准差归一化。
+
+        Args:
+            df_data (pd.DataFrame): 轨迹数据。
+            map_data (RasterizedMap): 地图数据。
+
+        Returns:
+            tuple: (标准化后的 df_data, 更新后的 map_data)
+        """
         x_mean = df_data['x'].mean()
         x_std = 1.0 # df_data['x'].std()
         df_data['x'] = (df_data['x'] - x_mean) / x_std
@@ -318,7 +402,20 @@ class BaseDataset(D.Dataset):
 
     @staticmethod
     def _make_cache_path(args, data_path, name: str, cache_dir: str = "./data/.cache") -> Path:
-        """根据参数和数据路径生成唯一缓存文件名"""
+        """
+        生成唯一的数据集缓存文件路径。
+
+        缓存文件名包含数据集名称及关键参数 (fps, steps)，以避免参数变更后读取旧缓存。
+
+        Args:
+            args (Namespace): 参数配置。
+            data_path (str): 原始数据路径 (未使用，仅作为签名参考)。
+            name (str): 数据集名称。
+            cache_dir (str, optional): 缓存目录。默认为 "./data/.cache"。
+
+        Returns:
+            Path: 缓存文件的完整路径。
+        """
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_name = f"{name}_{args.fps}_{args.hist_step}_{args.pred_step}_{args.skip_step}.pkl"
@@ -330,10 +427,12 @@ class BaseDataset(D.Dataset):
 
     @staticmethod
     def save_cache(obj, cache_path):
+        """将数据集对象序列化保存到磁盘缓存。"""
         with open(cache_path, "wb") as f:
             pickle.dump(obj, f)
 
     @staticmethod
     def load_cache(cache_path):
+        """从磁盘缓存加载数据集对象。"""
         with open(cache_path, "rb") as f:
             return pickle.load(f)

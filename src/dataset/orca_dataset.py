@@ -12,10 +12,28 @@ from typing import List
 _logger = logging.getLogger(__name__)
 
 class ORCADataset(BaseDataset):
+    """
+    ORCA (Optimal Reciprocal Collision Avoidance) 仿真数据集加载器。
+    
+    用于加载由 ORCA 算法生成的合成轨迹数据，通常用于基准测试或预训练。
+    """
     raw_fps = None # 取决于数据文件
 
     @classmethod
     def load_data(cls, args: Namespace, data_path: str, with_shape=False) -> "ORCADataset":
+        """
+        加载单个 ORCA 仿真场景。
+
+        从 fps.txt 读取帧率，读取 csv 轨迹数据。
+        如果存在 map.png，则加载并计算对应的世界坐标地图。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): data.csv 或 data.csv.gz 路径。
+
+        Returns:
+            ORCADataset: 初始化后的数据集实例。
+        """
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
@@ -78,6 +96,7 @@ class ORCADataset(BaseDataset):
 
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["ORCADataset"]:
+        """批量加载 ORCA 数据集。"""
         ## 检查缓存
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / Path(name).with_suffix(".pkl")

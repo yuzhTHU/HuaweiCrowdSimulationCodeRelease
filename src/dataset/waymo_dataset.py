@@ -16,10 +16,30 @@ from typing import List
 _logger = logging.getLogger(__name__)
 
 class WayMoDataset(BaseDataset):
+    """
+    Waymo Open Motion Dataset 加载器。
+    
+    处理包含行人和车辆的自动驾驶场景数据。
+    """
     raw_fps = 10
 
     @classmethod
     def load_data(cls, args: Namespace, data_path: str, with_shape=False) -> "WayMoDataset":
+        """
+        加载单个 Waymo 场景片段。
+
+        读取处理后的 csv 数据，重命名坐标列，映射类型标签。
+        过滤掉过短的轨迹和距离行人过远的无关车辆。
+        处理地图图片（反转颜色、缩放、投影到世界坐标）。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): data.csv.gz 文件路径。
+            with_shape (bool, optional): 是否加载物体形状信息 (暂未完全实现)。
+
+        Returns:
+            WayMoDataset: 初始化后的数据集实例。
+        """
         data_path = Path(data_path)
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
@@ -108,6 +128,19 @@ class WayMoDataset(BaseDataset):
 
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True, total=200) -> List["WayMoDataset"]:
+        """
+        批量加载 Waymo 数据集。
+        
+        支持通过 summary.csv 根据行人数量排序并选择前 total 个场景。
+
+        Args:
+            args (Namespace): 全局参数。
+            data_path (str): 数据根目录。
+            total (int, optional): 最大加载场景数。默认为 200。
+
+        Returns:
+            List[WayMoDataset]: 数据集列表。
+        """
         df = pd.read_csv('data/WayMo/summary.csv', sep=',')
         df = df.sort_values('num_pedestrians', ascending=False)
         files = []
@@ -136,7 +169,16 @@ class WayMoDataset(BaseDataset):
 
     @staticmethod
     def filter_vehicle_trajectories(df_data, distance_threshold=5.0):
-        """ 过滤掉与所有行人轨迹距离超过指定阈值的车辆轨迹。 """
+        """
+        过滤掉与所有行人轨迹距离都超过阈值的车辆轨迹，以减少无效数据量。
+
+        Args:
+            df_data (pd.DataFrame): 原始数据。
+            distance_threshold (float): 距离阈值（米）。
+
+        Returns:
+            pd.DataFrame: 过滤后的数据。
+        """
         if df_data.groupby('id')['type'].nunique().max() > 1:
             raise ValueError("Each id should correspond to a single type.")
 
@@ -154,7 +196,16 @@ class WayMoDataset(BaseDataset):
 
     @staticmethod
     def filter_short_trajectories(df_data, distance_threshold=3):
-        """ 过滤掉长度小于指定阈值的轨迹。 """
+        """
+        过滤掉位移（起点到终点距离）小于阈值的短轨迹。
+
+        Args:
+            df_data (pd.DataFrame): 原始数据。
+            distance_threshold (float): 最小位移阈值（米）。
+
+        Returns:
+            pd.DataFrame: 过滤后的数据。
+        """
         drop_id = []
         for pid, group in df_data.sort_values(['id', 'f']).groupby('id'):
             start_position = group.iloc[0][['x', 'y']].values
