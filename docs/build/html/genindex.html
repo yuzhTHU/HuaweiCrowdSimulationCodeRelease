@@ -148,29 +148,53 @@
  </script></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">项目概览</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Guides</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="design.html">华为人群模拟项目 - 设计与架构文档</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_prepare.html">数据准备指南 (Data Preparation Guide)</a></li>
 </ul>
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">API 参考</span></p>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
-<li class="toctree-l1 has-children"><a class="reference internal" href="src.html">src package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2 has-children"><a class="reference internal" href="src.dataset.html">src.dataset package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.dataset.html">数据加载与处理 (Dataset)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="src.diffusion.html">src.diffusion package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.model.html">核心预测模型 (Model)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.model.fourier_positional_encoding.html">src.model.fourier_positional_encoding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.mean_pooling_lstm.html">src.model.mean_pooling_lstm module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.model.html">src.model.model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.multiscale_cnn.html">src.model.multiscale_cnn module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.nan_embedding.html">src.model.nan_embedding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.new_model.html">src.model.new_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.permuted.html">src.model.permuted module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.relative_model.html">src.model.relative_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.residual.html">src.model.residual module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.sinusoidal_embedding.html">src.model.sinusoidal_embedding module</a></li>
 </ul>
 </details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.diffusion.html">扩散生成算法 (Diffusion)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.utils.html">通用工具组件 (Utils)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.auto_gpu.html">src.utils.auto_gpu module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.extract_patches.html">src.utils.extract_patches module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.fix_parser.html">src.utils.fix_parser module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.get_force_map.html">src.utils.get_force_map module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.homography.html">src.utils.homography module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.logger.html">src.utils.logger module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.plot.html">src.utils.plot module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.seed.html">src.utils.seed module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.tag2ansi.html">src.utils.tag2ansi module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.timer.html">src.utils.timer module</a></li>
 </ul>
 </details></li>
 </ul>
@@ -287,10 +311,13 @@ document.write(`
  | <a href="#E"><strong>E</strong></a>
  | <a href="#F"><strong>F</strong></a>
  | <a href="#G"><strong>G</strong></a>
+ | <a href="#I"><strong>I</strong></a>
  | <a href="#L"><strong>L</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
  | <a href="#O"><strong>O</strong></a>
+ | <a href="#P"><strong>P</strong></a>
+ | <a href="#Q"><strong>Q</strong></a>
  | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
@@ -307,11 +334,43 @@ document.write(`
 </li>
       <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.__init__">__init__() （src.dataset.base_dataset.RasterizedMap 方法）</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.diffusion.ddim.html#src.diffusion.ddim.DDIM.__init__">__init__() （src.diffusion.ddim.DDIM 方法）</a>
 </li>
       <li><a href="src.diffusion.ddpm.html#src.diffusion.ddpm.DDPM.__init__">__init__() （src.diffusion.ddpm.DDPM 方法）</a>
+</li>
+      <li><a href="src.model.fourier_positional_encoding.html#src.model.fourier_positional_encoding.FourierPositionalEncoding.__init__">__init__() （src.model.fourier_positional_encoding.FourierPositionalEncoding 方法）</a>
+</li>
+      <li><a href="src.model.mean_pooling_lstm.html#src.model.mean_pooling_lstm.MeanPoolingLSTM.__init__">__init__() （src.model.mean_pooling_lstm.MeanPoolingLSTM 方法）</a>
+</li>
+      <li><a href="src.model.model.html#src.model.model.Model.__init__">__init__() （src.model.model.Model 方法）</a>
+</li>
+      <li><a href="src.model.multiscale_cnn.html#src.model.multiscale_cnn.MultiScaleCNN.__init__">__init__() （src.model.multiscale_cnn.MultiScaleCNN 方法）</a>
+</li>
+      <li><a href="src.model.nan_embedding.html#src.model.nan_embedding.NanEmbedding.__init__">__init__() （src.model.nan_embedding.NanEmbedding 方法）</a>
+</li>
+      <li><a href="src.model.new_model.html#src.model.new_model.NewModel.__init__">__init__() （src.model.new_model.NewModel 方法）</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.model.permuted.html#src.model.permuted.Permuted.__init__">__init__() （src.model.permuted.Permuted 方法）</a>
+</li>
+      <li><a href="src.model.relative_model.html#src.model.relative_model.RelativeModel.__init__">__init__() （src.model.relative_model.RelativeModel 方法）</a>
+</li>
+      <li><a href="src.model.residual.html#src.model.residual.Residual.__init__">__init__() （src.model.residual.Residual 方法）</a>
+</li>
+      <li><a href="src.model.sinusoidal_embedding.html#src.model.sinusoidal_embedding.SinusoidalEmbedding.__init__">__init__() （src.model.sinusoidal_embedding.SinusoidalEmbedding 方法）</a>
+</li>
+      <li><a href="src.utils.auto_gpu.html#src.utils.auto_gpu.AutoGPU.__init__">__init__() （src.utils.auto_gpu.AutoGPU 方法）</a>
+</li>
+      <li><a href="src.utils.plot.html#src.utils.plot.EqualizeNormalize.__init__">__init__() （src.utils.plot.EqualizeNormalize 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.AbsTimer.__init__">__init__() （src.utils.timer.AbsTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.NamedTimer.__init__">__init__() （src.utils.timer.NamedTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.ParallelTimer.__init__">__init__() （src.utils.timer.ParallelTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.Timer.__init__">__init__() （src.utils.timer.Timer 方法）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -319,7 +378,29 @@ document.write(`
 <h2 id="A">A</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.timer.html#src.utils.timer.AbsTimer">AbsTimer（src.utils.timer 中的类）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.AbsTimer.add">add() （src.utils.timer.AbsTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.NamedTimer.add">add() （src.utils.timer.NamedTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.ParallelTimer.add">add() （src.utils.timer.ParallelTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.Timer.add">add() （src.utils.timer.Timer 方法）</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.fix_parser.html#src.utils.fix_parser.add_minus_flags">add_minus_flags()（在 src.utils.fix_parser 模块中）</a>
+</li>
+      <li><a href="src.utils.fix_parser.html#src.utils.fix_parser.add_negation_flags">add_negation_flags()（在 src.utils.fix_parser 模块中）</a>
+</li>
       <li><a href="src.diffusion.ddpm.html#src.diffusion.ddpm.DDPM.add_noise">add_noise() （src.diffusion.ddpm.DDPM 方法）</a>
+</li>
+      <li><a href="src.utils.homography.html#src.utils.homography.affine_transformation">affine_transformation()（在 src.utils.homography 模块中）</a>
+</li>
+      <li><a href="src.utils.auto_gpu.html#src.utils.auto_gpu.AutoGPU.allocate_gpu">allocate_gpu()（src.utils.auto_gpu.AutoGPU 静态方法）</a>
+</li>
+      <li><a href="src.utils.auto_gpu.html#src.utils.auto_gpu.AutoGPU">AutoGPU（src.utils.auto_gpu 中的类）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -335,13 +416,31 @@ document.write(`
 <h2 id="C">C</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.homography.html#src.utils.homography.calc_homography_mat">calc_homography_mat()（在 src.utils.homography 模块中）</a>
+</li>
+      <li><a href="src.utils.auto_gpu.html#src.utils.auto_gpu.AutoGPU.choice_gpu">choice_gpu() （src.utils.auto_gpu.AutoGPU 方法）</a>
+</li>
       <li><a href="src.dataset.sdd_dataset.html#src.dataset.sdd_dataset.SDDDataset.clean_trajectory">clean_trajectory()（src.dataset.sdd_dataset.SDDDataset 静态方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.AbsTimer.clear">clear() （src.utils.timer.AbsTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.NamedTimer.clear">clear() （src.utils.timer.NamedTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.ParallelTimer.clear">clear() （src.utils.timer.ParallelTimer 方法）</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.timer.html#src.utils.timer.Timer.clear">clear() （src.utils.timer.Timer 方法）</a>
+</li>
+      <li><a href="src.utils.plot.html#src.utils.plot.clear_svg">clear_svg()（在 src.utils.plot 模块中）</a>
+</li>
       <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.collate_fn">collate_fn()（src.dataset.base_dataset.BaseDataset 静态方法）</a>
 </li>
       <li><a href="src.diffusion.ddpm.html#src.diffusion.ddpm.DDPM.cosine_beta_schedule">cosine_beta_schedule()（src.diffusion.ddpm.DDPM 静态方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.NamedTimer.count">count（src.utils.timer.NamedTimer 属性）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.ParallelTimer.count">count（src.utils.timer.ParallelTimer 属性）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -365,7 +464,15 @@ document.write(`
 <h2 id="E">E</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.plot.html#src.utils.plot.EqualizeNormalize">EqualizeNormalize（src.utils.plot 中的类）</a>
+</li>
       <li><a href="src.dataset.eth_dataset.html#src.dataset.eth_dataset.ETHDataset">ETHDataset（src.dataset.eth_dataset 中的类）</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.extract_patches.html#src.utils.extract_patches.extract_patches_numpy">extract_patches_numpy()（在 src.utils.extract_patches 模块中）</a>
+</li>
+      <li><a href="src.utils.extract_patches.html#src.utils.extract_patches.extract_patches_torch">extract_patches_torch()（在 src.utils.extract_patches 模块中）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -375,9 +482,31 @@ document.write(`
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.dataset.waymo_dataset.html#src.dataset.waymo_dataset.WayMoDataset.filter_short_trajectories">filter_short_trajectories()（src.dataset.waymo_dataset.WayMoDataset 静态方法）</a>
 </li>
+      <li><a href="src.dataset.waymo_dataset.html#src.dataset.waymo_dataset.WayMoDataset.filter_vehicle_trajectories">filter_vehicle_trajectories()（src.dataset.waymo_dataset.WayMoDataset 静态方法）</a>
+</li>
+      <li><a href="src.model.fourier_positional_encoding.html#src.model.fourier_positional_encoding.FourierPositionalEncoding.forward">forward() （src.model.fourier_positional_encoding.FourierPositionalEncoding 方法）</a>
+</li>
+      <li><a href="src.model.mean_pooling_lstm.html#src.model.mean_pooling_lstm.MeanPoolingLSTM.forward">forward() （src.model.mean_pooling_lstm.MeanPoolingLSTM 方法）</a>
+</li>
+      <li><a href="src.model.model.html#src.model.model.Model.forward">forward() （src.model.model.Model 方法）</a>
+</li>
+      <li><a href="src.model.multiscale_cnn.html#src.model.multiscale_cnn.MultiScaleCNN.forward">forward() （src.model.multiscale_cnn.MultiScaleCNN 方法）</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.dataset.waymo_dataset.html#src.dataset.waymo_dataset.WayMoDataset.filter_vehicle_trajectories">filter_vehicle_trajectories()（src.dataset.waymo_dataset.WayMoDataset 静态方法）</a>
+      <li><a href="src.model.nan_embedding.html#src.model.nan_embedding.NanEmbedding.forward">forward() （src.model.nan_embedding.NanEmbedding 方法）</a>
+</li>
+      <li><a href="src.model.new_model.html#src.model.new_model.NewModel.forward">forward() （src.model.new_model.NewModel 方法）</a>
+</li>
+      <li><a href="src.model.permuted.html#src.model.permuted.Permuted.forward">forward() （src.model.permuted.Permuted 方法）</a>
+</li>
+      <li><a href="src.model.relative_model.html#src.model.relative_model.RelativeModel.forward">forward() （src.model.relative_model.RelativeModel 方法）</a>
+</li>
+      <li><a href="src.model.residual.html#src.model.residual.Residual.forward">forward() （src.model.residual.Residual 方法）</a>
+</li>
+      <li><a href="src.model.sinusoidal_embedding.html#src.model.sinusoidal_embedding.SinusoidalEmbedding.forward">forward() （src.model.sinusoidal_embedding.SinusoidalEmbedding 方法）</a>
+</li>
+      <li><a href="src.model.fourier_positional_encoding.html#src.model.fourier_positional_encoding.FourierPositionalEncoding">FourierPositionalEncoding（src.model.fourier_positional_encoding 中的类）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -389,13 +518,31 @@ document.write(`
 </li>
       <li><a href="src.dataset.gc_dataset.html#src.dataset.gc_dataset.GCDataset.get_abnormal">get_abnormal()（src.dataset.gc_dataset.GCDataset 类方法）</a>
 </li>
+      <li><a href="src.utils.plot.html#src.utils.plot.get_fig">get_fig()（在 src.utils.plot 模块中）</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.get_force_map.html#src.utils.get_force_map.get_force_map">get_force_map()（在 src.utils.get_force_map 模块中）</a>
+</li>
       <li><a href="src.dataset.gc_dataset.html#src.dataset.gc_dataset.GCDataset.get_homography_mat">get_homography_mat()（src.dataset.gc_dataset.GCDataset 类方法）</a>
 </li>
       <li><a href="src.dataset.sdd_dataset.html#src.dataset.sdd_dataset.SDDDataset.get_homography_mat">get_homography_mat()（src.dataset.sdd_dataset.SDDDataset 静态方法）</a>
 </li>
       <li><a href="src.dataset.ucy_dataset.html#src.dataset.ucy_dataset.UCYDataset.get_homography_mat">get_homography_mat()（src.dataset.ucy_dataset.UCYDataset 静态方法）</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="I">I</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.homography.html#src.utils.homography.image_to_world">image_to_world()（在 src.utils.homography 模块中）</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.logger.html#src.utils.logger.init_logger">init_logger()（在 src.utils.logger 模块中）</a>
+</li>
+      <li><a href="src.utils.plot.html#src.utils.plot.EqualizeNormalize.inverse">inverse() （src.utils.plot.EqualizeNormalize 方法）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -417,8 +564,6 @@ document.write(`
 </li>
       <li><a href="src.dataset.sdd_dataset.html#src.dataset.sdd_dataset.SDDDataset.load_data">load_data()（src.dataset.sdd_dataset.SDDDataset 类方法）</a>
 </li>
-      <li><a href="src.dataset.synthetic_dataset.html#src.dataset.synthetic_dataset.SyntheticDataset.load_data">load_data()（src.dataset.synthetic_dataset.SyntheticDataset 类方法）</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.dataset.ucy_dataset.html#src.dataset.ucy_dataset.UCYDataset.load_data">load_data()（src.dataset.ucy_dataset.UCYDataset 类方法）</a>
@@ -431,11 +576,11 @@ document.write(`
 </li>
       <li><a href="src.dataset.sdd_dataset.html#src.dataset.sdd_dataset.SDDDataset.load_data_batch">load_data_batch()（src.dataset.sdd_dataset.SDDDataset 类方法）</a>
 </li>
-      <li><a href="src.dataset.synthetic_dataset.html#src.dataset.synthetic_dataset.SyntheticDataset.load_data_batch">load_data_batch()（src.dataset.synthetic_dataset.SyntheticDataset 类方法）</a>
-</li>
       <li><a href="src.dataset.ucy_dataset.html#src.dataset.ucy_dataset.UCYDataset.load_data_batch">load_data_batch()（src.dataset.ucy_dataset.UCYDataset 类方法）</a>
 </li>
       <li><a href="src.dataset.waymo_dataset.html#src.dataset.waymo_dataset.WayMoDataset.load_data_batch">load_data_batch()（src.dataset.waymo_dataset.WayMoDataset 类方法）</a>
+</li>
+      <li><a href="src.utils.plot.html#src.utils.plot.load_font">load_font()（在 src.utils.plot 模块中）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -443,7 +588,13 @@ document.write(`
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.map">map（src.dataset.base_dataset.RasterizedMap 属性）</a>
+      <li><a href="src.dataset.base_dataset.html#id0">map（src.dataset.base_dataset.RasterizedMap 属性）</a>, <a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.map">[1]</a>
+</li>
+      <li><a href="src.model.mean_pooling_lstm.html#src.model.mean_pooling_lstm.MeanPoolingLSTM">MeanPoolingLSTM（src.model.mean_pooling_lstm 中的类）</a>
+</li>
+      <li><a href="src.utils.plot.html#src.utils.plot.merge_axes">merge_axes()（在 src.utils.plot 模块中）</a>
+</li>
+      <li><a href="src.model.model.html#src.model.model.Model">Model（src.model.model 中的类）</a>
 </li>
       <li>
     module
@@ -475,17 +626,71 @@ document.write(`
 </li>
         <li><a href="src.diffusion.ddpm.html#module-src.diffusion.ddpm">src.diffusion.ddpm</a>
 </li>
+        <li><a href="src.model.html#module-src.model">src.model</a>
+</li>
+        <li><a href="src.model.fourier_positional_encoding.html#module-src.model.fourier_positional_encoding">src.model.fourier_positional_encoding</a>
+</li>
+        <li><a href="src.model.mean_pooling_lstm.html#module-src.model.mean_pooling_lstm">src.model.mean_pooling_lstm</a>
+</li>
+        <li><a href="src.model.model.html#module-src.model.model">src.model.model</a>
+</li>
+        <li><a href="src.model.multiscale_cnn.html#module-src.model.multiscale_cnn">src.model.multiscale_cnn</a>
+</li>
+        <li><a href="src.model.nan_embedding.html#module-src.model.nan_embedding">src.model.nan_embedding</a>
+</li>
+        <li><a href="src.model.new_model.html#module-src.model.new_model">src.model.new_model</a>
+</li>
+        <li><a href="src.model.permuted.html#module-src.model.permuted">src.model.permuted</a>
+</li>
+        <li><a href="src.model.relative_model.html#module-src.model.relative_model">src.model.relative_model</a>
+</li>
+        <li><a href="src.model.residual.html#module-src.model.residual">src.model.residual</a>
+</li>
+        <li><a href="src.model.sinusoidal_embedding.html#module-src.model.sinusoidal_embedding">src.model.sinusoidal_embedding</a>
+</li>
+        <li><a href="src.utils.html#module-src.utils">src.utils</a>
+</li>
+        <li><a href="src.utils.auto_gpu.html#module-src.utils.auto_gpu">src.utils.auto_gpu</a>
+</li>
+        <li><a href="src.utils.extract_patches.html#module-src.utils.extract_patches">src.utils.extract_patches</a>
+</li>
+        <li><a href="src.utils.fix_parser.html#module-src.utils.fix_parser">src.utils.fix_parser</a>
+</li>
+        <li><a href="src.utils.get_force_map.html#module-src.utils.get_force_map">src.utils.get_force_map</a>
+</li>
+        <li><a href="src.utils.homography.html#module-src.utils.homography">src.utils.homography</a>
+</li>
+        <li><a href="src.utils.logger.html#module-src.utils.logger">src.utils.logger</a>
+</li>
+        <li><a href="src.utils.plot.html#module-src.utils.plot">src.utils.plot</a>
+</li>
+        <li><a href="src.utils.seed.html#module-src.utils.seed">src.utils.seed</a>
+</li>
+        <li><a href="src.utils.tag2ansi.html#module-src.utils.tag2ansi">src.utils.tag2ansi</a>
+</li>
+        <li><a href="src.utils.timer.html#module-src.utils.timer">src.utils.timer</a>
+</li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.model.multiscale_cnn.html#src.model.multiscale_cnn.MultiScaleCNN">MultiScaleCNN（src.model.multiscale_cnn 中的类）</a>
+</li>
   </ul></td>
 </tr></table>
 
 <h2 id="N">N</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.diffusion.ddpm.html#src.diffusion.ddpm.DDPM.noise_to_x0">noise_to_x0() （src.diffusion.ddpm.DDPM 方法）</a>
+      <li><a href="src.utils.timer.html#src.utils.timer.NamedTimer">NamedTimer（src.utils.timer 中的类）</a>
+</li>
+      <li><a href="src.model.nan_embedding.html#src.model.nan_embedding.NanEmbedding">NanEmbedding（src.model.nan_embedding 中的类）</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.model.new_model.html#src.model.new_model.NewModel">NewModel（src.model.new_model 中的类）</a>
+</li>
+      <li><a href="src.diffusion.ddpm.html#src.diffusion.ddpm.DDPM.noise_to_x0">noise_to_x0() （src.diffusion.ddpm.DDPM 方法）</a>
+</li>
       <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.normalize_xy">normalize_xy()（src.dataset.base_dataset.BaseDataset 静态方法）</a>
 </li>
   </ul></td>
@@ -495,6 +700,30 @@ document.write(`
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.dataset.orca_dataset.html#src.dataset.orca_dataset.ORCADataset">ORCADataset（src.dataset.orca_dataset 中的类）</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="P">P</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.timer.html#src.utils.timer.ParallelTimer">ParallelTimer（src.utils.timer 中的类）</a>
+</li>
+      <li><a href="src.model.permuted.html#src.model.permuted.Permuted">Permuted（src.model.permuted 中的类）</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.plot.html#src.utils.plot.plot_resilience">plot_resilience()（在 src.utils.plot 模块中）</a>
+</li>
+      <li><a href="src.utils.plot.html#src.utils.plot.plotOD">plotOD()（在 src.utils.plot 模块中）</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="Q">Q</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.auto_gpu.html#src.utils.auto_gpu.AutoGPU.query_free_memory">query_free_memory() （src.utils.auto_gpu.AutoGPU 方法）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -510,15 +739,19 @@ document.write(`
 </li>
       <li><a href="src.dataset.orca_dataset.html#src.dataset.orca_dataset.ORCADataset.raw_fps">raw_fps（src.dataset.orca_dataset.ORCADataset 属性）</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.dataset.sdd_dataset.html#src.dataset.sdd_dataset.SDDDataset.raw_fps">raw_fps（src.dataset.sdd_dataset.SDDDataset 属性）</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.dataset.ucy_dataset.html#src.dataset.ucy_dataset.UCYDataset.raw_fps">raw_fps（src.dataset.ucy_dataset.UCYDataset 属性）</a>
 </li>
       <li><a href="src.dataset.waymo_dataset.html#src.dataset.waymo_dataset.WayMoDataset.raw_fps">raw_fps（src.dataset.waymo_dataset.WayMoDataset 属性）</a>
 </li>
+      <li><a href="src.model.relative_model.html#src.model.relative_model.RelativeModel">RelativeModel（src.model.relative_model 中的类）</a>
+</li>
       <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.resample_dataframe">resample_dataframe()（src.dataset.base_dataset.BaseDataset 静态方法）</a>
+</li>
+      <li><a href="src.model.residual.html#src.model.residual.Residual">Residual（src.model.residual 中的类）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -529,6 +762,28 @@ document.write(`
       <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.save_cache">save_cache()（src.dataset.base_dataset.BaseDataset 静态方法）</a>
 </li>
       <li><a href="src.dataset.sdd_dataset.html#src.dataset.sdd_dataset.SDDDataset">SDDDataset（src.dataset.sdd_dataset 中的类）</a>
+</li>
+      <li><a href="src.utils.seed.html#src.utils.seed.seed_all">seed_all()（在 src.utils.seed 模块中）</a>
+</li>
+      <li><a href="src.model.model.html#src.model.model.Model.set_map_embedding">set_map_embedding() （src.model.model.Model 方法）</a>
+</li>
+      <li><a href="src.model.model.html#src.model.model.Model.set_ped_embedding">set_ped_embedding() （src.model.model.Model 方法）</a>
+</li>
+      <li><a href="src.model.new_model.html#src.model.new_model.NewModel.set_ped_embedding">set_ped_embedding() （src.model.new_model.NewModel 方法）</a>
+</li>
+      <li><a href="src.model.relative_model.html#src.model.relative_model.RelativeModel.set_ped_embedding">set_ped_embedding() （src.model.relative_model.RelativeModel 方法）</a>
+</li>
+      <li><a href="src.model.model.html#src.model.model.Model.set_sur_info">set_sur_info() （src.model.model.Model 方法）</a>
+</li>
+      <li><a href="src.model.new_model.html#src.model.new_model.NewModel.set_sur_info">set_sur_info() （src.model.new_model.NewModel 方法）</a>
+</li>
+      <li><a href="src.model.model.html#src.model.model.Model.set_veh_embedding">set_veh_embedding() （src.model.model.Model 方法）</a>
+</li>
+      <li><a href="src.model.relative_model.html#src.model.relative_model.RelativeModel.set_veh_embedding">set_veh_embedding() （src.model.relative_model.RelativeModel 方法）</a>
+</li>
+      <li><a href="src.model.sinusoidal_embedding.html#src.model.sinusoidal_embedding.SinusoidalEmbedding">SinusoidalEmbedding（src.model.sinusoidal_embedding 中的类）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.Timer.speed">speed（src.utils.timer.Timer 属性）</a>
 </li>
       <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset.split_samples">split_samples() （src.dataset.base_dataset.BaseDataset 方法）</a>
 </li>
@@ -574,8 +829,6 @@ document.write(`
         <li><a href="src.dataset.orca_dataset.html#module-src.dataset.orca_dataset">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     src.dataset.sdd_dataset
 
@@ -625,15 +878,183 @@ document.write(`
         <li><a href="src.diffusion.ddpm.html#module-src.diffusion.ddpm">module</a>
 </li>
       </ul></li>
-      <li><a href="src.dataset.synthetic_dataset.html#src.dataset.synthetic_dataset.SyntheticDataset">SyntheticDataset（src.dataset.synthetic_dataset 中的类）</a>
+      <li>
+    src.model
+
+      <ul>
+        <li><a href="src.model.html#module-src.model">module</a>
 </li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    src.model.fourier_positional_encoding
+
+      <ul>
+        <li><a href="src.model.fourier_positional_encoding.html#module-src.model.fourier_positional_encoding">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.mean_pooling_lstm
+
+      <ul>
+        <li><a href="src.model.mean_pooling_lstm.html#module-src.model.mean_pooling_lstm">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.model
+
+      <ul>
+        <li><a href="src.model.model.html#module-src.model.model">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.multiscale_cnn
+
+      <ul>
+        <li><a href="src.model.multiscale_cnn.html#module-src.model.multiscale_cnn">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.nan_embedding
+
+      <ul>
+        <li><a href="src.model.nan_embedding.html#module-src.model.nan_embedding">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.new_model
+
+      <ul>
+        <li><a href="src.model.new_model.html#module-src.model.new_model">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.permuted
+
+      <ul>
+        <li><a href="src.model.permuted.html#module-src.model.permuted">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.relative_model
+
+      <ul>
+        <li><a href="src.model.relative_model.html#module-src.model.relative_model">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.residual
+
+      <ul>
+        <li><a href="src.model.residual.html#module-src.model.residual">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.model.sinusoidal_embedding
+
+      <ul>
+        <li><a href="src.model.sinusoidal_embedding.html#module-src.model.sinusoidal_embedding">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils
+
+      <ul>
+        <li><a href="src.utils.html#module-src.utils">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.auto_gpu
+
+      <ul>
+        <li><a href="src.utils.auto_gpu.html#module-src.utils.auto_gpu">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.extract_patches
+
+      <ul>
+        <li><a href="src.utils.extract_patches.html#module-src.utils.extract_patches">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.fix_parser
+
+      <ul>
+        <li><a href="src.utils.fix_parser.html#module-src.utils.fix_parser">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.get_force_map
+
+      <ul>
+        <li><a href="src.utils.get_force_map.html#module-src.utils.get_force_map">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.homography
+
+      <ul>
+        <li><a href="src.utils.homography.html#module-src.utils.homography">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.logger
+
+      <ul>
+        <li><a href="src.utils.logger.html#module-src.utils.logger">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.plot
+
+      <ul>
+        <li><a href="src.utils.plot.html#module-src.utils.plot">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.seed
+
+      <ul>
+        <li><a href="src.utils.seed.html#module-src.utils.seed">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.tag2ansi
+
+      <ul>
+        <li><a href="src.utils.tag2ansi.html#module-src.utils.tag2ansi">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.timer
+
+      <ul>
+        <li><a href="src.utils.timer.html#module-src.utils.timer">module</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.tag2ansi.html#src.utils.tag2ansi.tag2ansi">tag2ansi()（在 src.utils.tag2ansi 模块中）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.Timer">Timer（src.utils.timer 中的类）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.NamedTimer.time">time（src.utils.timer.NamedTimer 属性）</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.timer.html#src.utils.timer.ParallelTimer.time">time（src.utils.timer.ParallelTimer 属性）</a>
+</li>
       <li><a href="src.diffusion.ddpm.html#src.diffusion.ddpm.DDPM.to">to() （src.diffusion.ddpm.DDPM 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.NamedTimer.total_time">total_time() （src.utils.timer.NamedTimer 方法）</a>
+</li>
+      <li><a href="src.utils.timer.html#src.utils.timer.ParallelTimer.total_time">total_time() （src.utils.timer.ParallelTimer 方法）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -642,6 +1063,12 @@ document.write(`
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.dataset.ucy_dataset.html#src.dataset.ucy_dataset.UCYDataset">UCYDataset（src.dataset.ucy_dataset 中的类）</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.utils.auto_gpu.html#src.utils.auto_gpu.AutoGPU.update_free_memory">update_free_memory() （src.utils.auto_gpu.AutoGPU 方法）</a>
+</li>
+      <li><a href="src.utils.plot.html#src.utils.plot.use_chinese_font">use_chinese_font()（在 src.utils.plot 模块中）</a>
 </li>
   </ul></td>
 </tr></table>
@@ -661,9 +1088,9 @@ document.write(`
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.xmax">xmax（src.dataset.base_dataset.RasterizedMap 属性）</a>
+      <li><a href="src.dataset.base_dataset.html#id3">xmax（src.dataset.base_dataset.RasterizedMap 属性）</a>, <a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.xmax">[1]</a>
 </li>
-      <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.xmin">xmin（src.dataset.base_dataset.RasterizedMap 属性）</a>
+      <li><a href="src.dataset.base_dataset.html#id1">xmin（src.dataset.base_dataset.RasterizedMap 属性）</a>, <a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.xmin">[1]</a>
 </li>
   </ul></td>
 </tr></table>
@@ -671,11 +1098,11 @@ document.write(`
 <h2 id="Y">Y</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.ymax">ymax（src.dataset.base_dataset.RasterizedMap 属性）</a>
+      <li><a href="src.dataset.base_dataset.html#id4">ymax（src.dataset.base_dataset.RasterizedMap 属性）</a>, <a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.ymax">[1]</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.ymin">ymin（src.dataset.base_dataset.RasterizedMap 属性）</a>
+      <li><a href="src.dataset.base_dataset.html#id2">ymin（src.dataset.base_dataset.RasterizedMap 属性）</a>, <a href="src.dataset.base_dataset.html#src.dataset.base_dataset.RasterizedMap.ymin">[1]</a>
 </li>
   </ul></td>
 </tr></table>

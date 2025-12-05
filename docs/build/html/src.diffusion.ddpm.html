@@ -44,6 +44,7 @@
     <script>DOCUMENTATION_OPTIONS.pagename = 'src.diffusion.ddpm';</script>
     <link rel="index" title="索引" href="genindex.html" />
     <link rel="search" title="搜索" href="search.html" />
+    <link rel="next" title="通用工具组件 (Utils)" href="src.utils.html" />
     <link rel="prev" title="src.diffusion.ddim module" href="src.diffusion.ddim.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="zh-CN"/>
@@ -148,25 +149,53 @@
  </script></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">API 参考</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="design.html">华为人群模拟项目 - 设计与架构文档</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_prepare.html">数据准备指南 (Data Preparation Guide)</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="src.html">src package</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2 has-children"><a class="reference internal" href="src.dataset.html">src.dataset package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.dataset.html">数据加载与处理 (Dataset)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="src.diffusion.html">src.diffusion package</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">src.diffusion.ddpm module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.model.html">核心预测模型 (Model)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.model.fourier_positional_encoding.html">src.model.fourier_positional_encoding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.mean_pooling_lstm.html">src.model.mean_pooling_lstm module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.model.html">src.model.model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.multiscale_cnn.html">src.model.multiscale_cnn module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.nan_embedding.html">src.model.nan_embedding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.new_model.html">src.model.new_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.permuted.html">src.model.permuted module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.relative_model.html">src.model.relative_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.residual.html">src.model.residual module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.sinusoidal_embedding.html">src.model.sinusoidal_embedding module</a></li>
 </ul>
 </details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="src.diffusion.html">扩散生成算法 (Diffusion)</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">src.diffusion.ddpm module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.utils.html">通用工具组件 (Utils)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.auto_gpu.html">src.utils.auto_gpu module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.extract_patches.html">src.utils.extract_patches module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.fix_parser.html">src.utils.fix_parser module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.get_force_map.html">src.utils.get_force_map module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.homography.html">src.utils.homography module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.logger.html">src.utils.logger module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.plot.html">src.utils.plot module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.seed.html">src.utils.seed module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.tag2ansi.html">src.utils.tag2ansi module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.timer.html">src.utils.timer module</a></li>
 </ul>
 </details></li>
 </ul>
@@ -345,57 +374,190 @@ document.write(`
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.diffusion.ddpm.</span></span><span class="sig-name descname"><span class="pre">DDPM</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Namespace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flexibility</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM" title="Link to this definition">#</a></dt>
 <dd><p>基类：<code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
-<p>Denoising Diffusion Probabilistic Models (DDPM) 实现类。</p>
-<p>实现了扩散模型的前向加噪过程 (Forward Process) 和反向去噪采样过程 (Reverse Process)。
+<p>去噪扩散概率模型 (Denoising Diffusion Probabilistic Models, DDPM)。</p>
+<p>实现了 DDPM 的正向加噪过程 (Forward Process) 和反向去噪过程 (Reverse Process)。
 支持线性 (Linear) 和余弦 (Cosine) 两种 Beta 调度策略。</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM.__init__">
 <span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Namespace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flexibility</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM.__init__"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM.__init__" title="Link to this definition">#</a></dt>
-<dd><p>初始化 DDPM 调度器。
-:param args: 参数配置，需包含 T (总步数), beta_schedule (调度策略) 等。
-:type args: Namespace
-:param flexibility: 采样时的随机性系数 (eta)。0.0 为理论最优随机性, 1.0 为实践最优随机性 (标准 DDPM)。
-:type flexibility: float</p>
+<dd><p>初始化 DDPM 模型的噪声调度表。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<em>Namespace</em>) -- 配置参数对象，需包含：
+- beta_schedule (str): 'linear' 或 'cosine'。
+- T (int): 扩散的总步数。
+- device (str): 计算设备。
+- antithetic_sampling (bool): 是否在 add_noise 中使用对偶采样以减少方差。</p></li>
+<li><p><strong>flexibility</strong> (<em>float</em><em>, </em><em>optional</em>) -- 方差插值系数，用于控制生成过程的随机性。
+0.0 对应固定方差 (通常用于 DDIM)，1.0 对应完整方差 (标准 DDPM)。默认为 0.0。</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM.to">
 <span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM.to"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM.to" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>将噪声调度表（alpha, beta 等）移动到指定设备。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>device</strong> (<em>torch.device</em><em> or </em><em>str</em>) -- 目标设备。</p>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>返回自身实例以支持链式调用。</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>self</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM.add_noise">
 <span class="sig-name descname"><span class="pre">add_noise</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">denoise_t</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM.add_noise"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM.add_noise" title="Link to this definition">#</a></dt>
-<dd><p>DDPM forward: 给未来轨迹加噪</p>
+<dd><p>DDPM 前向过程：给原始数据 x0 添加噪声，生成 t 时刻的带噪数据 xt。</p>
+<p>q(x_t | x_0) = N(x_t; sqrt(alpha_bar_t) * x_0, (1 - alpha_bar_t) * I)</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x0</strong> (<em>torch.FloatTensor</em>) -- 原始数据 (t=0)。
+Shape: (batch_size, ...) 任意维度。</p></li>
+<li><p><strong>denoise_t</strong> (<em>torch.LongTensor</em><em>, </em><em>optional</em>) -- 指定的时间步 t。
+如果为 None，则根据 args.antithetic_sampling 策略随机采样 t。
+Shape: (batch_size, )。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>xt (torch.FloatTensor): 加噪后的数据。Shape 与 x0 相同。</p></li>
+<li><p>noise (torch.FloatTensor): 添加的标准高斯噪声 epsilon。Shape 与 x0 相同。</p></li>
+<li><p>denoise_t (torch.LongTensor): 实际使用的时间步 t。Shape: (batch_size, )。</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM.denoise">
 <span class="sig-name descname"><span class="pre">denoise</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">denoise_t</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noise</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stride</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM.denoise"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM.denoise" title="Link to this definition">#</a></dt>
-<dd><p>DDPM backward: 预测噪声并去噪</p>
+<dd><p>DDPM 反向过程：根据预测的 x0 或噪声，从 x_t 采样 x_{t-stride}。</p>
+<p>p_theta(x_{t-1} | x_t) = N(x_{t-1}; mu_theta(x_t, t), sigma_t^2 * I)</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>xt</strong> (<em>torch.FloatTensor</em>) -- 当前时间步 t 的带噪数据。
+Shape: (batch_size, ...)</p></li>
+<li><p><strong>denoise_t</strong> (<em>torch.LongTensor</em>) -- 当前时间步 t 的索引。
+Shape: (batch_size, )</p></li>
+<li><p><strong>x0</strong> (<em>torch.FloatTensor</em><em>, </em><em>optional</em>) -- 模型预测的原始数据 x0。</p></li>
+<li><p><strong>noise</strong> (<em>torch.FloatTensor</em><em>, </em><em>optional</em>) -- 模型预测的噪声 epsilon。
+注意：x0 和 noise 必须且只能提供其中一个。</p></li>
+<li><p><strong>stride</strong> (<em>int</em><em>, </em><em>optional</em>) -- 反向去噪的步长，默认为 1。
+用于加速采样的跳步策略。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>去噪后的上一时刻数据 x_{t-stride}。</dt><dd><p>Shape 与 xt 相同。</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.FloatTensor</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM.noise_to_x0">
 <span class="sig-name descname"><span class="pre">noise_to_x0</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">denoise_t</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noise</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM.noise_to_x0"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM.noise_to_x0" title="Link to this definition">#</a></dt>
-<dd><p>根据 xt 和噪声预测 x0</p>
+<dd><p>根据当前带噪数据 xt 和预测的噪声 epsilon，推导原始数据 x0。</p>
+<p>x_0 = (x_t - sqrt(1 - alpha_bar_t) * epsilon) / sqrt(alpha_bar_t)</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>xt</strong> (<em>torch.FloatTensor</em>) -- 带噪数据 x_t。</p></li>
+<li><p><strong>denoise_t</strong> (<em>torch.LongTensor</em><em> or </em><em>int</em>) -- 时间步 t。</p></li>
+<li><p><strong>noise</strong> (<em>torch.FloatTensor</em>) -- 预测的噪声 epsilon。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>估计的原始数据 x0。</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.FloatTensor</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM.x0_to_noise">
 <span class="sig-name descname"><span class="pre">x0_to_noise</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">denoise_t</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM.x0_to_noise"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM.x0_to_noise" title="Link to this definition">#</a></dt>
-<dd><p>根据 xt 和 x0 预测噪声</p>
+<dd><p>根据当前带噪数据 xt 和估计的 x0，反推隐含的噪声 epsilon。</p>
+<p>epsilon = (x_t - sqrt(alpha_bar_t) * x_0) / sqrt(1 - alpha_bar_t)</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>xt</strong> (<em>torch.FloatTensor</em>) -- 带噪数据 x_t。</p></li>
+<li><p><strong>denoise_t</strong> (<em>torch.LongTensor</em><em> or </em><em>int</em>) -- 时间步 t。</p></li>
+<li><p><strong>x0</strong> (<em>torch.FloatTensor</em>) -- 估计的原始数据 x0。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>隐含的噪声 epsilon。</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.FloatTensor</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM.cosine_beta_schedule">
 <em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cosine_beta_schedule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">T</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">s</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.008</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM.cosine_beta_schedule"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM.cosine_beta_schedule" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>生成余弦退火的 Beta 调度表。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>T</strong> (<em>int</em>) -- 总时间步数。</p></li>
+<li><p><strong>s</strong> (<em>float</em><em>, </em><em>optional</em>) -- 偏移量，防止 t=0 时 beta 太小。默认为 0.008。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>Beta 值序列。Shape: (T,)</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.FloatTensor</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.diffusion.ddpm.DDPM.linear_beta_schedule">
 <em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">linear_beta_schedule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">T</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/diffusion/ddpm.html#DDPM.linear_beta_schedule"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.diffusion.ddpm.DDPM.linear_beta_schedule" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>生成线性增长的 Beta 调度表。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>T</strong> (<em>int</em>) -- 总时间步数。</p></li>
+<li><p><strong>beta_start</strong> (<em>float</em><em>, </em><em>optional</em>) -- 初始 Beta 值。默认为 1e-4。</p></li>
+<li><p><strong>beta_end</strong> (<em>float</em><em>, </em><em>optional</em>) -- 最终 Beta 值。默认为 0.05。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>Beta 值序列。Shape: (T,)</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.FloatTensor</p>
+</dd>
+</dl>
+</dd></dl>
 
 </dd></dl>
 
@@ -420,6 +582,15 @@ document.write(`
         <p class="prev-next-subtitle">上一页</p>
         <p class="prev-next-title">src.diffusion.ddim module</p>
       </div>
+    </a>
+    <a class="right-next"
+       href="src.utils.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">下一页</p>
+        <p class="prev-next-title">通用工具组件 (Utils)</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
     </a>
 </div>
                 </footer>

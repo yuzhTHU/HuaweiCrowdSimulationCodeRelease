@@ -1,5 +1,5 @@
-src.diffusion package
-=====================
+扩散生成算法 (Diffusion)
+====================================
 
 .. automodule:: src.diffusion
    :members:

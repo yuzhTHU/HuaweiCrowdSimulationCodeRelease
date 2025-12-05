@@ -305,47 +305,6 @@ class Model(nn.Module):
         sur_info = map_embedding[idx, jdx] # (batch_size, #pedestrian, model_dim)
         sur_info = F.layer_norm(sur_info, sur_info.shape[-1:])
         self.sur_info = sur_info
-        # """设置行人周边环境信息 sur_info (手动双线性插值 + 越界置零)"""
-        # W, H = map_embedding.size(0), map_embedding.size(1)
-        # EPS = 1e-6
-        # # 1. 计算原始浮点坐标 (不截断，用于判断是否越界)
-        # raw_grid_x = (pos[..., 0] - xmin).div(xmax - xmin).mul(W)
-        # raw_grid_y = (pos[..., 1] - ymin).div(ymax - ymin).mul(H)
-        # # 2. 生成有效性掩码 (Valid Mask)
-        # # 只有在 [0, W-1] 和 [0, H-1] 范围内的才是有效点
-        # # 注意：这里认为 W-0.5 依然在 W-1 的像素覆盖范围内，但 > W-1 即视为越界
-        # # (根据具体定义，也可以用 W 或 W-0.5 作为边界，这里使用像素中心对齐的一般逻辑)
-        # is_valid = (raw_grid_x >= 0) & (raw_grid_x <= W - 1) & \
-        #            (raw_grid_y >= 0) & (raw_grid_y <= H - 1) # (batch, ped)
-        # # 3. 截断坐标用于安全索引 (Safe Indexing)
-        # # 即使是无效点，为了下面代码不报错，也得给它一个合法的索引(比如边缘)
-        # grid_x = raw_grid_x.clamp(0, W - 1 - EPS)
-        # grid_y = raw_grid_y.clamp(0, H - 1 - EPS)
-        # x0 = grid_x.long()
-        # y0 = grid_y.long()
-        # x1 = (x0 + 1).clamp(max=W - 1)
-        # y1 = (y0 + 1).clamp(max=H - 1)
-        # # 4. 计算插值权重
-        # wa = (grid_x - x0.float()).unsqueeze(-1) # (batch, ped, 1)
-        # wb = (grid_y - y0.float()).unsqueeze(-1)
-        # # 5. Gather 特征
-        # Q00 = map_embedding[x0, y0] 
-        # Q10 = map_embedding[x1, y0]
-        # Q01 = map_embedding[x0, y1]
-        # Q11 = map_embedding[x1, y1]
-        # # 6. 双线性插值
-        # sur_info = (
-        #     Q00 * (1 - wa) * (1 - wb) +
-        #     Q10 * wa * (1 - wb) +
-        #     Q01 * (1 - wa) * wb +
-        #     Q11 * wa * wb
-        # )
-        # # 7. LayerNorm (通常建议在 Mask 之前做，或者 Mask 后不再做 LN)
-        # sur_info = F.layer_norm(sur_info, sur_info.shape[-1:])
-        # # 8. 应用掩码：将越界区域强制置为 0
-        # # is_valid 需要扩展维度以匹配 sur_info: (batch, ped) -> (batch, ped, 1)
-        # sur_info = sur_info * is_valid.unsqueeze(-1).float()
-        # self.sur_info = sur_info
 
     def forward(
         self, 

@@ -149,25 +149,53 @@
  </script></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">API 参考</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="design.html">华为人群模拟项目 - 设计与架构文档</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_prepare.html">数据准备指南 (Data Preparation Guide)</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="src.html">src package</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="src.dataset.html">src.dataset package</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">src.dataset.gc_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="src.dataset.html">数据加载与处理 (Dataset)</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">src.dataset.gc_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="src.diffusion.html">src.diffusion package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.model.html">核心预测模型 (Model)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.model.fourier_positional_encoding.html">src.model.fourier_positional_encoding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.mean_pooling_lstm.html">src.model.mean_pooling_lstm module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.model.html">src.model.model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.multiscale_cnn.html">src.model.multiscale_cnn module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.nan_embedding.html">src.model.nan_embedding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.new_model.html">src.model.new_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.permuted.html">src.model.permuted module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.relative_model.html">src.model.relative_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.residual.html">src.model.residual module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.sinusoidal_embedding.html">src.model.sinusoidal_embedding module</a></li>
 </ul>
 </details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.diffusion.html">扩散生成算法 (Diffusion)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.utils.html">通用工具组件 (Utils)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.auto_gpu.html">src.utils.auto_gpu module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.extract_patches.html">src.utils.extract_patches module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.fix_parser.html">src.utils.fix_parser module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.get_force_map.html">src.utils.get_force_map module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.homography.html">src.utils.homography module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.logger.html">src.utils.logger module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.plot.html">src.utils.plot module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.seed.html">src.utils.seed module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.tag2ansi.html">src.utils.tag2ansi module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.timer.html">src.utils.timer module</a></li>
 </ul>
 </details></li>
 </ul>
@@ -342,6 +370,8 @@ document.write(`
 <dt class="sig sig-object py" id="src.dataset.gc_dataset.GCDataset">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.dataset.gc_dataset.</span></span><span class="sig-name descname"><span class="pre">GCDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/dataset/gc_dataset.html#GCDataset"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.gc_dataset.GCDataset" title="Link to this definition">#</a></dt>
 <dd><p>基类：<a class="reference internal" href="src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset" title="src.dataset.base_dataset.BaseDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseDataset</span></code></a></p>
+<p>Grand Central Station (GC) 数据集加载器。</p>
+<p>这是一个高密度人群数据集。</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="src.dataset.gc_dataset.GCDataset.raw_fps">
 <span class="sig-name descname"><span class="pre">raw_fps</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">25</span></em><a class="headerlink" href="#src.dataset.gc_dataset.GCDataset.raw_fps" title="Link to this definition">#</a></dt>
@@ -350,17 +380,60 @@ document.write(`
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dataset.gc_dataset.GCDataset.load_data">
 <em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">load_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Namespace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#src.dataset.gc_dataset.GCDataset" title="src.dataset.gc_dataset.GCDataset"><span class="pre">GCDataset</span></a></span></span><a class="reference internal" href="_modules/src/dataset/gc_dataset.html#GCDataset.load_data"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.gc_dataset.GCDataset.load_data" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>加载 GC 数据集。</p>
+<p>读取目录下的所有 txt 文件，应用单应性变换，并移除速度异常的轨迹点。
+加载并转置地图图像以对齐坐标系。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<em>Namespace</em>) -- 全局参数。</p></li>
+<li><p><strong>data_path</strong> (<em>str</em>) -- 数据目录路径。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>初始化后的数据集实例。</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#src.dataset.gc_dataset.GCDataset" title="src.dataset.gc_dataset.GCDataset">GCDataset</a></p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dataset.gc_dataset.GCDataset.get_homography_mat">
 <em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_homography_mat</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span></span></span><a class="reference internal" href="_modules/src/dataset/gc_dataset.html#GCDataset.get_homography_mat"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.gc_dataset.GCDataset.get_homography_mat" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>获取 GC 数据集的固定单应性矩阵。</p>
+<dl class="field-list simple">
+<dt class="field-odd">返回<span class="colon">:</span></dt>
+<dd class="field-odd"><p>3x3 单应性矩阵。</p>
+</dd>
+<dt class="field-even">返回类型<span class="colon">:</span></dt>
+<dd class="field-even"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dataset.gc_dataset.GCDataset.get_abnormal">
 <em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_abnormal</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">pandas.DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_abnormal_speed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_abnormal_whis</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">pandas.Series</span></span></span><a class="reference internal" href="_modules/src/dataset/gc_dataset.html#GCDataset.get_abnormal"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.gc_dataset.GCDataset.get_abnormal" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>检测并标记异常轨迹点（如速度过快）。</p>
+<p>使用基于四分位距 (IQR) 的离群点检测算法。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>pd.DataFrame</em>) -- 包含轨迹数据的 DataFrame。</p></li>
+<li><p><strong>min_abnormal_speed</strong> (<em>float</em>) -- 最小异常速度阈值。</p></li>
+<li><p><strong>min_abnormal_whis</strong> (<em>float</em>) -- IQR 乘数因子。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>布尔序列，True 表示该行数据正常，False 表示异常（应被移除）。</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series</p>
+</dd>
+</dl>
+</dd></dl>
 
 </dd></dl>
 

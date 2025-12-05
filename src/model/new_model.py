@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .residual import Residual
 from .relative_model import RelativeModel
+from ..utils.timer import NamedTimer
 
 
 class NewModel(RelativeModel):

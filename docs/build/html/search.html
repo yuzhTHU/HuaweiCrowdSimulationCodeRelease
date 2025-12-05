@@ -150,29 +150,53 @@
  </script></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">项目概览</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Guides</span></p>
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="design.html">华为人群模拟项目 - 设计与架构文档</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_prepare.html">数据准备指南 (Data Preparation Guide)</a></li>
 </ul>
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">API 参考</span></p>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
-<li class="toctree-l1 has-children"><a class="reference internal" href="src.html">src package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2 has-children"><a class="reference internal" href="src.dataset.html">src.dataset package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.dataset.html">数据加载与处理 (Dataset)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="src.diffusion.html">src.diffusion package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.model.html">核心预测模型 (Model)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.model.fourier_positional_encoding.html">src.model.fourier_positional_encoding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.mean_pooling_lstm.html">src.model.mean_pooling_lstm module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.model.html">src.model.model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.multiscale_cnn.html">src.model.multiscale_cnn module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.nan_embedding.html">src.model.nan_embedding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.new_model.html">src.model.new_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.permuted.html">src.model.permuted module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.relative_model.html">src.model.relative_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.residual.html">src.model.residual module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.sinusoidal_embedding.html">src.model.sinusoidal_embedding module</a></li>
 </ul>
 </details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.diffusion.html">扩散生成算法 (Diffusion)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.utils.html">通用工具组件 (Utils)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.auto_gpu.html">src.utils.auto_gpu module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.extract_patches.html">src.utils.extract_patches module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.fix_parser.html">src.utils.fix_parser module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.get_force_map.html">src.utils.get_force_map module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.homography.html">src.utils.homography module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.logger.html">src.utils.logger module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.plot.html">src.utils.plot module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.seed.html">src.utils.seed module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.tag2ansi.html">src.utils.tag2ansi module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.timer.html">src.utils.timer module</a></li>
 </ul>
 </details></li>
 </ul>

@@ -1,14 +1,27 @@
-人群模拟仿真系统文档
-=========================================
+.. Crowd Simulation documentation master file.
+
+Welcome to Crowd Simulation Code's documentation!
+=================================================
 
 .. toctree::
    :maxdepth: 2
-   :caption: 项目概览
+   :caption: Guides
 
    design
+   data_prepare
 
 .. toctree::
    :maxdepth: 2
-   :caption: API 参考
+   :caption: API Reference
 
-   src
+   src.dataset
+   src.model
+   src.diffusion
+   src.utils
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

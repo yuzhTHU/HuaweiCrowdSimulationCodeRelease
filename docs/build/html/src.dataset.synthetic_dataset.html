@@ -149,25 +149,53 @@
  </script></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">API 参考</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="design.html">华为人群模拟项目 - 设计与架构文档</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_prepare.html">数据准备指南 (Data Preparation Guide)</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="src.html">src package</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="src.dataset.html">src.dataset package</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">src.dataset.synthetic_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="src.dataset.html">数据加载与处理 (Dataset)</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.sdd_dataset.html">src.dataset.sdd_dataset module</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">src.dataset.synthetic_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="src.diffusion.html">src.diffusion package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.model.html">核心预测模型 (Model)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.model.fourier_positional_encoding.html">src.model.fourier_positional_encoding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.mean_pooling_lstm.html">src.model.mean_pooling_lstm module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.model.html">src.model.model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.multiscale_cnn.html">src.model.multiscale_cnn module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.nan_embedding.html">src.model.nan_embedding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.new_model.html">src.model.new_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.permuted.html">src.model.permuted module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.relative_model.html">src.model.relative_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.residual.html">src.model.residual module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.sinusoidal_embedding.html">src.model.sinusoidal_embedding module</a></li>
 </ul>
 </details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.diffusion.html">扩散生成算法 (Diffusion)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.utils.html">通用工具组件 (Utils)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.auto_gpu.html">src.utils.auto_gpu module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.extract_patches.html">src.utils.extract_patches module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.fix_parser.html">src.utils.fix_parser module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.get_force_map.html">src.utils.get_force_map module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.homography.html">src.utils.homography module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.logger.html">src.utils.logger module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.plot.html">src.utils.plot module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.seed.html">src.utils.seed module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.tag2ansi.html">src.utils.tag2ansi module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.timer.html">src.utils.timer module</a></li>
 </ul>
 </details></li>
 </ul>
@@ -295,9 +323,7 @@ document.write(`
   </button>
 `);
 </script>
-<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
-    <span class="fa-solid fa-list"></span>
-</button>
+
 </div></div>
       
     </div>
@@ -313,18 +339,6 @@ document.write(`
     <div id="print-main-content">
         <div id="jb-print-toc">
             
-            <div>
-                <h2> 目录 </h2>
-            </div>
-            <nav aria-label="Page">
-                <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#src.dataset.synthetic_dataset.SyntheticDataset"><code class="docutils literal notranslate"><span class="pre">SyntheticDataset</span></code></a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.dataset.synthetic_dataset.SyntheticDataset.load_data"><code class="docutils literal notranslate"><span class="pre">SyntheticDataset.load_data()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.dataset.synthetic_dataset.SyntheticDataset.load_data_batch"><code class="docutils literal notranslate"><span class="pre">SyntheticDataset.load_data_batch()</span></code></a></li>
-</ul>
-</li>
-</ul>
-            </nav>
         </div>
     </div>
 </div>
@@ -336,22 +350,6 @@ document.write(`
                   
   <section id="module-src.dataset.synthetic_dataset">
 <span id="src-dataset-synthetic-dataset-module"></span><h1>src.dataset.synthetic_dataset module<a class="headerlink" href="#module-src.dataset.synthetic_dataset" title="Link to this heading">#</a></h1>
-<dl class="py class">
-<dt class="sig sig-object py" id="src.dataset.synthetic_dataset.SyntheticDataset">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.dataset.synthetic_dataset.</span></span><span class="sig-name descname"><span class="pre">SyntheticDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/dataset/synthetic_dataset.html#SyntheticDataset"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.synthetic_dataset.SyntheticDataset" title="Link to this definition">#</a></dt>
-<dd><p>基类：<a class="reference internal" href="src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset" title="src.dataset.base_dataset.BaseDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseDataset</span></code></a></p>
-<dl class="py method">
-<dt class="sig sig-object py" id="src.dataset.synthetic_dataset.SyntheticDataset.load_data">
-<em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">load_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Namespace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#src.dataset.synthetic_dataset.SyntheticDataset" title="src.dataset.synthetic_dataset.SyntheticDataset"><span class="pre">SyntheticDataset</span></a></span></span><a class="reference internal" href="_modules/src/dataset/synthetic_dataset.html#SyntheticDataset.load_data"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.synthetic_dataset.SyntheticDataset.load_data" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="src.dataset.synthetic_dataset.SyntheticDataset.load_data_batch">
-<em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">load_data_batch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Namespace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_tqdm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="src.dataset.eth_dataset.html#src.dataset.eth_dataset.ETHDataset" title="src.dataset.eth_dataset.ETHDataset"><span class="pre">ETHDataset</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/dataset/synthetic_dataset.html#SyntheticDataset.load_data_batch"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.synthetic_dataset.SyntheticDataset.load_data_batch" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
 </section>
 
 
@@ -389,25 +387,6 @@ document.write(`
             </div>
             
             
-              
-                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
-
-
-  <div class="sidebar-secondary-item">
-  <div class="page-toc tocsection onthispage">
-    <i class="fa-solid fa-list"></i> 目录
-  </div>
-  <nav class="bd-toc-nav page-toc">
-    <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#src.dataset.synthetic_dataset.SyntheticDataset"><code class="docutils literal notranslate"><span class="pre">SyntheticDataset</span></code></a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.dataset.synthetic_dataset.SyntheticDataset.load_data"><code class="docutils literal notranslate"><span class="pre">SyntheticDataset.load_data()</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.dataset.synthetic_dataset.SyntheticDataset.load_data_batch"><code class="docutils literal notranslate"><span class="pre">SyntheticDataset.load_data_batch()</span></code></a></li>
-</ul>
-</li>
-</ul>
-  </nav></div>
-
-</div></div>
               
             
           </div>

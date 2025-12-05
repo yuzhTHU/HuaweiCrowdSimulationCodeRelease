@@ -149,25 +149,53 @@
  </script></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">API 参考</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="design.html">华为人群模拟项目 - 设计与架构文档</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_prepare.html">数据准备指南 (Data Preparation Guide)</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="src.html">src package</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="src.dataset.html">src.dataset package</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">src.dataset.sdd_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="src.dataset.html">数据加载与处理 (Dataset)</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.base_dataset.html">src.dataset.base_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.eth_dataset.html">src.dataset.eth_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.gc_dataset.html">src.dataset.gc_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.orca_dataset.html">src.dataset.orca_dataset module</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">src.dataset.sdd_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.synthetic_dataset.html">src.dataset.synthetic_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.ucy_dataset.html">src.dataset.ucy_dataset module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.dataset.waymo_dataset.html">src.dataset.waymo_dataset module</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="src.diffusion.html">src.diffusion package</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.model.html">核心预测模型 (Model)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.model.fourier_positional_encoding.html">src.model.fourier_positional_encoding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.mean_pooling_lstm.html">src.model.mean_pooling_lstm module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.model.html">src.model.model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.multiscale_cnn.html">src.model.multiscale_cnn module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.nan_embedding.html">src.model.nan_embedding module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.new_model.html">src.model.new_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.permuted.html">src.model.permuted module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.relative_model.html">src.model.relative_model module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.residual.html">src.model.residual module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.model.sinusoidal_embedding.html">src.model.sinusoidal_embedding module</a></li>
 </ul>
 </details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.diffusion.html">扩散生成算法 (Diffusion)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddim.html">src.diffusion.ddim module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.diffusion.ddpm.html">src.diffusion.ddpm module</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="src.utils.html">通用工具组件 (Utils)</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.auto_gpu.html">src.utils.auto_gpu module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.extract_patches.html">src.utils.extract_patches module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.fix_parser.html">src.utils.fix_parser module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.get_force_map.html">src.utils.get_force_map module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.homography.html">src.utils.homography module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.logger.html">src.utils.logger module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.plot.html">src.utils.plot module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.seed.html">src.utils.seed module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.tag2ansi.html">src.utils.tag2ansi module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.utils.timer.html">src.utils.timer module</a></li>
 </ul>
 </details></li>
 </ul>
@@ -343,6 +371,8 @@ document.write(`
 <dt class="sig sig-object py" id="src.dataset.sdd_dataset.SDDDataset">
 <em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.dataset.sdd_dataset.</span></span><span class="sig-name descname"><span class="pre">SDDDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/dataset/sdd_dataset.html#SDDDataset"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.sdd_dataset.SDDDataset" title="Link to this definition">#</a></dt>
 <dd><p>基类：<a class="reference internal" href="src.dataset.base_dataset.html#src.dataset.base_dataset.BaseDataset" title="src.dataset.base_dataset.BaseDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseDataset</span></code></a></p>
+<p>Stanford Drone Dataset (SDD) 数据集加载器。</p>
+<p>该数据集包含俯视视角的无人机航拍视频，包含行人、自行车、滑板、车辆等多种类别。</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="src.dataset.sdd_dataset.SDDDataset.raw_fps">
 <span class="sig-name descname"><span class="pre">raw_fps</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">30</span></em><a class="headerlink" href="#src.dataset.sdd_dataset.SDDDataset.raw_fps" title="Link to this definition">#</a></dt>
@@ -351,23 +381,72 @@ document.write(`
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dataset.sdd_dataset.SDDDataset.load_data">
 <em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">load_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Namespace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#src.dataset.sdd_dataset.SDDDataset" title="src.dataset.sdd_dataset.SDDDataset"><span class="pre">SDDDataset</span></a></span></span><a class="reference internal" href="_modules/src/dataset/sdd_dataset.html#SDDDataset.load_data"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.sdd_dataset.SDDDataset.load_data" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>加载单个 SDD 视频场景的数据。</p>
+<p>读取 annotations.txt，进行像素到米的坐标变换。
+包含复杂的数据清洗逻辑（如去除异常速度、平滑轨迹）。
+如果存在 map.png 则加载，否则创建空白地图。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<em>Namespace</em>) -- 全局参数。</p></li>
+<li><p><strong>data_path</strong> (<em>str</em>) -- annotations.txt 文件路径。</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>初始化后的数据集实例。</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#src.dataset.sdd_dataset.SDDDataset" title="src.dataset.sdd_dataset.SDDDataset">SDDDataset</a></p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dataset.sdd_dataset.SDDDataset.load_data_batch">
 <em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">load_data_batch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Namespace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_tqdm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#src.dataset.sdd_dataset.SDDDataset" title="src.dataset.sdd_dataset.SDDDataset"><span class="pre">SDDDataset</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/src/dataset/sdd_dataset.html#SDDDataset.load_data_batch"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.sdd_dataset.SDDDataset.load_data_batch" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>批量加载 SDD 数据集。</p>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dataset.sdd_dataset.SDDDataset.get_homography_mat">
 <em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_homography_mat</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/dataset/sdd_dataset.html#SDDDataset.get_homography_mat"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.sdd_dataset.SDDDataset.get_homography_mat" title="Link to this definition">#</a></dt>
-<dd></dd></dl>
+<dd><p>根据数据集目录结构获取对应的单应性矩阵（像素/米 比例）。</p>
+<p>SDD 的不同场景（如 'bookstore', 'deathCircle'）有不同的缩放比例。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data_path</strong> (<em>Path</em>) -- 数据文件路径，用于推断场景名称。</p>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>3x3 缩放矩阵 (实际上是对角矩阵)。</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="src.dataset.sdd_dataset.SDDDataset.clean_trajectory">
 <em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">clean_trajectory</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">traj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">median_k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">do_savgol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sg_win</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">9</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sg_poly</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">do_loess</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loess_frac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.08</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speed_window</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">11</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speed_k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">angle_window</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">11</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">angle_k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_thresh</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">numpy.deg2rad</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">split_angle_thresh</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">numpy.deg2rad</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">split_speed_delta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">split_time_thresh</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/dataset/sdd_dataset.html#SDDDataset.clean_trajectory"><span class="viewcode-link"><span class="pre">[源代码]</span></span></a><a class="headerlink" href="#src.dataset.sdd_dataset.SDDDataset.clean_trajectory" title="Link to this definition">#</a></dt>
-<dd><p>traj: (N,3) array of (t,x,y)
-Returns: list of cleaned trajectory segments (each (M,3) array)</p>
+<dd><p>[静态工具方法] 轨迹清洗与平滑。</p>
+<p>对原始轨迹进行去噪、平滑（Savitzky-Golay 或 LOESS）、
+速度和角度异常检测，并将轨迹分割成合理的片段。</p>
+<dl class="field-list simple">
+<dt class="field-odd">参数<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>traj</strong> (<em>np.ndarray</em>) -- 原始轨迹 (N, 3)，列为 [t, x, y]。</p></li>
+<li><p><strong>median_k</strong> (<em>int</em>) -- 中值滤波窗口大小。</p></li>
+<li><p><strong>do_savgol</strong> (<em>bool</em>) -- 是否使用 Savitzky-Golay 滤波。</p></li>
+<li><p><strong>...</strong> (<em>其他平滑与分割阈值参数</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">返回<span class="colon">:</span></dt>
+<dd class="field-even"><p>清洗后的轨迹片段列表。</p>
+</dd>
+<dt class="field-odd">返回类型<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[np.ndarray]</p>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>

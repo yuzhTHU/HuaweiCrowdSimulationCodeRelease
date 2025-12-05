@@ -1,5 +1,5 @@
-src package
-===========
+源码根目录 (Source Root)
+======================================
 
 .. automodule:: src
    :members:
@@ -14,3 +14,5 @@ Subpackages
 
    src.dataset
    src.diffusion
+   src.model
+   src.utils
