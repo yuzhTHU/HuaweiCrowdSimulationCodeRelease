@@ -1,18 +1,13 @@
-# Crowd Simulation with Diffusion Models
-
-本项目基于扩散模型（Diffusion Models）与 Transformer 架构，旨在模拟复杂场景下的行人移动轨迹。项目代码结构清晰，注释详尽，支持多种主流数据集（ETH, UCY, SDD, etc.）的训练与测试，并提供了基于 Web 的交互式可视化工具。
-
 <div align="center">
 
 # Crowd Simulation with Diffusion Models
 
 [![Documentation](https://img.shields.io/badge/Docs-Read%20Online-blue?style=for-the-badge&logo=read-the-docs&logoColor=white)](https://yuzhthu.github.io/HuaweiCrowdSimulationCode/)
-[![GitHub Pages](https://img.shields.io/badge/Deployment-Live-success?style=for-the-badge&logo=github)](https://yuzhthu.github.io/HuaweiCrowdSimulationCode/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 
-[**查看在线文档 / View Documentation**](https://yuzhthu.github.io/HuaweiCrowdSimulationCode/)
-
 </div>
+
+本项目基于扩散模型（Diffusion Models）与 Transformer 架构，旨在模拟复杂场景下的行人移动轨迹。项目代码结构清晰，注释详尽，支持多种主流数据集（ETH, UCY, SDD, etc.）的训练与测试，并提供了基于 Web 的交互式可视化工具。
 
 ## 🛠 环境安装 (Installation)
 
