@@ -338,7 +338,7 @@ def main(args):
             w /= w.sum()
             acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
             _logger.info(tag2ansi(
-                f"[#66CCFF][Epoch {epoch}/{args.epochs}] Overall on {klass} datasets: "
+                f"[#66CCFF][Epoch {best_records['epoch']}/{args.epochs}] Overall on {klass} datasets: "
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
