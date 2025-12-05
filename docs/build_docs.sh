@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # 获取脚本文件所在的绝对目录 (即 docs/ 目录)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"

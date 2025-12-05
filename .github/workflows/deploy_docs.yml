@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install sphinx sphinx-rtd-theme myst-parser
+          pip install sphinx sphinx-book-theme myst-parser
 
       - name: Build Documentation
         run: |
