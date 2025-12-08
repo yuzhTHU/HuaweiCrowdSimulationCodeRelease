@@ -16,6 +16,10 @@
     const trailValue = document.getElementById('trailValue');
     const simDurationValue = document.getElementById('simDurationValue');
     const autoViewCheckbox = document.getElementById('autoViewCheckbox');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const loopCheckbox = document.getElementById('loopCheckbox');
+    const playbackSpeedSlider = document.getElementById('playbackSpeedSlider');
+    const playbackSpeedValue = document.getElementById('playbackSpeedValue');
 
     // WebSocket 相关状态
     let ws = null;
@@ -23,6 +27,11 @@
     let reconnectAttempts = 0;
     let reconnectTimer = null;
     let pingIntervalId = null;
+
+    // 播放状态
+    let playTimer = null;
+    let isPlaying = false;
+    let playbackSpeed = parseFloat(playbackSpeedValue.textContent);
     
     // 数据缓存与运行状态
     const DATA_CACHE = {};  // { name: { name, fps, map, frames: { frameNumber: { id: {type, x, y}, ... } }, currentFrame, sliderId } }
@@ -43,6 +52,11 @@
     // Simulation Duration Control
     simDurationSlider.addEventListener('input', (e) => {
         simDurationValue.textContent = e.target.value;
+    });
+
+    playbackSpeedSlider.addEventListener('input', (e) => {
+        playbackSpeedValue.textContent = e.target.value;
+        playbackSpeed = parseFloat(e.target.value);
     });
 
     // Auto View Control: 状态改变时立即重绘以应用设置（例如取消勾选时立即复位视图）
@@ -419,8 +433,8 @@
 
         // 3. Entity Layer (Vehicles as Rects, Pedestrians as Dots)
         const vehX = [], vehY = []; // Vehicle Polygons
-        const pedX = [], pedY = [], pedText = []; // Pedestrians
-        const vehMarkersX = [], vehMarkersY = [], vehText = []; // Vehicle Centers (for ID)
+        const pedX = [], pedY = [], pedText = [], pedIds = []; // Pedestrians
+        const vehMarkersX = [], vehMarkersY = [], vehText = [], vehIds = []; // Vehicle Centers (for ID)
 
         for (const id in currentEntities) {
             const e = currentEntities[id];
@@ -454,17 +468,20 @@
                 // Add center for hover ID
                 vehMarkersX.push(e.x);
                 vehMarkersY.push(e.y);
+                vehIds.push(id);
                 vehText.push(`ID: ${id}<br>Veh`);
 
             } else if (e.type === 'vehicle') {
                 // Fallback for vehicle without dims -> Dot
                 vehMarkersX.push(e.x);
                 vehMarkersY.push(e.y);
+                vehIds.push(id);
                 vehText.push(`ID: ${id}<br>Veh (No Dim)`);
             } else {
                 // Pedestrian without dims -> Dot
                 pedX.push(e.x);
                 pedY.push(e.y);
+                pedIds.push(id);
                 pedText.push(`ID: ${id}<br>Ped`);
             }
         }
@@ -474,6 +491,7 @@
             plotData.push({
                 x: vehX,
                 y: vehY,
+                ids: vehIds,
                 mode: 'lines',
                 fill: 'toself',
                 fillcolor: 'rgba(255, 100, 0, 0.5)',
@@ -489,6 +507,7 @@
             plotData.push({
                 x: vehMarkersX,
                 y: vehMarkersY,
+                ids: vehIds,
                 mode: 'markers',
                 marker: { size: 6, color: 'rgb(200, 80, 0)', symbol: 'square' },
                 text: vehText,
@@ -503,6 +522,7 @@
             plotData.push({
                 x: pedX,
                 y: pedY,
+                ids: pedIds,
                 mode: 'markers',
                 marker: { size: 6, color: 'rgb(0, 100, 255)' },
                 text: pedText,
@@ -520,6 +540,17 @@
             layout.xaxis.range = myPlot ? myPlot.layout.xaxis.range : undefined;
             layout.yaxis.range = myPlot ? myPlot.layout.yaxis.range : undefined;
         }
+        
+        // const smooth = true;
+        // if (smooth) {
+        //     layout.transition = {
+        //         duration: 1000 / fps / playbackSpeed, // 动画时长等于帧间隔，例如 2.5fps -> 400ms
+        //         easing: 'linear'      // 线性移动，模拟匀速运动
+        //     };
+        // } else {
+        //     layout.transition = { duration: 0 }; // 手动拖拽时立即响应
+        // }
+
         if (myPlot) {
             Plotly.react(myPlot, plotData, layout);
         } else {
@@ -804,6 +835,109 @@
             log('发送停止模拟指令失败:', e);
         }
     });
+
+    // === 播放/暂停功能 ===
+    function togglePlay() {
+        if (isPlaying) {
+            stopPlayback();
+        } else {
+            startPlayback();
+        }
+    }
+
+    function startPlayback() {
+        if (!ACTIVE_NAME || !DATA_CACHE[ACTIVE_NAME]) {
+            alert("请先加载数据");
+            return;
+        }
+
+        const item = DATA_CACHE[ACTIVE_NAME];
+        // 如果当前已经在最后一帧，且没有开启循环，则重置到第一帧再开始
+        const slider = document.getElementById(item.sliderId);
+        if (slider) {
+            const maxFrame = parseInt(slider.max);
+            const currentFrame = item.currentFrame;
+            if (currentFrame >= maxFrame && !loopCheckbox.checked) {
+                // 如果在末尾且不循环，重置到开头
+                item.currentFrame = parseInt(slider.min);
+                render(ACTIVE_NAME);
+                updateSliderRangeAndValue(ACTIVE_NAME);
+            }
+        }
+
+        isPlaying = true;
+        playPauseBtn.textContent = "暂停";
+        playPauseBtn.classList.replace('btn-success', 'btn-warning');
+
+        // 获取 FPS，默认为 10
+        const fps = item.fps || 10;
+        const interval = 1000 / fps / playbackSpeed; // 毫秒间隔
+
+        if (playTimer) clearInterval(playTimer);
+        playTimer = setInterval(playNextFrame, interval);
+    }
+
+    function stopPlayback() {
+        isPlaying = false;
+        playPauseBtn.textContent = "播放";
+        playPauseBtn.classList.replace('btn-warning', 'btn-success');
+        if (playTimer) {
+            clearInterval(playTimer);
+            playTimer = null;
+        }
+    }
+
+    function playNextFrame() {
+        if (!ACTIVE_NAME || !DATA_CACHE[ACTIVE_NAME]) {
+            stopPlayback();
+            return;
+        }
+
+        const item = DATA_CACHE[ACTIVE_NAME];
+        const slider = document.getElementById(item.sliderId);
+        
+        if (!slider) {
+            stopPlayback();
+            return;
+        }
+
+        let current = parseInt(item.currentFrame);
+        const max = parseInt(slider.max);
+        const min = parseInt(slider.min);
+
+        let next = current + 1;
+
+        if (next > max) {
+            if (loopCheckbox.checked) {
+                next = min; // 循环：回到起点
+            } else {
+                stopPlayback(); // 不循环：停止
+                return;
+            }
+        }
+
+        // 更新状态
+        item.currentFrame = next;
+        
+        // 更新滑块 UI (不重新创建，直接修改值以提高性能)
+        slider.value = next;
+        // 更新滑块旁边的文本 (span)
+        const wrap = slider.parentElement;
+        const valueSpan = wrap.querySelector('span');
+        if (valueSpan) {
+            valueSpan.textContent = `当前帧: ${next} (${min}~${max})`;
+        }
+
+        // 渲染地图
+        render(ACTIVE_NAME);
+    }
+
+    // 事件监听
+    playPauseBtn.addEventListener('click', togglePlay);
+    
+    // 当用户手动拖动滑块时，如果正在播放，建议暂时停止或保持播放？
+    // 这里保持播放逻辑：用户拖到哪，就从哪继续播。
+    // 但我们需要确保 item.currentFrame 与 slider.value 同步，这在 createSliderForResponse 的 input 事件中已经处理了。
 
     // ------- 初始化 -------
     async function init() {
