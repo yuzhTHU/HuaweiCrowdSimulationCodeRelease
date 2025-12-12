@@ -20,6 +20,7 @@ from src.utils.logger import init_logger
 from src.utils.auto_gpu import AutoGPU
 from src.web.utils.json_compatible import json_compatible
 from src.web.utils.simulate import init_simulation, simulate_one_step
+from src.utils.use_npu import USE_NPU, npu_attention_fallback
 
 _logger = logging.getLogger("src")
 init_logger('src')
@@ -163,6 +164,7 @@ async def load_model(idx: int):
         MODEL = Model(ARGS).to(ARGS.device)
     MODEL.load_state_dict(checkpoint["model"])
     MODEL.eval()
+    if USE_NPU: npu_attention_fallback(MODEL)
     torch.set_grad_enabled(False)
     return JSONResponse(content=json_compatible({
         "status": "ok", "response": vars(ARGS), "msg": f"Model checkpoint loaded from {path}."
@@ -288,7 +290,7 @@ async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         else:
             raise ValueError(f"Unknown sampling method: {ARGS.sampling_method}")
         dataset = DATASET_DICT[dataset_name]
-        ARGS.device = AutoGPU().choice_gpu(3000, force=False)
+        ARGS.device = AutoGPU().choice_gpu(3000, force=False) if not USE_NPU else 'npu'
         MODEL.to(ARGS.device)
         diffusion.to(ARGS.device)
         _logger.info(f"Simulation worker using device {ARGS.device}")
