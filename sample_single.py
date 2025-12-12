@@ -11,7 +11,7 @@ from datetime import datetime
 from socket import gethostname
 from setproctitle import setproctitle
 from argparse import ArgumentParser, Namespace
-from src.model.model import Model
+from src.model import Model, RelativeModel, NewModel
 from src.utils.seed import seed_all
 from src.diffusion import DDPM, DDIM
 from src.utils.auto_gpu import AutoGPU
@@ -43,7 +43,12 @@ def main(args):
     timer.add('Check Args')
 
     ## Load Model & Load Checkpoint
-    model = Model(args).to(args.device)
+    if args.use_new_model:
+        model = NewModel(args).to(args.device)
+    elif args.use_relative_model:
+        model = RelativeModel(args).to(args.device)
+    else:
+        model = Model(args).to(args.device)
     if args.sampling_method == "DDIM":
         diffusion = DDIM(args)
     elif args.sampling_method == "DDPM":
@@ -167,7 +172,7 @@ def main(args):
     timer.clear(reset=True)
     traj = []
     for frame in range(frame_idx, frame_idx+args.roll_step, args.pred_step):
-        if (frame - frame_idx) % 2 == 0:
+        if (frame - frame_idx) % 1 == 0:
             model.set_veh_embedding(veh=veh_now)
             # torch.cuda.synchronize()
             timer.add('Embed Vehicle')
@@ -329,6 +334,9 @@ if __name__ == '__main__':
     parser.add_argument('--predict_noise', action='store_true', default=True)
     parser.add_argument('--no_destination', action='store_true', default=False, help="不使用目的地信息")
     parser.add_argument('--no_speed', action='store_true', default=False, help="不使用速度信息")
+    parser.add_argument('--use_relative_model', action='store_true', default=True, help="是否使用相对坐标模型结构")
+    parser.add_argument('--use_spatial_anchor', action='store_true', default=True, help="是否使用空间锚点增强位置编码")
+    parser.add_argument('--use_new_model', action='store_true', default=False, help="是否使用改进版的新模型结构")
     args, unknown = parser.parse_known_args()
 
     ## Build Save Path

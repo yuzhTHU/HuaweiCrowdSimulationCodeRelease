@@ -9,7 +9,7 @@ from pathlib import Path
 from argparse import Namespace
 from PIL import Image, ImageOps
 from scipy.spatial import cKDTree
-from .base_dataset import BaseDataset, RasterizedMap
+from .base_dataset import BaseDataset, EmptyDatasetError, RasterizedMap
 from ..utils.homography import calc_homography_mat, affine_transformation, image_to_world
 from typing import List
 
@@ -49,21 +49,11 @@ class WayMoDataset(BaseDataset):
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and os.path.exists(cache_path):
             _logger.info(f"Loading cached dataset from {cache_path}")
-            dataset = cls.load_cache(cache_path)
-            if len(dataset) == 0:
-                raise ValueError(f"Cached dataset {cache_path} is empty.") # 全都是异常轨迹，再生成一遍也是徒劳，不如直接报错通知 load_data_batch 这个样本不要了
             try:
+                dataset = cls.load_cache(cache_path)
+                if len(dataset) == 0: # 如果能读取但却是空的，重新生成一次也会是空的，不如直接报错通知这个用不了
+                    raise EmptyDatasetError(f"Cached dataset {cache_path} is empty.")
                 cls.collate_fn([dataset[0]]) # 测试能否正常使用
-                map_data = dataset.map_data
-                delta_x = map_data.xmax - map_data.xmin
-                delta_y = map_data.ymax - map_data.ymin
-                w, h = map_data.map.shape
-                if not (0.8 < (ratio := (delta_x / w) / (delta_y / h)) < 1.2):
-                    raise ValueError(
-                        f"Map aspect ratio of {name} mismatch: "
-                        f"data ratio={ratio:.4f} (xrange={delta_x:.4f}, yrange={delta_y:.4f}, "
-                        f"map shape={map_data.map.shape}), Re-create cache."
-                    )
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")

@@ -154,7 +154,7 @@ def main(args):
                 if key in [
                     'device', 'save_dir', 'save_path', 'command', 'name', 'exp_name',
                     'p_drop_destination', 'p_drop_map', 'p_drop_speed',
-                    'seed', 'reload_checkpoint',
+                    'seed', 'reload_checkpoint', 'test_before_train', 'test_per_epoch',
                 ]:
                     continue
                 val1 = saved_args.get(key, None)

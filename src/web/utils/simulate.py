@@ -25,6 +25,7 @@ def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model
         # .fillna(0.0)  # 不应该有 nan
         .values.reshape(len(ped_list), 2) # (#pedestrian, 2)
     )
+    assert pos.shape == (len(ped_list), 2)
     vel = (
         df_ped
         .reindex(pd.MultiIndex.from_product([
@@ -37,6 +38,7 @@ def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model
         .fillna(0.0)
         .values # (#pedestrian, 2)
     )
+    assert vel.shape == (len(ped_list), 2)
     hst = (
         df_ped
         .reindex(pd.MultiIndex.from_product([
@@ -46,6 +48,7 @@ def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model
         .values.reshape(args.hist_step, len(ped_list), 2) # (hist_step, #pedestrian, 2)
         .transpose(1, 0, 2) # (#pedestrian, hist_step, 2)
     )
+    assert hst.shape == (len(ped_list), args.hist_step, 2)
     veh = (
         df_veh
         .reindex(pd.MultiIndex.from_product([
@@ -55,6 +58,7 @@ def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model
         .values.reshape(args.hist_step+1, len(veh_list), 2) # (#vehicle, hist_step + 1, 2)
         .transpose(1, 0, 2) # (#vehicle, hist_step + 1, 2)
     )
+    assert veh.shape == (len(veh_list), args.hist_step + 1, 2)
     des = (
         df_ped
         .loc[df_ped.index.get_level_values('id').isin(ped_list)]
@@ -62,6 +66,7 @@ def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model
         .swaplevel(axis=0).reindex(index=ped_list, level=0)
         .values # (#pedestrian, 2)
     )
+    assert des.shape == (len(ped_list), 2)
     spd = (
         df_ped
         .reindex(pd.MultiIndex.from_product([
@@ -69,10 +74,12 @@ def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model
             ped_list
         ], names=['f', 'id']))
         .unstack().ffill().bfill().diff().mul(args.fps).iloc[1:]
-        .stack(future_stack=True).pow(2).sum(axis='columns').pow(0.5)
+        .stack(future_stack=True, dropna=False)
+        .pow(2).sum(axis='columns', min_count=2).pow(0.5)
         .unstack().mean(axis='rows')
         .values[:, np.newaxis] # (#pedestrian, 1)
     )
+    assert spd.shape == (len(ped_list), 1)
     map_data = dataset.map_data
 
     ## Simulation
