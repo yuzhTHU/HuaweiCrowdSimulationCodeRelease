@@ -191,6 +191,8 @@ def main(args):
         f"at [#66CCFF]epoch {test_records['epoch']}[reset]. "
         f"[#66CCFF]ADE={np.mean(test_records['ade']):.4f}, "
         f"[#66CCFF]FDE={np.mean(test_records['fde']):.4f}, "
+        f"[#66CCFF]X_ERROR (normal)={np.nanmean(test_records['norm_err']):.4f}, "
+        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(test_records['tan_err']):.4f}, "
         f"[#66CCFF]AvgLen={np.mean(test_records['trajlen']):.4f}, "
         f"[#66CCFF]Loss={np.mean(test_records['loss']):.4f}, "
         f"[#66CCFF]PedNum={np.mean(test_records['ped_num']):.1f}, "
@@ -201,6 +203,8 @@ def main(args):
             idxs = [i for i, k in enumerate(test_records['dataset_class']) if k == klass]
             ade = np.array([test_records['ade'][i] for i in idxs])
             fde = np.array([test_records['fde'][i] for i in idxs])
+            norm_err = np.array([test_records['norm_err'][i] for i in idxs])
+            tan_err = np.array([test_records['tan_err'][i] for i in idxs])
             trajlen = np.array([test_records['trajlen'][i] for i in idxs])
             ped_num = np.array([test_records['ped_num'][i] for i in idxs])
             veh_num = np.array([test_records['veh_num'][i] for i in idxs])
@@ -213,6 +217,8 @@ def main(args):
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
+                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
+                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "

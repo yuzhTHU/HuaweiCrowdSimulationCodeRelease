@@ -68,7 +68,9 @@ rsync -anv --info=progress2 \
 如果您没有内部服务器权限，可以通过以下专用 rsync 端口下载数据（请联系管理员获取密码）：
 
 ```shell
-rsync -av --port=8873 rsyncuser@dl4.yumeow.site::data_share ./data
+rsync -av --port=8873 --exclude WayMo/Motion rsyncuser@dl4.yumeow.site::data_share ./data
+# 共约 60 G
+# 可以去掉 --exclude WayMo/Motion 以获取 WayMo 的原始 tf 数据，大小约 87G
 ```
 
 ## 🚀 模型训练 (Training)
@@ -89,7 +91,7 @@ python train.py \
 
 运行日志、模型参数（`checkpoint.pth`, `best.pth`）和训练过程的可视化结果将被保存在 `logs/train/{yymmdd}_{name}_{hhmmss}_{hostname}/` 目录中。
 
-### 恢复训练 (Resume)
+### 恢复训练
 
 如果训练意外中断，可以通过以下两种方式恢复：
 
@@ -110,10 +112,9 @@ python train.py \
 
 ```shell
 python test.py \
-    --name sample_test \
     --reload_checkpoint /path/to/logs/train/xxx_train_xxx/best.pth \
-    --roll_step 500 \
-    --sample_num 10
+    --datasets All \
+    --test_ratio 0.2
 ```
 
   * `--roll_step`: 连续预测的步数（模拟时长）。
@@ -169,3 +170,16 @@ uvicorn app:app --host 0.0.0.0 --port 12345
 │ Sum           │    35 │ 100.0 │ 2742 │ 58.2 │    1364 │ 29.0 │
 └───────────────┴───────┴───────┴──────┴──────┴─────────┴──────┘
 ```
+
+
+## 系统与硬件
+
+### Linux -> Windows
+
+本代码基于 Ubuntu 22.04 开发，但经测试也可以直接在 Windows 10 系统上运行而无需任何修改。
+
+### NVIDIA GPU -> Ascend NPU
+
+本代码基于 NVIDIA GPU 开发。为了在 HUAWEI Ascend (昇腾) NPU 上运行，需要通过 `export USE_NPU=True` 设置环境变量，此后代码会自动切换到 NPU 上运行。
+
+需要注意的是，由于 NPU 尚不支持 _native_multi_head_attention 算子，因此 MultiheadAttention 模块在推理时只能 fallback 到未经优化的 MatMul 算子。这不会影响训练速度（即 `model.train()` 状态），但会使得推理速度（即 `model.eval()` 状态）显著降低 2~3 倍。

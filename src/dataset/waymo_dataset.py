@@ -49,11 +49,24 @@ class WayMoDataset(BaseDataset):
             _logger.info(f"Loading cached dataset from {cache_path}")
             try:
                 dataset = cls.load_cache(cache_path)
-                if len(dataset) == 0: # 如果能读取但却是空的，重新生成一次也会是空的，不如直接报错通知这个用不了
-                    raise EmptyDatasetError(f"Cached dataset {cache_path} is empty.")
+                if len(dataset) == 0: 
+                    raise Exception(f"Cached dataset is empty.")
                 cls.collate_fn([dataset[0]]) # 测试能否正常使用
+                if True: # 检查地图长宽比是否正确
+                    map_data = dataset.map_data
+                    delta_x = map_data.xmax - map_data.xmin
+                    delta_y = map_data.ymax - map_data.ymin
+                    w, h = map_data.map.shape
+                    if not (0.8 < (ratio := (delta_x / w) / (delta_y / h)) < 1.2):
+                        raise Exception(
+                            f"Map aspect ratio of {dataset.name} mismatch: "
+                            f"data ratio={ratio:.4f} (xrange={delta_x:.4f}, yrange={delta_y:.4f}, "
+                            f"map shape={map_data.map.shape}), may cause distortion."
+                        )
                 return dataset
             except Exception as e:
+                if 'Cached dataset is empty.' in str(e): 
+                    raise e from e  # 如果能读取但却是空的，重新生成一次也会是空的，不如直接报错通知这个用不了
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
 
         if not data_path.exists():
