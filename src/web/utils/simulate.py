@@ -74,12 +74,12 @@ def init_simulation(args: Namespace, dataset: BaseDataset, frame_idx: int, model
             ped_list
         ], names=['f', 'id']))
         .unstack().ffill().bfill().diff().mul(args.fps).iloc[1:]
-        .stack(future_stack=True, dropna=False)
+        .stack(future_stack=True)
         .pow(2).sum(axis='columns', min_count=2).pow(0.5)
         .unstack().mean(axis='rows')
         .values[:, np.newaxis] # (#pedestrian, 1)
     )
-    assert spd.shape == (len(ped_list), 1)
+    assert spd.shape == (len(ped_list), 1), "您可能需要将这里上方的 future_stack=True 改成 dropna=False 再试一试，或者用我们推荐的 pandas 版本 2.3.3"
     map_data = dataset.map_data
 
     ## Simulation

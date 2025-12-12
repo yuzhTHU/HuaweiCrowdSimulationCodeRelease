@@ -41,8 +41,6 @@ class GCDataset(BaseDataset):
             GCDataset: 初始化后的数据集实例。
         """
         data_path = Path(data_path)
-        if not data_path.exists():
-            raise FileNotFoundError(f"Data path {data_path} not found.")
         name = f"GC"
 
         ## 检查缓存
@@ -57,7 +55,10 @@ class GCDataset(BaseDataset):
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
-        
+
+        if not data_path.exists():
+            raise FileNotFoundError(f"Data path {data_path} not found.")
+
         ## 读取数据
         H = cls.get_homography_mat()  # (3, 3)
         df_data = []

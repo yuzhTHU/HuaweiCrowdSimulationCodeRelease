@@ -41,8 +41,6 @@ class UCYDataset(BaseDataset):
             UCYDataset: 初始化后的数据集实例。
         """
         data_path = Path(data_path)
-        if not data_path.exists():
-            raise FileNotFoundError(f"Data path {data_path} not found.")
         name = (
             data_path.parent.name.removeprefix("data_")
             + "-"
@@ -61,6 +59,9 @@ class UCYDataset(BaseDataset):
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
+
+        if not data_path.exists():
+            raise FileNotFoundError(f"Data path {data_path} not found.")
 
         ## 读取数据
         df_list = []
@@ -125,10 +126,13 @@ class UCYDataset(BaseDataset):
         ## 检查缓存
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / f"{name}.pkl"
-        if args.cache_dataset and os.path.exists(cache_path):
+        try:
+            assert args.cache_dataset, f"Cache disabled"
+            assert cache_path.exists(), f"Cache {cache_path} not found"
             _logger.info(f"Loading cached dataset-list from {cache_path}")
             files = cls.load_cache(cache_path)
-        else:
+        except Exception as e:
+            _logger.info(f"Failed to load cached dataset-list from {cache_path} since: {e}")
             data_path = Path(data_path)
             if data_path.is_dir():
                 files = list(sorted(data_path.glob("**/*.vsp")))

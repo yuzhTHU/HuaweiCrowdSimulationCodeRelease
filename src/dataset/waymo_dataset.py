@@ -41,8 +41,6 @@ class WayMoDataset(BaseDataset):
             WayMoDataset: 初始化后的数据集实例。
         """
         data_path = Path(data_path)
-        if not data_path.exists():
-            raise FileNotFoundError(f"Data path {data_path} not found.")
         name = data_path.parent.name
 
         ## 检查缓存
@@ -57,6 +55,9 @@ class WayMoDataset(BaseDataset):
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
+
+        if not data_path.exists():
+            raise FileNotFoundError(f"Data path {data_path} not found.")
 
         ## 读取数据
         df_data = pd.read_csv(
@@ -131,15 +132,26 @@ class WayMoDataset(BaseDataset):
         Returns:
             List[WayMoDataset]: 数据集列表。
         """
-        df = pd.read_csv('data/WayMo/summary.csv', sep=',')
-        df = df.sort_values('num_pedestrians', ascending=False)
-        files = []
-        for idx, row in df.iterrows():
-            a = row['filename'].split('-')[1]
-            b = row['id']
-            c = row['scenario_id']
-            file = Path('./data/WayMo/Processed') / f"{a}_{b}_{c}" / "data.csv.gz"
-            files.append(file)
+        name = '-'.join(Path(data_path).relative_to('./data').parts)
+        cache_path = Path('./data/.cache') / f"{name}.pkl"
+        try:
+            assert args.cache_dataset, f"Cache disabled"
+            assert cache_path.exists(), f"Cache {cache_path} not found"
+            _logger.info(f"Loading cached dataset-list from {cache_path}")
+            files = cls.load_cache(cache_path)
+        except Exception as e:
+            _logger.info(f"Failed to load cached dataset-list from {cache_path} since: {e}")
+            df = pd.read_csv('data/WayMo/summary.csv', sep=',')
+            df = df.sort_values('num_pedestrians', ascending=False)
+            files = []
+            for idx, row in df.iterrows():
+                a = row['filename'].split('-')[1]
+                b = row['id']
+                c = row['scenario_id']
+                file = Path('./data/WayMo/Processed') / f"{a}_{b}_{c}" / "data.csv.gz"
+                files.append(file)
+            _logger.info(f"Caching dataset-list to {cache_path}")
+            cls.save_cache(files, cache_path)
 
         datasets = []
         pbar = tqdm(files, disable=not show_tqdm, desc="Loading WayMo datasets")

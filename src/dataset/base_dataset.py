@@ -232,13 +232,13 @@ class BaseDataset(D.Dataset):
             spd = (
                 future_5s
                 .diff().mul(fps).iloc[1:]  # 去掉第一行 NaN（对应于当前第 f 帧的速度），只剩未来 5s
-                .swaplevel(axis='columns').stack(future_stack=True, dropna=False) # dropna 避免 (NaN, NaN) 被丢弃; 在新版本的 pandas 中可能需要删掉 future_stack 参数
+                .swaplevel(axis='columns').stack(future_stack=True) # dropna 避免 (NaN, NaN) 被丢弃
                 .pow(2).sum(axis='columns', min_count=2).pow(0.5) # min_count 避免 (NaN, NaN) 被识别为 speed=0
                 .unstack()
                 .mean(axis='rows').values
                 [..., np.newaxis]
             )  # (#ped, 1)
-            assert spd.shape == (len(ped_list), 1)
+            assert spd.shape == (len(ped_list), 1), "您可能需要将这里上方的 future_stack=True 改成 dropna=False 再试一试，或者用我们推荐的 pandas 版本 2.3.3"
             
             # 目的地 (最后出现位置) 作为条件
             des = (
