@@ -21,6 +21,7 @@ from src.utils.seed import seed_all
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
+from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 from train import test_once
 
 _logger = logging.getLogger("src.test")
@@ -176,7 +177,8 @@ def main(args):
     ## Test
     torch.set_grad_enabled(False)
     model.eval()
-    test_records = test_once(args, test_loaders, model, criterion, diffusion, start_epoch)
+    with npu_attention_fallback_context(model, enable=USE_NPU):
+        test_records = test_once(args, test_loaders, model, criterion, diffusion, start_epoch)
 
     # 保存日志
     with open(f"{args.save_path}/records.jsonl", "a") as f:
@@ -325,7 +327,7 @@ if __name__ == "__main__":
     args.command = ' '.join(map(shlex.quote, [sys.executable, *sys.argv]))
     ## Select GPU
     if args.device == "auto":
-        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)
+        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15) if not USE_NPU else 'npu'
 
     ## Save Args
     args_path = save_path / "args.json"

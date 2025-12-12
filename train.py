@@ -1,4 +1,3 @@
-import os
 import re
 import sys
 import time
@@ -16,7 +15,6 @@ from pathlib import Path
 from datetime import datetime
 from socket import gethostname
 from argparse import ArgumentParser
-from contextlib import contextmanager
 from setproctitle import setproctitle
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset, ORCADataset
 from src.model import Model, RelativeModel, NewModel
@@ -28,52 +26,7 @@ from src.utils.plot import get_fig
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
-
-## 存在 USE_NPU 环境变量时，将代码移动到华为昇腾 NPU 上运行
-USE_NPU = os.environ.get('USE_NPU', None) not in [None, '', 'no', 'No', 'false', 'False']
-if USE_NPU:
-    print(tag2ansi("[yellow bold]Using Huawei Ascend NPU for training.[reset]"))
-    import torch_npu
-    from torch_npu.contrib import transfer_to_npu  # 无感迁移到 NPU
-    torch.backends.cuda.enable_flash_sdp(False)
-    torch.backends.cuda.enable_mem_efficient_sdp(False)
-    torch.backends.cuda.enable_math_sdp(True)
-
-@contextmanager
-def npu_attention_fallback(model, enable=True):
-    """
-    上下文管理器：临时将 MultiheadAttention 切换到 train 模式并关闭 dropout，
-    以避开 NPU 上不支持的 _native_multi_head_attention 融合算子。
-    
-    Args:
-        model: PyTorch 模型
-        enable: 是否开启此 workaround (方便通过 args 控制)
-    """
-    if not enable:
-        yield
-        return
-    else:
-        original_states = {}
-        # 保存原始的 dropout 和 training 状态
-        for name, module in model.named_modules():
-            if isinstance(module, torch.nn.MultiheadAttention):
-                original_states[name] = {
-                    'dropout': module.dropout,
-                    'training': module.training
-                }
-                module.train()  # 强制开启 train 模式 (fallback 到 MatMul 路径)
-                module.dropout = 0.0  # 强制关闭 dropout (保证确定性)
-                # 不需要考虑 BN 等因素，因为 MultiheadAttention 里没有
-        try:
-            yield
-        finally:
-            # 恢复原始状态 (无论是否报错都会执行)
-            for name, module in model.named_modules():
-                if name in original_states:
-                    state = original_states[name]
-                    module.dropout = state['dropout'] # 恢复 dropout
-                    module.train(state['training']) # 恢复原本的模式 (train 或 eval)
-
+from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 
 _logger = logging.getLogger("src.train")
 
@@ -258,7 +211,8 @@ def main(args):
         if (epoch > 0 and not epoch % args.test_per_epoch) or (epoch == 0 and args.test_before_train):
             torch.set_grad_enabled(False)
             model.eval()
-            test_records = test_once(args, test_loaders, model, criterion, diffusion, epoch)
+            with npu_attention_fallback_context(model, enable=USE_NPU):
+                test_records = test_once(args, test_loaders, model, criterion, diffusion, epoch)
             timer.add('test')
         else:
             test_records = None
@@ -881,7 +835,7 @@ if __name__ == "__main__":
     args.command = ' '.join(map(shlex.quote, [sys.executable, *sys.argv]))
     ## Select GPU
     if args.device == "auto":
-        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)
+        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15) if not USE_NPU else 'npu'
 
     ## Save Args
     args_path = save_path / "args.json"
