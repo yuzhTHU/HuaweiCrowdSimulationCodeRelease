@@ -11,7 +11,7 @@ from pathlib import Path
 from argparse import Namespace
 from scipy.signal import medfilt, savgol_filter
 from scipy.interpolate import interp1d
-from .base_dataset import BaseDataset, RasterizedMap
+from .base_dataset import BaseDataset, EmptyDatasetError, RasterizedMap
 from ..utils.homography import calc_homography_mat, affine_transformation, image_to_world
 from typing import List
 
@@ -44,8 +44,6 @@ class SDDDataset(BaseDataset):
             SDDDataset: 初始化后的数据集实例。
         """
         data_path = Path(data_path)
-        if not data_path.exists():
-            raise FileNotFoundError(f"Data path {data_path} not found.")
         name = (
             data_path.parent.parent.name
             + "-"
@@ -56,14 +54,17 @@ class SDDDataset(BaseDataset):
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and os.path.exists(cache_path):
             _logger.info(f"Loading cached dataset from {cache_path}")
-            dataset = cls.load_cache(cache_path)
-            if len(dataset) == 0:
-                raise ValueError(f"Cached dataset {cache_path} is empty.")
             try:
+                dataset = cls.load_cache(cache_path)
+                if len(dataset) == 0: # 如果能读取但却是空的，重新生成一次也会是空的，不如直接报错通知这个用不了
+                    raise EmptyDatasetError(f"Cached dataset {cache_path} is empty.")
                 cls.collate_fn([dataset[0]]) # 测试能否正常使用
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
+
+        if not data_path.exists():
+            raise FileNotFoundError(f"Data path {data_path} not found.")
 
         ## 读取数据
         df_data = pd.read_csv(
@@ -155,10 +156,13 @@ class SDDDataset(BaseDataset):
         """批量加载 SDD 数据集。"""
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / f"{name}.pkl"
-        if args.cache_dataset and os.path.exists(cache_path):
+        try:
+            assert args.cache_dataset, f"Cache disabled"
+            assert cache_path.exists(), f"Cache {cache_path} not found"
             _logger.info(f"Loading cached dataset-list from {cache_path}")
             files = cls.load_cache(cache_path)
-        else:
+        except Exception as e:
+            _logger.info(f"Failed to load cached dataset-list from {cache_path} since: {e}")
             data_path = Path(data_path)
             if data_path.is_dir():
                 files = list(sorted(data_path.glob("**/annotations.txt")))

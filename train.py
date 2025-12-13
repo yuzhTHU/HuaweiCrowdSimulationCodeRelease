@@ -26,6 +26,8 @@ from src.utils.plot import get_fig
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
+from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
+from src.utils.calc_xy_error import calc_xy_error
 
 _logger = logging.getLogger("src.train")
 
@@ -35,7 +37,7 @@ def main(args):
     dataset_list = []
     if 'All' in args.datasets:
         args.datasets.remove('All')
-        args.datasets += ['ETH', 'UCY', 'GC', 'SDD', 'WayMo', 'ORCA']
+        args.datasets += ['ETH', 'UCY', 'GC', 'SDD', 'WayMo']
     if "ETH" in args.datasets:
         dataset_list += ETHDataset.load_data_batch(args, "./data/ETH/")
         args.datasets.remove("ETH")
@@ -49,7 +51,7 @@ def main(args):
         dataset_list += SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
         args.datasets.remove("SDD")
     if 'WayMo' in args.datasets:
-        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=500)
+        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
         args.datasets.remove("WayMo")
     if 'ORCA' in args.datasets:
         dataset_list += ORCADataset.load_data_batch(args, "./data/ORCA/")
@@ -210,7 +212,8 @@ def main(args):
         if (epoch > 0 and not epoch % args.test_per_epoch) or (epoch == 0 and args.test_before_train):
             torch.set_grad_enabled(False)
             model.eval()
-            test_records = test_once(args, test_loaders, model, criterion, diffusion, epoch)
+            with npu_attention_fallback_context(model, enable=USE_NPU):
+                test_records = test_once(args, test_loaders, model, criterion, diffusion, epoch)
             timer.add('test')
         else:
             test_records = None
@@ -302,8 +305,8 @@ def main(args):
             if reserved_new < peak: # 释放了过多的显存，之后可能会 OOM
                 allocated = torch.cuda.memory_allocated(args.device) / 1024 / 1024
                 if (keep_MB := int(np.ceil(peak - allocated))) > 0: # 把需要的显存再占回来
-                    fuck_cuda = AutoGPU.fuck_gpu(device=args.device, memory_MB=keep_MB, block_MB=None)
-                    del fuck_cuda
+                    tmp = AutoGPU.allocate_gpu(device=args.device, memory_MB=keep_MB, block_MB=None)
+                    del tmp
                 reserved_new = torch.cuda.memory_reserved(args.device) / 1024 / 1024
             _logger.info(tag2ansi(
                 f"[brown]Adjust reserved memory from {reserved_raw/1024:.1f}GiB to {reserved_new/1024:.1f}GiB. [reset]"
@@ -615,6 +618,33 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             fde = dis_err[..., -1] # (valid{B*#pedestrian})
             records['ade'].extend(ade.cpu().tolist()) # List[float]
             records['fde'].extend(fde.cpu().tolist()) # List[float]
+            # 计算切向误差和法向误差
+            traj_diff = (pos_pred - pos_true)[:, mask, :, :][sample_idx, valid_idx, :, :] # (valid{B*#pedestrian}, pred_step, 2)
+            ped_pos = pos[mask, :] # (valid{B*#pedestrian}, 2)
+            batch_indices = torch.nonzero(mask)[:, 0]  # 有效行人所属的 batch index (valid{B*#pedestrian},)
+            num_valid_ped = batch_indices.shape[0]
+            if veh.shape[1] == 0: # 场景中完全没有车辆数据
+                veh_pos = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
+                veh_vel = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
+            else: # 找到每个场景中距离各个行人最近的车辆
+                all_veh_pos = veh[..., -1, :] # (batch_size, #vehicle, 2)
+                all_veh_vel = (veh[..., -1, :] - veh[..., -2, :]) * args.fps  # (batch_size, #vehicle, 2)
+                # 取出每个有效行人对应场景的车辆数据
+                batch_veh_pos = all_veh_pos[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
+                batch_veh_vel = all_veh_vel[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
+                # 计算行人到同场景所有车辆的距离 (将无效车辆的距离设为无穷大)
+                dist = (ped_pos.unsqueeze(1) - batch_veh_pos).norm(dim=-1).nan_to_num_(nan=float('inf')) # (valid{B*#pedestrian}, #vehicle)
+                # 找到最近车辆的索引
+                min_dist, nearest_idx = torch.min(dist, dim=1) # (valid{B*#pedestrian},)
+                has_vehicle = min_dist != float('inf')
+                # Gather 最近车辆的位置和速度
+                gather_idx = nearest_idx.view(-1, 1, 1).expand(-1, 1, 2)
+                veh_pos = torch.gather(batch_veh_pos, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
+                veh_vel = torch.gather(batch_veh_vel, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
+                # 如果该行人所在的场景没有任何车辆，设为 NaN
+                veh_pos[~has_vehicle] = float('nan')
+                veh_vel[~has_vehicle] = float('nan')
+            records['norm_err'], records['tan_err'] = calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel)
             # 计算轨迹长度
             trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1)[mask] # (valid{B*#pedestrian})
             records['trajlen'].extend(trajlen.cpu().tolist()) # List[float]
@@ -631,6 +661,8 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             f"[#66CCFF]Loss={np.mean(records['loss']):.4f}, "
             f"[#66CCFF]ADE={np.mean(records['ade']):.4f}, "
             f"[#66CCFF]FDE={np.mean(records['fde']):.4f}, "
+            f"[#66CCFF]X_ERROR (normal)={np.nanmean(records['norm_err']):.4f}, "
+            f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(records['tan_err']):.4f}, "
             f"[#66CCFF]AvgLen={np.mean(records['trajlen']):.4f}, "
             f"[#66CCFF]PedNum={np.mean(records['ped_num']):.1f}, "
             f"[#66CCFF]VehNum={np.mean(records['veh_num']):.1f}, "
@@ -658,6 +690,8 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
         f"[#66CCFF]Loss={np.sum(w * all_records['loss']):.4f}, "
         f"[#66CCFF]ADE={np.sum(w * all_records['ade']):.4f}, "
         f"[#66CCFF]FDE={np.sum(w * all_records['fde']):.4f}, "
+        f"[#66CCFF]X_ERROR (normal)={np.nansum(w * all_records['norm_err']) / np.sum(w * np.isfinite(all_records['norm_err'])):.4f}, "
+        f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * all_records['tan_err']) / np.sum(w * np.isfinite(all_records['tan_err'])):.4f}, "
         f"[#66CCFF]AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
         f"[#66CCFF]PedNum={np.sum(w * all_records['ped_num']):.4f}, "
         f"[#66CCFF]VehNum={np.sum(w * all_records['veh_num']):.4f}, "
@@ -670,6 +704,8 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
             idxs = [i for i, k in enumerate(all_records['dataset_class']) if k == klass]
             ade = np.array([all_records['ade'][i] for i in idxs])
             fde = np.array([all_records['fde'][i] for i in idxs])
+            norm_err = np.array([all_records['norm_err'][i] for i in idxs])
+            tan_err = np.array([all_records['tan_err'][i] for i in idxs])
             trajlen = np.array([all_records['trajlen'][i] for i in idxs])
             ped_num = np.array([all_records['ped_num'][i] for i in idxs])
             veh_num = np.array([all_records['veh_num'][i] for i in idxs])
@@ -682,6 +718,8 @@ def test_once(args, test_loaders, model, criterion, diffusion, epoch):
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
+                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
+                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
@@ -833,7 +871,7 @@ if __name__ == "__main__":
     args.command = ' '.join(map(shlex.quote, [sys.executable, *sys.argv]))
     ## Select GPU
     if args.device == "auto":
-        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)
+        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15) if not USE_NPU else 'npu'
 
     ## Save Args
     args_path = save_path / "args.json"

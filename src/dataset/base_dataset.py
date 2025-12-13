@@ -35,6 +35,10 @@ class RasterizedMap:
     ymax: float = None
 
 
+class EmptyDatasetError(BaseException):
+    pass
+
+
 class BaseDataset(D.Dataset):
     """
     所有行人轨迹预测数据集的基类。
@@ -175,7 +179,9 @@ class BaseDataset(D.Dataset):
 
             # 当前状态
             pos = ped_table.loc[f].values.reshape(len(ped_list), 2)  # (#ped, 2)
+            assert pos.shape == (len(ped_list), 2)
             vel = ped_table.diff().loc[f].mul(fps).fillna(0).values.reshape(len(ped_list), 2)  # (#ped, 2)
+            assert vel.shape == (len(ped_list), 2)
 
             # 未来加速度作为标签
             future_acc = (
@@ -188,6 +194,7 @@ class BaseDataset(D.Dataset):
                 .reshape(pred_step, len(ped_list), 2)
                 .transpose(1, 0, 2)
             )  # (#ped, pred_step, 2)
+            assert future_acc.shape == (len(ped_list), pred_step, 2)
             # 未来轨迹
             future_pos = (
                 ped_table
@@ -196,6 +203,7 @@ class BaseDataset(D.Dataset):
                 .reshape(pred_step, len(ped_list), 2)
                 .transpose(1, 0, 2)
             )  # (#ped, pred_step, 2)
+            assert future_pos.shape == (len(ped_list), pred_step, 2)
 
             # 历史轨迹
             hst = (
@@ -205,6 +213,7 @@ class BaseDataset(D.Dataset):
                 .reshape(hist_step, len(ped_list), 2)
                 .transpose(1, 0, 2)
             )  # (#ped, hist_step, 2)
+            assert hst.shape == (len(ped_list), hist_step, 2)
 
             # 未来 5s 平均速度
             future_5s = (
@@ -223,12 +232,13 @@ class BaseDataset(D.Dataset):
             spd = (
                 future_5s
                 .diff().mul(fps).iloc[1:]  # 去掉第一行 NaN（对应于当前第 f 帧的速度），只剩未来 5s
-                .swaplevel(axis='columns').stack(future_stack=True)
-                .pow(2).sum(axis='columns').pow(0.5)
+                .swaplevel(axis='columns').stack(future_stack=True) # dropna 避免 (NaN, NaN) 被丢弃
+                .pow(2).sum(axis='columns', min_count=2).pow(0.5) # min_count 避免 (NaN, NaN) 被识别为 speed=0
                 .unstack()
                 .mean(axis='rows').values
                 [..., np.newaxis]
             )  # (#ped, 1)
+            assert spd.shape == (len(ped_list), 1), "您可能需要将这里上方的 future_stack=True 改成 dropna=False 再试一试，或者用我们推荐的 pandas 版本 2.3.3"
             
             # 目的地 (最后出现位置) 作为条件
             des = (
@@ -237,6 +247,7 @@ class BaseDataset(D.Dataset):
                 .set_index('id').reindex(index=ped_list)
                 [['x', 'y']].values
             )  # (#ped, 2)
+            assert des.shape == (len(ped_list), 2)
 
             # 车辆信息作为条件
             veh_data = df[df['type'].eq('vehicle') & df['f'].ge(f - hist_step) & df['f'].lt(f + pred_step + 1)]
@@ -256,6 +267,7 @@ class BaseDataset(D.Dataset):
                 .reshape(hist_step + 1, len(veh_list), 2)
                 .transpose(1, 0, 2)
             )  # (#vehicle, hist_step + 1, 2)
+            assert veh.shape == (len(veh_list), hist_step+1, 2)
             future_veh = (
                 veh_table
                 .iloc[-pred_step:]
@@ -263,6 +275,7 @@ class BaseDataset(D.Dataset):
                 .reshape(pred_step, len(veh_list), 2)
                 .transpose(1, 0, 2)
             )  # (#ped, pred_step, 2)
+            assert future_veh.shape == (len(veh_list), pred_step, 2)
 
             samples.append({
                 'pos': pos, # (#ped, 2)

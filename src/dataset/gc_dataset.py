@@ -11,7 +11,7 @@ from io import StringIO
 from pathlib import Path
 from argparse import Namespace
 from scipy.interpolate import griddata
-from .base_dataset import BaseDataset, RasterizedMap
+from .base_dataset import BaseDataset, EmptyDatasetError, RasterizedMap
 from ..utils.homography import calc_homography_mat, affine_transformation, image_to_world
 
 _logger = logging.getLogger(__name__)
@@ -41,23 +41,24 @@ class GCDataset(BaseDataset):
             GCDataset: 初始化后的数据集实例。
         """
         data_path = Path(data_path)
-        if not data_path.exists():
-            raise FileNotFoundError(f"Data path {data_path} not found.")
         name = f"GC"
 
         ## 检查缓存
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and cache_path.exists():
             _logger.info(f"Loading cached dataset from {cache_path}")
-            dataset = cls.load_cache(cache_path)
-            if len(dataset) == 0:
-                raise ValueError(f"Cached dataset {cache_path} is empty.")
             try:
+                dataset = cls.load_cache(cache_path)
+                if len(dataset) == 0: # 如果能读取但却是空的，重新生成一次也会是空的，不如直接报错通知这个用不了
+                    raise EmptyDatasetError(f"Cached dataset {cache_path} is empty.")
                 cls.collate_fn([dataset[0]]) # 测试能否正常使用
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
-        
+
+        if not data_path.exists():
+            raise FileNotFoundError(f"Data path {data_path} not found.")
+
         ## 读取数据
         H = cls.get_homography_mat()  # (3, 3)
         df_data = []

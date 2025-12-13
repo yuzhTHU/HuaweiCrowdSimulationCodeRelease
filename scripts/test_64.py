@@ -21,10 +21,9 @@ from src.utils.seed import seed_all
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
-from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 from train import test_once
 
-_logger = logging.getLogger("src.test")
+_logger = logging.getLogger("src.test_64")
 
 def main(args):
     ## Load Dataset
@@ -96,6 +95,12 @@ def main(args):
     else:
         # 训练集和测试集相同
         test_dataset = dataset_list
+    # 只保留场景中行人数量超过 64 的样本
+    for dataset in test_dataset:
+        original_num = len(dataset)
+        dataset.samples = [s for s in dataset.samples if len(s['ped_id']) >= 64]
+        filtered_num = len(dataset)
+        _logger.info(f"Filtered {original_num - filtered_num} samples ({original_num}->{filtered_num}) from {dataset.name} with less than 64 pedestrians.")
     # 创建数据加载器
     test_loaders = []
     for dataset in test_dataset:
@@ -177,8 +182,7 @@ def main(args):
     ## Test
     torch.set_grad_enabled(False)
     model.eval()
-    with npu_attention_fallback_context(model, enable=USE_NPU):
-        test_records = test_once(args, test_loaders, model, criterion, diffusion, start_epoch)
+    test_records = test_once(args, test_loaders, model, criterion, diffusion, start_epoch)
 
     # 保存日志
     with open(f"{args.save_path}/records.jsonl", "a") as f:
@@ -186,30 +190,21 @@ def main(args):
             f.write(json.dumps(test_records) + "\n")
 
     ## Log Result
-    w = np.array(test_records['sample_nums'], dtype=float)
-    w /= w.sum()
-    test_records['accuracy'] = 1 - np.sum(w * test_records['ade']) / np.sum(w * test_records['trajlen'])
-    test_records['unweighted_accuracy'] = 1 - np.mean(test_records['ade']) / np.mean(test_records['trajlen'])
     _logger.note(tag2ansi(
-        f"[bold underline orange]Accuracy={test_records['accuracy']:.2%}[reset] (unweighted={test_records['unweighted_accuracy']:.2%}), "
-        f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
-        f"[#66CCFF]ADE={np.sum(w * test_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.sum(w * test_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nansum(w * test_records['norm_err']) / np.sum(w * np.isfinite(test_records['norm_err'])):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * test_records['tan_err']) / np.sum(w * np.isfinite(test_records['tan_err'])):.4f}, "
-        f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
-        f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.4f}, "
-        f"[#66CCFF]VehNum={np.sum(w * test_records['veh_num']):.4f}, "
-        f"[#66CCFF]RolloutTime={np.mean(test_records['rollout_time'])*1000:.2}ms "
-        f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz[reset]), "
+        f"[bold underline orange]Accuracy={test_records['accuracy']:.2%}[reset] "
+        f"at [#66CCFF]epoch {test_records['epoch']}[reset]. "
+        f"[#66CCFF]ADE={np.mean(test_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.mean(test_records['fde']):.4f}, "
+        f"[#66CCFF]AvgLen={np.mean(test_records['trajlen']):.4f}, "
+        f"[#66CCFF]Loss={np.mean(test_records['loss']):.4f}, "
+        f"[#66CCFF]PedNum={np.mean(test_records['ped_num']):.1f}, "
+        f"[#66CCFF]VehNum={np.mean(test_records['veh_num']):.1f}"
     ))
     if len(set(test_records['dataset_class'])) > 1:
         for klass in sorted(list(set(test_records['dataset_class']))):
             idxs = [i for i, k in enumerate(test_records['dataset_class']) if k == klass]
             ade = np.array([test_records['ade'][i] for i in idxs])
             fde = np.array([test_records['fde'][i] for i in idxs])
-            norm_err = np.array([test_records['norm_err'][i] for i in idxs])
-            tan_err = np.array([test_records['tan_err'][i] for i in idxs])
             trajlen = np.array([test_records['trajlen'][i] for i in idxs])
             ped_num = np.array([test_records['ped_num'][i] for i in idxs])
             veh_num = np.array([test_records['veh_num'][i] for i in idxs])
@@ -222,8 +217,6 @@ def main(args):
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
-                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
-                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
@@ -236,11 +229,11 @@ def main(args):
 if __name__ == "__main__":
     parser = ArgumentParser()
     # 基础配置
-    parser.add_argument("--name", type=str, default="test", help="实验任务名称，用于生成实验ID")
+    parser.add_argument("--name", type=str, default="test_64", help="实验任务名称，用于生成实验ID")
     parser.add_argument("--exp_name", type=str, default=None, help="手动指定实验名称（若指定则覆盖自动生成的名称）")
     parser.add_argument("--device", type=str, default="auto", help="计算设备，可选 'cpu', 'cuda:0' 或 'auto'（自动选择显存充足的 GPU）")
     parser.add_argument("--seed", type=int, default=None, help="随机种子，固定以复现实验结果")
-    parser.add_argument("--save_dir", type=str, default="./logs/test", help="日志和模型权重的保存根目录")
+    parser.add_argument("--save_dir", type=str, default="./logs/test_64", help="日志和模型权重的保存根目录")
     parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出更多日志，不保存部分文件）")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader 的工作线程数（0 表示主线程）")
     
@@ -338,7 +331,7 @@ if __name__ == "__main__":
     args.command = ' '.join(map(shlex.quote, [sys.executable, *sys.argv]))
     ## Select GPU
     if args.device == "auto":
-        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15) if not USE_NPU else 'npu'
+        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)
 
     ## Save Args
     args_path = save_path / "args.json"

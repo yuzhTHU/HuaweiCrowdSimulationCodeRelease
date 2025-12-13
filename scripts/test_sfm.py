@@ -21,10 +21,288 @@ from src.utils.seed import seed_all
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
-from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
-from train import test_once
+from src.utils.get_force_map import get_force_map
+from src.utils.extract_patches import extract_patches_torch
+import torch.nn.functional as F
+import re
+import sys
+import time
+import json
+import torch
+import shlex
+import random
+import logging
+import numpy as np
+import matplotlib.pyplot as plt
+import torch.utils.data as D
+from copy import deepcopy
+from tqdm import tqdm
+from pathlib import Path
+from datetime import datetime
+from socket import gethostname
+from argparse import ArgumentParser
+from setproctitle import setproctitle
+from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset, ORCADataset
+from src.model import Model, RelativeModel, NewModel
+from src.diffusion import DDPM, DDIM
+from src.utils.logger import init_logger
+from src.utils.seed import seed_all
+from src.utils.timer import NamedTimer
+from src.utils.plot import get_fig
+from src.utils.auto_gpu import AutoGPU
+from src.utils.fix_parser import add_negation_flags, add_minus_flags
+from src.utils.tag2ansi import tag2ansi
+
 
 _logger = logging.getLogger("src.test")
+
+
+def test_once_sfm(args, test_loaders, model, criterion, diffusion, epoch):
+
+    args.t_des_force=0.5
+    args.r=10
+    args.a_map_force=3.0
+    args.d_map_force=0.6
+    args.a_ped_force=2.0
+    args.d_ped_force=0.3
+    args.a_veh_force=5.0
+    args.d_veh_force=0.5
+    args.vel_damping=0.5
+
+    test_timer = NamedTimer(unit='it', mode='pace')
+    records_list = []
+    for loader in test_loaders:
+        map_data = loader.dataset.map_data
+        map = torch.from_numpy(map_data.map).to(args.device).float()
+        test_timer.add('prepare data')
+        model.set_map_embedding(
+            map=map,
+            xmin=map_data.xmin,
+            xmax=map_data.xmax,
+            ymin=map_data.ymin,
+            ymax=map_data.ymax,
+        )
+        test_timer.add('embed map')
+        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[])
+        for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
+            pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
+            vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
+            hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
+            des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
+            spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian, 1)
+            veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
+            future_acc = batch['future_acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
+            future_pos = batch['future_pos'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
+            future_veh = batch['future_veh'].to(args.device)  # (batch_size, #vehicle, pred_step*roll_step, 2)
+            ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
+            veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
+
+            S = args.sample_num  # 采样次数
+            N = args.denoise_step  # 采样步数
+            assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
+            assert 1 <= args.step_offset <= args.T // N, f"step_offset 应该取值于 {{1, ..., {args.T // N}}}!"
+            pos_now = pos.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
+            vel_now = vel.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
+            hst_now = hst.repeat(S, 1, 1, 1)  # (S*B, #pedestrian, hist_step, 2)
+            des_now = des.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
+            spd_now = spd.repeat(S, 1, 1)  # (S*B, #pedestrian, 1)
+            veh_now = veh.repeat(S, 1, 1, 1)  # (S*B, #vehicle, hist_step + 1, 2)
+            ped_length_repeat = ped_length.repeat(S)  # (S*B,)
+            veh_length_repeat = veh_length.repeat(S)  # (S*B,)
+            test_timer.add('prepare data', n=0)
+
+            for_plot = []
+            acc_pred = []
+            start_time = time.time()
+            for step in range(args.roll_step):
+                model.set_veh_embedding(veh=veh_now)
+                model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
+                model.set_sur_info()
+                test_timer.add('embed data')
+
+                # shape = list(future_acc.shape)
+                # shape[0] *= S
+                # shape[2] = args.pred_step
+                # xt = torch.randn(shape, device=args.device)  # 从噪声开始
+                # for_plot.append([diffusion.noise_to_x0(xt=xt, denoise_t=args.T, noise=0) / args.scale_accelerate])
+                # stride = args.T // N
+                # steps = reversed(range(args.step_offset, args.T+1, stride))
+                # for t in tqdm(steps, disable=True, leave=False, dynamic_ncols=True):
+                #     noisy_acc = xt
+                #     denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
+                #     output = model(
+                #         noisy_acc=noisy_acc, 
+                #         denoise_t=denoise_t,
+                #         ped_length=ped_length_repeat, 
+                #         veh_length=veh_length_repeat,
+                #     )  # (S*B, #pedestrian, pred_step, 2)
+                #     if args.predict_noise:
+                #         for_plot[-1].append(diffusion.noise_to_x0(xt=xt, denoise_t=t, noise=output) / args.scale_accelerate)
+                #         xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
+                #     else:
+                #         for_plot[-1].append(output / args.scale_accelerate)
+                #         xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
+                # acc_new = xt / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
+
+                vel_now2 = vel_now.unsqueeze(-2)
+                pos_now2 = pos_now.unsqueeze(-2)
+                # 目的地导向力
+                desire_vel = F.normalize(des_now.unsqueeze(-2) - pos_now2, dim=-1) * spd_now.unsqueeze(-2)  # (S*B, #pedestrian, pred_step, 2)
+                des_force = (desire_vel - vel_now2).nan_to_num(0.0) / args.t_des_force  # (S*B, #pedestrian, pred_step, 2)
+                # 场景障碍物排斥力
+                F_map = get_force_map(r=args.r, A=args.a_map_force, B=args.d_map_force, device=args.device)  # (2r+1, 2r+1, 2)
+                idx = pos_now2[..., 0].sub(model.xmin).div(model.xmax - model.xmin).mul(model.map.shape[0]).round().long().clamp(0, model.map.shape[0] - 1)  # (S*B, #pedestrian, pred_step)
+                jdx = pos_now2[..., 1].sub(model.ymin).div(model.ymax - model.ymin).mul(model.map.shape[1]).round().long().clamp(0, model.map.shape[1] - 1)  # (S*B, #pedestrian, pred_step)
+                patches = extract_patches_torch(model.map, idx.reshape(-1), jdx.reshape(-1), r=10).reshape(*idx.shape, 2*args.r+1, 2*args.r+1) # (S*B, #pedestrian, pred_step, 2r+1, 2r+1)
+                map_force = (patches[..., None] * F_map).nan_to_num(0.0).flatten(-3, -2).sum(-2) # (S*B, #pedestrian, pred_step, 2)
+                # 其他行人排斥力
+                p = pos_now2[:, None, :, :, :] - pos_now2[:, :, None, :, :] # (S*B, #focal-pedestrian, #other-pedestrian, pred_step, 2)
+                d = torch.norm(p, dim=-1, keepdim=True)
+                n = -p / d.clamp(min=1e-6)
+                F_ped = args.a_ped_force * torch.exp(-d / args.d_ped_force) * n
+                ped_force = F_ped.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
+                # 其它车辆排斥力 (车辆用最后一帧位置)
+                p = veh_now[:, :, None, -1:, :] - pos_now2[:, None, :, :, :] # (S*B, #vehicle, #pedestrian, pred_step, 2)
+                d = torch.norm(p, dim=-1, keepdim=True)
+                n = -p / d.clamp(min=1e-6)
+                F_veh = args.a_veh_force * torch.exp(-d / args.d_veh_force) * n
+                veh_force = F_veh.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
+                # 阻尼力
+                vel_force = -args.vel_damping * vel_now2  # (S*B, #pedestrian, pred_step, 2)
+                # 合力
+                acc_new = des_force + map_force + ped_force + veh_force + vel_force
+
+
+                acc_pred.append(acc_new)
+                test_timer.add('denoise')
+
+                vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+                pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+                veh_new = future_veh[:, :, step*args.pred_step:(step+1)*args.pred_step, :].repeat(S, 1, 1, 1)  # (S*B, #vehicle, pred_step, 2)
+
+                hst_now = torch.cat([hst_now, pos_now.unsqueeze(-2), pos_new], dim=-2)[:, :, -args.hist_step-1:-1, :] # (S*B, #pedestrian, hist_step, 2)
+                veh_now = torch.cat([veh_now, veh_new], dim=-2)[:, :, -args.hist_step-1:, :]  # (S*B, #vehicle, hist_step + 1, 2)
+                pos_now = pos_new[:, :, -1, :] # (S*B, #pedestrian, 2)
+                vel_now = vel_new[:, :, -1, :] # (S*B, #pedestrian, 2)
+                test_timer.add('rollout')
+
+            rollout_time = (time.time() - start_time) / args.roll_step
+
+            acc_pred = torch.concat(acc_pred, dim=-2)  # (S*B, #pedestrian, roll_step*pred_step, 2)
+            batch_size, ped_num, _, _ = future_acc.shape
+            acc_pred = acc_pred.view(S, batch_size, ped_num, args.roll_step*args.pred_step, 2)  # (S, B, #pedestrian, roll_step*pred_step, 2)
+            # 获取有效的行人掩模
+            mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
+            # 计算 pos_true 和 vel_true
+            acc_true = future_acc # (B, #pedestrian, roll_step*pred_step, 2)
+            vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
+            pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
+            max_err = np.nanmax((pos_true - future_pos).abs().cpu().numpy(), axis=(-2, -1))
+            _logger.debug(
+                f"pos_true 和 future 最大差距 > 1: {(max_err > 1).mean():.2%}, "
+                f"pos_true 和 future 最大差距 > 1e-6: {(max_err > 1e-6).mean():.2%}"
+            )
+            # pos_true = future_pos # (B, #pedestrian, roll_step*pred_step, 2)
+            # 计算 loss
+            loss = criterion(acc_pred, acc_true.expand(acc_pred.shape)) # float
+            records['loss'].extend([loss.item()] * future_acc.shape[0]) # List[float]
+            # 计算 distance error
+            vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
+            pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
+            dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, pred_step)
+            test_timer.add('evaluate')
+            # 可视化
+            # if batch_idx == 0:
+            #     pid = 0
+            #     save_path = f"{args.save_path}/visualize/epoch{epoch}_{loader.dataset.name}_idx{batch_idx}_pid{pid}.png"
+            #     # visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path, pid)
+            #     test_timer.add('visualize')
+            # 移除 padding 的行人
+            dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, pred_step)
+            # 选择 ade 最佳的 sample
+            sample_idx = dis_err.mean(dim=-1).argmin(dim=0)  # (valid{B*#pedestrian},)
+            valid_idx = torch.arange(dis_err.shape[1], device=args.device)  # (valid{B*#pedestrian},)
+            dis_err = dis_err[sample_idx, valid_idx, :]  # (valid{B*#pedestrian}, pred_step)
+            # 计算 ade, fde
+            ade = dis_err.mean(dim=-1) # (valid{B*#pedestrian})
+            fde = dis_err[..., -1] # (valid{B*#pedestrian})
+            records['ade'].extend(ade.cpu().tolist()) # List[float]
+            records['fde'].extend(fde.cpu().tolist()) # List[float]
+            # 计算轨迹长度
+            trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1)[mask] # (valid{B*#pedestrian})
+            records['trajlen'].extend(trajlen.cpu().tolist()) # List[float]
+            # 统计行人和车辆数量
+            records['ped_num'].extend(ped_length.cpu().tolist()) # List[int]
+            records['veh_num'].extend(veh_length.cpu().tolist()) # List[int]
+            # 统计 Rollout 用时
+            records['rollout_time'].append(rollout_time)  # List[float]
+            test_timer.add('evaluate', n=0)
+        records_list.append(records)
+        _logger.info(tag2ansi(
+            f"[#66CCFF][Epoch {epoch}/{args.epochs}] Eval on {loader.dataset.name}: "
+            f"[bold underline orange]Accuracy={1 - np.mean(records['ade']) / np.mean(records['trajlen']):.2%}[reset], "
+            f"[#66CCFF]Loss={np.mean(records['loss']):.4f}, "
+            f"[#66CCFF]ADE={np.mean(records['ade']):.4f}, "
+            f"[#66CCFF]FDE={np.mean(records['fde']):.4f}, "
+            f"[#66CCFF]AvgLen={np.mean(records['trajlen']):.4f}, "
+            f"[#66CCFF]PedNum={np.mean(records['ped_num']):.1f}, "
+            f"[#66CCFF]VehNum={np.mean(records['veh_num']):.1f}, "
+            f"[#66CCFF]RolloutTime={np.mean(records['rollout_time'])*1000:.2f}ms "
+            f"([bold underline orange]FPS={1/np.mean(records['rollout_time']):.2f} Hz[reset])"
+        ))
+    all_records = {
+        'epoch': epoch,
+        'dataset_class': [type(loader.dataset).__name__.removesuffix('Dataset') for loader in test_loaders],
+        'dataset_names': [loader.dataset.name for loader in test_loaders],
+        'sample_nums': [len(loader.dataset) for loader in test_loaders],
+    }
+    for records in records_list:
+        for k, v in records.items():
+            if k not in all_records:
+                all_records[k] = []
+            all_records[k].append(np.mean(v))
+    w = np.array(all_records['sample_nums'], dtype=float)
+    w /= w.sum()
+    all_records['accuracy'] = 1 - np.sum(w * all_records['ade']) / np.sum(w * all_records['trajlen'])
+    all_records['unweighted_accuracy'] = 1 - np.mean(all_records['ade']) / np.mean(all_records['trajlen'])
+    _logger.note(tag2ansi(
+        f"[#66CCFF][Epoch {epoch}/{args.epochs}] Overall: "
+        f"[bold underline orange]Accuracy={all_records['accuracy']:.2%}[reset] (unweighted={all_records['unweighted_accuracy']:.2%}), "
+        f"[#66CCFF]Loss={np.sum(w * all_records['loss']):.4f}, "
+        f"[#66CCFF]ADE={np.sum(w * all_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.sum(w * all_records['fde']):.4f}, "
+        f"[#66CCFF]AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
+        f"[#66CCFF]PedNum={np.sum(w * all_records['ped_num']):.4f}, "
+        f"[#66CCFF]VehNum={np.sum(w * all_records['veh_num']):.4f}, "
+        f"[#66CCFF]RolloutTime={np.mean(all_records['rollout_time'])*1000:.2}ms "
+        f"([bold underline orange]FPS={1/np.mean(all_records['rollout_time']):.2f} Hz[reset]), "
+        f"[#66CCFF]Time={test_timer}"
+    ))
+    if len(set(all_records['dataset_class'])) > 1:
+        for klass in sorted(list(set(all_records['dataset_class']))):
+            idxs = [i for i, k in enumerate(all_records['dataset_class']) if k == klass]
+            ade = np.array([all_records['ade'][i] for i in idxs])
+            fde = np.array([all_records['fde'][i] for i in idxs])
+            trajlen = np.array([all_records['trajlen'][i] for i in idxs])
+            ped_num = np.array([all_records['ped_num'][i] for i in idxs])
+            veh_num = np.array([all_records['veh_num'][i] for i in idxs])
+            rollout_time = np.array([all_records['rollout_time'][i] for i in idxs])
+            w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
+            w /= w.sum()
+            acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
+            _logger.note(tag2ansi(
+                f"[#66CCFF][Epoch {epoch}/{args.epochs}] Overall on {klass} datasets: "
+                f"[bold underline orange]Accuracy={acc:.2%}[reset], "
+                f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
+                f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
+                f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
+                f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
+                f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
+                f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
+                f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
+            ))
+    return all_records
+
 
 def main(args):
     ## Load Dataset
@@ -177,8 +455,7 @@ def main(args):
     ## Test
     torch.set_grad_enabled(False)
     model.eval()
-    with npu_attention_fallback_context(model, enable=USE_NPU):
-        test_records = test_once(args, test_loaders, model, criterion, diffusion, start_epoch)
+    test_records = test_once_sfm(args, test_loaders, model, criterion, diffusion, start_epoch)
 
     # 保存日志
     with open(f"{args.save_path}/records.jsonl", "a") as f:
@@ -186,30 +463,21 @@ def main(args):
             f.write(json.dumps(test_records) + "\n")
 
     ## Log Result
-    w = np.array(test_records['sample_nums'], dtype=float)
-    w /= w.sum()
-    test_records['accuracy'] = 1 - np.sum(w * test_records['ade']) / np.sum(w * test_records['trajlen'])
-    test_records['unweighted_accuracy'] = 1 - np.mean(test_records['ade']) / np.mean(test_records['trajlen'])
     _logger.note(tag2ansi(
-        f"[bold underline orange]Accuracy={test_records['accuracy']:.2%}[reset] (unweighted={test_records['unweighted_accuracy']:.2%}), "
-        f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
-        f"[#66CCFF]ADE={np.sum(w * test_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.sum(w * test_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nansum(w * test_records['norm_err']) / np.sum(w * np.isfinite(test_records['norm_err'])):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * test_records['tan_err']) / np.sum(w * np.isfinite(test_records['tan_err'])):.4f}, "
-        f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
-        f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.4f}, "
-        f"[#66CCFF]VehNum={np.sum(w * test_records['veh_num']):.4f}, "
-        f"[#66CCFF]RolloutTime={np.mean(test_records['rollout_time'])*1000:.2}ms "
-        f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz[reset]), "
+        f"[bold underline orange]Accuracy={test_records['accuracy']:.2%}[reset] "
+        f"at [#66CCFF]epoch {test_records['epoch']}[reset]. "
+        f"[#66CCFF]ADE={np.mean(test_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.mean(test_records['fde']):.4f}, "
+        f"[#66CCFF]AvgLen={np.mean(test_records['trajlen']):.4f}, "
+        f"[#66CCFF]Loss={np.mean(test_records['loss']):.4f}, "
+        f"[#66CCFF]PedNum={np.mean(test_records['ped_num']):.1f}, "
+        f"[#66CCFF]VehNum={np.mean(test_records['veh_num']):.1f}"
     ))
     if len(set(test_records['dataset_class'])) > 1:
         for klass in sorted(list(set(test_records['dataset_class']))):
             idxs = [i for i, k in enumerate(test_records['dataset_class']) if k == klass]
             ade = np.array([test_records['ade'][i] for i in idxs])
             fde = np.array([test_records['fde'][i] for i in idxs])
-            norm_err = np.array([test_records['norm_err'][i] for i in idxs])
-            tan_err = np.array([test_records['tan_err'][i] for i in idxs])
             trajlen = np.array([test_records['trajlen'][i] for i in idxs])
             ped_num = np.array([test_records['ped_num'][i] for i in idxs])
             veh_num = np.array([test_records['veh_num'][i] for i in idxs])
@@ -222,8 +490,6 @@ def main(args):
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
-                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
-                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
@@ -338,7 +604,7 @@ if __name__ == "__main__":
     args.command = ' '.join(map(shlex.quote, [sys.executable, *sys.argv]))
     ## Select GPU
     if args.device == "auto":
-        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15) if not USE_NPU else 'npu'
+        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)
 
     ## Save Args
     args_path = save_path / "args.json"

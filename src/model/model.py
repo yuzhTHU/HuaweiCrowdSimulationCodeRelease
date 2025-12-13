@@ -300,8 +300,8 @@ class Model(nn.Module):
         xmax, xmin = self.xmax, self.xmin
         ymax, ymin = self.ymax, self.ymin
         map_embedding = self.map_embedding
-        idx = pos[..., 0].sub(xmin).div(xmax-xmin).mul(map_embedding.size(0)).round().long().clamp(0, map_embedding.size(0) - 1)  # (batch_size, #pedestrian)
-        jdx = pos[..., 1].sub(ymin).div(ymax-ymin).mul(map_embedding.size(1)).round().long().clamp(0, map_embedding.size(1) - 1)  # (batch_size, #pedestrian)
+        idx = pos[..., 0].detach().sub(xmin).div(xmax-xmin).mul(map_embedding.size(0)).round().long().clamp(0, map_embedding.size(0) - 1)  # (batch_size, #pedestrian)
+        jdx = pos[..., 1].detach().sub(ymin).div(ymax-ymin).mul(map_embedding.size(1)).round().long().clamp(0, map_embedding.size(1) - 1)  # (batch_size, #pedestrian)
         sur_info = map_embedding[idx, jdx] # (batch_size, #pedestrian, model_dim)
         sur_info = F.layer_norm(sur_info, sur_info.shape[-1:])
         self.sur_info = sur_info
@@ -366,8 +366,14 @@ class Model(nn.Module):
         max_veh_num = veh_embedding.size(1)
         ped_mask = torch.arange(max_ped_num, device=ped_length.device).unsqueeze(0).expand(batch_size, max_ped_num) # (batch_size, max_ped_num)
         ped_mask = ped_mask >= ped_length.unsqueeze(1) # (batch_size, max_ped_num)
+        if (batch_wo_ped := ped_mask.all(dim=1)).any():
+            raise ValueError("Some batch samples have zero pedestrians, which is not allowed.")
+            ped_mask[batch_wo_ped, 0] = False
         veh_mask = torch.arange(max_veh_num, device=veh_length.device).unsqueeze(0).expand(batch_size, max_veh_num) # (batch_size, max_veh_num)
         veh_mask = veh_mask >= veh_length.unsqueeze(1) # (batch_size, max_veh_num)
+        if (batch_wo_veh := veh_mask.all(dim=1)).any():
+            veh_mask[batch_wo_veh, 0] = False
+
         if timer: 
             torch.cuda.synchronize(device=self.args.device)
             timer.add('Build Mask')

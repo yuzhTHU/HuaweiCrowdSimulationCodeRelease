@@ -1,30 +1,28 @@
 import re
 import sys
+import time
 import json
 import torch
 import shlex
 import random
 import logging
 import numpy as np
+import matplotlib.pyplot as plt
 import torch.utils.data as D
 from copy import deepcopy
+from tqdm import tqdm
 from pathlib import Path
 from datetime import datetime
 from socket import gethostname
 from argparse import ArgumentParser
 from setproctitle import setproctitle
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset, ORCADataset
-from src.model import Model, RelativeModel, NewModel
-from src.diffusion import DDPM, DDIM
 from src.utils.logger import init_logger
 from src.utils.seed import seed_all
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
-from src.utils.tag2ansi import tag2ansi
-from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
-from train import test_once
 
-_logger = logging.getLogger("src.test")
+_logger = logging.getLogger("src.rebuild_dataset")
 
 def main(args):
     ## Load Dataset
@@ -32,7 +30,7 @@ def main(args):
     dataset_list = []
     if 'All' in args.datasets:
         args.datasets.remove('All')
-        args.datasets += ['ETH', 'UCY', 'GC', 'SDD', 'WayMo', 'ORCA']
+        args.datasets += ['ETH', 'UCY', 'GC', 'SDD', 'WayMo']
     if "ETH" in args.datasets:
         dataset_list += ETHDataset.load_data_batch(args, "./data/ETH/")
         args.datasets.remove("ETH")
@@ -46,7 +44,7 @@ def main(args):
         dataset_list += SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
         args.datasets.remove("SDD")
     if 'WayMo' in args.datasets:
-        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
+        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=500)
         args.datasets.remove("WayMo")
     if 'ORCA' in args.datasets:
         dataset_list += ORCADataset.load_data_batch(args, "./data/ORCA/")
@@ -72,175 +70,17 @@ def main(args):
                 f"map shape={map_data.map.shape}), may cause distortion."
             )
             exit(1)
-    # 划分训练集和测试集
-    if args.test_name is not None:
-        # 将名称中包含指定字符串的场景划分到测试集
-        test_dataset = []
-        for d in dataset_list:
-            if any(test_name in d.name for test_name in args.test_name):
-                test_dataset.append(d)
-    elif args.test_ratio is not None and args.split_by_scenario:
-        # 将特定比例的场景划分到测试集
-        random.shuffle(dataset_list)
-        test_size = max(1, int(len(dataset_list) * args.test_ratio))
-        test_dataset = dataset_list[-test_size:]
-    elif args.test_ratio is not None and not args.split_by_scenario:
-        # 将每个场景的特定比例样本划分到测试集
-        test_dataset = []
-        for d in dataset_list:
-            d2 = deepcopy(d)
-            train_num = int(len(d) * (1-args.test_ratio))
-            d2.name = d2.name + f"_{args.test_ratio*100:.0f}test"
-            d2.samples = d2.samples[train_num:]
-            test_dataset.append(d2)
-    else:
-        # 训练集和测试集相同
-        test_dataset = dataset_list
-    # 创建数据加载器
-    test_loaders = []
-    for dataset in test_dataset:
-        if len(dataset) == 0:
-            _logger.warning(f"Dataset {dataset.name} has no testing samples!")
-            continue
-        test_loaders.append(D.DataLoader(
-            dataset,
-            shuffle=False,
-            batch_size=args.batch_size // args.sample_num,  # 在实际测试时 batch_size 会乘上 sample_num，可能会很大导致 OOM
-            num_workers=args.num_workers,
-            collate_fn=dataset.collate_fn,
-        ))
-    _logger.note(
-        "Datasets:\n"
-        f"Test on {[d.name for d in test_dataset]} datasets ({sum([len(d) for d in test_dataset]):,} samples in total)"
-    )
-
-    ## Load Model
-    if args.use_new_model:
-        model = NewModel(args).to(args.device)
-    elif args.use_relative_model:
-        model = RelativeModel(args).to(args.device)
-    else:
-        model = Model(args).to(args.device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    criterion = torch.nn.MSELoss()
-    if args.sampling_method == "DDIM":
-        diffusion = DDIM(args)
-    elif args.sampling_method == "DDPM":
-        diffusion = DDPM(args, flexibility=0.0)
-    else:
-        raise ValueError(f"Unknown sampling_method {args.sampling_method}!")
-    _logger.note(
-        "Model Parameters:\n"
-        f"Trainable: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}\n"
-        f"Total: {sum(p.numel() for p in model.parameters()):,}"
-    )
-
-    ## Reload Checkpoint
-    if args.reload_checkpoint is not None:
-        # 如果指定了 checkpoint 路径，则从该路径加载
-        checkpoint_path = Path(args.reload_checkpoint)
-    elif (Path(args.save_path) / "checkpoint.pth").exists():
-        # 如果当前保存路径下存在 checkpoint，则从该路径加载
-        checkpoint_path = Path(args.save_path) / "checkpoint.pth"
-    else:
-        raise ValueError("No checkpoint found to load!")
-    if checkpoint_path is not None:
-        if not checkpoint_path.exists():
-            raise FileNotFoundError(f"Checkpoint {checkpoint_path} not found!")
-        checkpoint = torch.load(checkpoint_path, map_location=args.device)
-        start_epoch = checkpoint["epoch"] + 1
-        if 'args' in checkpoint:
-            saved_args = checkpoint['args']
-            for key in sorted(set(saved_args.keys()) | set(vars(args).keys())):
-                if key in [
-                    'device', 'save_dir', 'save_path', 'command', 'name', 'exp_name',
-                    'p_drop_destination', 'p_drop_map', 'p_drop_speed',
-                    'seed', 'reload_checkpoint', 'test_before_train', 'test_per_epoch',
-                ]:
-                    continue
-                val1 = saved_args.get(key, None)
-                val2 = getattr(args, key, None)
-                if val1 != val2:
-                    _logger.warning(
-                        f"Argument '{key}' differs from the saved checkpoint: "
-                        f"saved_args={val1} vs. current_args={val2}"
-                    )
-        model.load_state_dict(checkpoint["model"])
-        _logger.note(tag2ansi(f"Checkpoint loaded from [underline green]{checkpoint_path}[reset], resume from epoch [underline green]{start_epoch}[reset]."))
-        if "optimizer" in checkpoint:
-            optimizer.load_state_dict(checkpoint["optimizer"])
-        else:
-            _logger.warning("Optimizer state not found in checkpoint, optimizer re-initialized.")
-    else:
-        start_epoch = 0
-
-    ## Test
-    torch.set_grad_enabled(False)
-    model.eval()
-    with npu_attention_fallback_context(model, enable=USE_NPU):
-        test_records = test_once(args, test_loaders, model, criterion, diffusion, start_epoch)
-
-    # 保存日志
-    with open(f"{args.save_path}/records.jsonl", "a") as f:
-        if test_records is not None:
-            f.write(json.dumps(test_records) + "\n")
-
-    ## Log Result
-    w = np.array(test_records['sample_nums'], dtype=float)
-    w /= w.sum()
-    test_records['accuracy'] = 1 - np.sum(w * test_records['ade']) / np.sum(w * test_records['trajlen'])
-    test_records['unweighted_accuracy'] = 1 - np.mean(test_records['ade']) / np.mean(test_records['trajlen'])
-    _logger.note(tag2ansi(
-        f"[bold underline orange]Accuracy={test_records['accuracy']:.2%}[reset] (unweighted={test_records['unweighted_accuracy']:.2%}), "
-        f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
-        f"[#66CCFF]ADE={np.sum(w * test_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.sum(w * test_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nansum(w * test_records['norm_err']) / np.sum(w * np.isfinite(test_records['norm_err'])):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * test_records['tan_err']) / np.sum(w * np.isfinite(test_records['tan_err'])):.4f}, "
-        f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
-        f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.4f}, "
-        f"[#66CCFF]VehNum={np.sum(w * test_records['veh_num']):.4f}, "
-        f"[#66CCFF]RolloutTime={np.mean(test_records['rollout_time'])*1000:.2}ms "
-        f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz[reset]), "
-    ))
-    if len(set(test_records['dataset_class'])) > 1:
-        for klass in sorted(list(set(test_records['dataset_class']))):
-            idxs = [i for i, k in enumerate(test_records['dataset_class']) if k == klass]
-            ade = np.array([test_records['ade'][i] for i in idxs])
-            fde = np.array([test_records['fde'][i] for i in idxs])
-            norm_err = np.array([test_records['norm_err'][i] for i in idxs])
-            tan_err = np.array([test_records['tan_err'][i] for i in idxs])
-            trajlen = np.array([test_records['trajlen'][i] for i in idxs])
-            ped_num = np.array([test_records['ped_num'][i] for i in idxs])
-            veh_num = np.array([test_records['veh_num'][i] for i in idxs])
-            rollout_time = np.array([test_records['rollout_time'][i] for i in idxs])
-            w = np.array([test_records['sample_nums'][i] for i in idxs], dtype=float)
-            w /= w.sum()
-            acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
-            _logger.info(tag2ansi(
-                f"[#66CCFF]Overall on {klass} datasets: "
-                f"[bold underline orange]Accuracy={acc:.2%}[reset], "
-                f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
-                f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
-                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
-                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
-                f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
-                f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
-                f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
-                f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
-                f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
-            ))
-    _logger.note(f"Testing finished. Re-run: {args.command}")
+    _logger.note(f"Rebuild Dataset finished. Re-run: {args.command}")
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     # 基础配置
-    parser.add_argument("--name", type=str, default="test", help="实验任务名称，用于生成实验ID")
+    parser.add_argument("--name", type=str, default="rebuild_dataset", help="实验任务名称，用于生成实验ID")
     parser.add_argument("--exp_name", type=str, default=None, help="手动指定实验名称（若指定则覆盖自动生成的名称）")
     parser.add_argument("--device", type=str, default="auto", help="计算设备，可选 'cpu', 'cuda:0' 或 'auto'（自动选择显存充足的 GPU）")
     parser.add_argument("--seed", type=int, default=None, help="随机种子，固定以复现实验结果")
-    parser.add_argument("--save_dir", type=str, default="./logs/test", help="日志和模型权重的保存根目录")
+    parser.add_argument("--save_dir", type=str, default="./logs/rebuild_dataset", help="日志和模型权重的保存根目录")
     parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出更多日志，不保存部分文件）")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader 的工作线程数（0 表示主线程）")
     
@@ -250,7 +90,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=10000, help="最大训练轮数")
     parser.add_argument('--patience', type=int, default=20, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
-    parser.add_argument('--reload_checkpoint', type=str, required=True, help="用于测试的 checkpoint（.pth 文件）")
+    parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
     parser.add_argument('--required_memory_MB', type=int, default=6000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
 
     # 扩散模型参数 (Diffusion)
@@ -284,6 +124,8 @@ if __name__ == "__main__":
     parser.add_argument('--test_ratio', type=float, default=None, help="自动划分测试集的比例 (0.0 ~ 1.0)")
     parser.add_argument('--split_by_scenario', action='store_true', help="是否按场景划分训练/测试集（否则按轨迹样本划分）")
     parser.add_argument('--cache_dataset', action='store_true', default=True, help="是否缓存预处理后的数据集以加速加载")
+    parser.add_argument('--test_before_train', action='store_true', help="是否在训练开始前先运行一次测试")
+    parser.add_argument('--test_per_epoch', type=int, default=10, help="每隔多少个 epoch 运行一次测试")
 
     # 模型结构参数
     parser.add_argument('--model_dim', type=int, default=64, help="模型的隐藏层维度 (Hidden Dimension)")
@@ -338,7 +180,7 @@ if __name__ == "__main__":
     args.command = ' '.join(map(shlex.quote, [sys.executable, *sys.argv]))
     ## Select GPU
     if args.device == "auto":
-        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15) if not USE_NPU else 'npu'
+        args.device = AutoGPU().choice_gpu(memory_MB=args.required_memory_MB, interval=15)
 
     ## Save Args
     args_path = save_path / "args.json"
@@ -351,6 +193,6 @@ if __name__ == "__main__":
     with open(args_path, "w") as f:
         json.dump(vars(args), f, indent=4, ensure_ascii=False)
 
-    ## Start Testing
+    ## Start Training
     setproctitle(f"{args.exp_name}@ZihanYu")
     main(args)

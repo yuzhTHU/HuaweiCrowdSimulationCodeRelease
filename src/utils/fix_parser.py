@@ -6,50 +6,62 @@ def add_minus_flags(parser: argparse.ArgumentParser):
     --fix_existing -> 添加别名 --fix-existing
     --augment_OD_num -> 添加别名 --augment-OD-num
     """
-    new_option_string_actions = {}
-    for group in parser._action_groups:
-        for action in group._group_actions:
-            # 仅处理可选参数（以 '-' 开头的参数）
-            if not action.option_strings:
-                continue
-            # 找到最长的双减号选项作为主选项，基于它来创建别名
-            original_option = ''
-            for opt in list(action.option_strings):
-                if opt.startswith('--') and '_' in opt and len(opt) > len(original_option):
-                    original_option = opt
-            # 如果找到了符合条件的原始选项
-            if original_option:
-                # 将下划线替换为减号
-                new_alias_option = original_option.replace('_', '-')
-                # 将别名添加到 action 的 option_strings 列表中
-                if new_alias_option not in action.option_strings:
-                    action.option_strings.append(new_alias_option)
-            # 将 action 的所有（新旧）选项添加到新的查找字典中
-            for opt in action.option_strings:
-                new_option_string_actions[opt] = action
-    # 用新构建的字典替换 ArgumentParser 内部的查找字典
-    parser._option_string_actions = new_option_string_actions
+    for action in parser._actions:
+        # 仅处理可选参数（以 '-' 开头的参数）
+        if not action.option_strings:
+            continue
+        aliases_to_add = []
+        for opt in action.option_strings:
+            if opt.startswith('--') and '_' in opt:
+                new_alias = opt.replace('_', '-')
+                if new_alias not in action.option_strings:
+                    aliases_to_add.append(new_alias)
+        for alias in aliases_to_add:
+            action.option_strings.append(alias)
+            parser._option_string_actions[alias] = action
     return parser
+
 
 def add_negation_flags(parser: argparse.ArgumentParser):
     """
     自动为 parser 中的 store_true 参数添加对应的 --no-xxx 选项。
     """
+    args_to_add = []
+    
+    # 建立现有 flag 索引，防止重复添加
+    existing_flags = set()
     for action in parser._actions:
-        # 只处理布尔型的 store_true
+        existing_flags.update(action.option_strings)
+    for action in parser._actions:
         if isinstance(action, argparse._StoreTrueAction):
-            # 获取参数名，例如 '--flag'
+            # 为当前 action 收集所有可能的否定别名
+            negation_aliases = []
             for option in action.option_strings:
                 if not option.startswith('--'): 
                     continue
-                neg_option = '--no-' + option.removeprefix('--')
-                if any(neg_option in a.option_strings for a in parser._actions):
-                    continue # 避免重复添加
-                parser.add_argument(
-                    neg_option,
-                    dest=action.dest,
-                    action='store_false',
-                    default=action.default,
-                    help=f"Disable {option.removeprefix('--')}"
-                )
+                # 生成否定形式：--use_new_model -> --no-use_new_model
+                raw_name = option.removeprefix('--')
+                neg_opt = f'--no-{raw_name}'
+                # 只有当这个 flag 还不存在时才添加
+                if neg_opt not in existing_flags:
+                    negation_aliases.append(neg_opt)
+            # 如果生成了有效的否定别名，将它们打包准备添加
+            if negation_aliases:
+                # 选取第一个选项名作为帮助文档显示的名称
+                primary_name = action.option_strings[0].removeprefix('--')
+                args_to_add.append({
+                    'options': negation_aliases,  # 这里是一个列表
+                    'dest': action.dest,
+                    'action': 'store_false',
+                    'default': action.default,
+                    'help': f"Disable {primary_name}"
+                })
+    for arg in args_to_add:
+        parser.add_argument(
+            *arg['options'], 
+            dest=arg['dest'],
+            action=arg['action'],
+            default=arg['default'],
+            help=arg['help']
+        )
     return parser
