@@ -51,7 +51,7 @@ def main(args):
         dataset_list += SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
         args.datasets.remove("SDD")
     if 'WayMo' in args.datasets:
-        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=500)
+        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
         args.datasets.remove("WayMo")
     if 'ORCA' in args.datasets:
         dataset_list += ORCADataset.load_data_batch(args, "./data/ORCA/")

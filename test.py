@@ -186,17 +186,22 @@ def main(args):
             f.write(json.dumps(test_records) + "\n")
 
     ## Log Result
+    w = np.array(test_records['sample_nums'], dtype=float)
+    w /= w.sum()
+    test_records['accuracy'] = 1 - np.sum(w * test_records['ade']) / np.sum(w * test_records['trajlen'])
+    test_records['unweighted_accuracy'] = 1 - np.mean(test_records['ade']) / np.mean(test_records['trajlen'])
     _logger.note(tag2ansi(
-        f"[bold underline orange]Accuracy={test_records['accuracy']:.2%}[reset] "
-        f"at [#66CCFF]epoch {test_records['epoch']}[reset]. "
-        f"[#66CCFF]ADE={np.mean(test_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.mean(test_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nanmean(test_records['norm_err']):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(test_records['tan_err']):.4f}, "
-        f"[#66CCFF]AvgLen={np.mean(test_records['trajlen']):.4f}, "
-        f"[#66CCFF]Loss={np.mean(test_records['loss']):.4f}, "
-        f"[#66CCFF]PedNum={np.mean(test_records['ped_num']):.1f}, "
-        f"[#66CCFF]VehNum={np.mean(test_records['veh_num']):.1f}"
+        f"[bold underline orange]Accuracy={test_records['accuracy']:.2%}[reset] (unweighted={test_records['unweighted_accuracy']:.2%}), "
+        f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
+        f"[#66CCFF]ADE={np.sum(w * test_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.sum(w * test_records['fde']):.4f}, "
+        f"[#66CCFF]X_ERROR (normal)={np.nansum(w * test_records['norm_err']) / np.sum(w * np.isfinite(test_records['norm_err'])):.4f}, "
+        f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * test_records['tan_err']) / np.sum(w * np.isfinite(test_records['tan_err'])):.4f}, "
+        f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
+        f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.4f}, "
+        f"[#66CCFF]VehNum={np.sum(w * test_records['veh_num']):.4f}, "
+        f"[#66CCFF]RolloutTime={np.mean(test_records['rollout_time'])*1000:.2}ms "
+        f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz[reset]), "
     ))
     if len(set(test_records['dataset_class'])) > 1:
         for klass in sorted(list(set(test_records['dataset_class']))):
