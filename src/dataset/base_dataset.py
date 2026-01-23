@@ -395,11 +395,11 @@ class BaseDataset(D.Dataset):
         Returns:
             tuple: (标准化后的 df_data, 更新后的 map_data)
         """
-        x_mean = df_data['x'].mean()
+        x_mean = 0.0 # df_data['x'].mean()
         x_std = 1.0 # df_data['x'].std()
         df_data['x'] = (df_data['x'] - x_mean) / x_std
         _logger.info(f"Normalized x with mean={x_mean:.4f}, std={x_std:.4f}")
-        y_mean = df_data['y'].mean()
+        y_mean = 0.0 # df_data['y'].mean()
         y_std = 1.0 # df_data['y'].std()
         df_data['y'] = (df_data['y'] - y_mean) / y_std
         _logger.info(f"Normalized y with mean={y_mean:.4f}, std={y_std:.4f}")

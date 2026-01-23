@@ -21,6 +21,18 @@
     const playbackSpeedSlider = document.getElementById('playbackSpeedSlider');
     const playbackSpeedValue = document.getElementById('playbackSpeedValue');
 
+    // Context Menu & Modal Elements
+    const contextMenu = document.getElementById('contextMenu');
+    const ctxSaveTraj = document.getElementById('ctxSaveTraj');
+    const saveTrajModalEl = document.getElementById('saveTrajModal');
+    const saveTrajModal = new bootstrap.Modal(saveTrajModalEl);
+    const saveModalDatasetName = document.getElementById('saveModalDatasetName');
+    const saveRangeMin = document.getElementById('saveRangeMin');
+    const saveRangeMax = document.getElementById('saveRangeMax');
+    const saveFrameRangeVal = document.getElementById('saveFrameRangeVal');
+    const confirmSaveTrajBtn = document.getElementById('confirmSaveTrajBtn');
+    let contextMenuTargetName = null; // 右键点击的目标 dataset name
+
     // WebSocket 相关状态
     let ws = null;
     let wsConnected = false;
@@ -187,9 +199,10 @@
         const max = frameKeys.length ? frameKeys[frameKeys.length - 1] : min;
         const cur = item.currentFrame != null ? item.currentFrame : min;
 
-// DOM
+        // DOM
         const wrap = document.createElement('div');
         wrap.className = 'slider-wrap';
+        wrap.dataset.name = name; // 绑定 dataset name 用于右键菜单
         wrap.draggable = false;  // 允许拖动  
 
         const header = document.createElement('div');
@@ -247,6 +260,16 @@
         // slider.addEventListener('mousedown', (ev) => ev.stopPropagation());
         // slider.addEventListener('touchstart', (ev) => ev.stopPropagation());
 
+        // === 右键菜单事件 ===
+        wrap.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            contextMenuTargetName = name;
+            // 简单的菜单定位
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = e.pageX + 'px';
+            contextMenu.style.top = e.pageY + 'px';
+        });
+
         // === 滑动事件 ===
         slider.addEventListener('input', (ev) => {
             const v = Number(ev.target.value);
@@ -257,6 +280,156 @@
         slider.addEventListener('mousedown', () => render(name));
         slider.addEventListener('touchstart', () => render(name));
     }
+
+    // 全局点击关闭右键菜单
+    document.addEventListener('click', () => {
+        contextMenu.style.display = 'none';
+    });
+
+    // 右键菜单项点击
+    ctxSaveTraj.addEventListener('click', () => {
+        if (contextMenuTargetName && DATA_CACHE[contextMenuTargetName]) {
+            openSaveModal(contextMenuTargetName);
+        }
+    });
+
+    // === 打开保存模态框逻辑 ===
+    function openSaveModal(name) {
+        saveModalDatasetName.textContent = name;
+        const item = DATA_CACHE[name];
+        const frameKeys = Object.keys(item.frames).map(k => Number(k)).sort((a, b) => a - b);
+        const min = frameKeys.length ? frameKeys[0] : 0;
+        const max = frameKeys.length ? frameKeys[frameKeys.length - 1] : min;
+        
+        // 设置范围滑块属性
+        saveRangeMin.min = min; saveRangeMin.max = max;
+        saveRangeMax.min = min; saveRangeMax.max = max;
+        saveRangeMin.value = min;
+        saveRangeMax.value = max;
+        
+        updateDualSliderUI(min, max);
+        
+        // 激活当前 dataset 视图以便预览
+        render(name);
+        
+        saveTrajModal.show();
+    }
+
+    // 双柄滑块逻辑
+    function updateDualSliderUI(min, max) {
+        let vMin = parseInt(saveRangeMin.value);
+        let vMax = parseInt(saveRangeMax.value);
+        
+        // 限制交叉
+        if (vMin > vMax) {
+             // 简单的互斥逻辑：谁动了改谁，这里简单处理
+             // 我们在 input 事件里处理更合适
+        }
+        
+        saveFrameRangeVal.textContent = `${vMin} - ${vMax}`;
+    }
+
+    // 监听双柄滑块变化
+    function handleDualSliderInput(e) {
+        const item = DATA_CACHE[contextMenuTargetName];
+        let vMin = parseInt(saveRangeMin.value);
+        let vMax = parseInt(saveRangeMax.value);
+
+        if (vMin > vMax) {
+            if (e.target === saveRangeMin) {
+                saveRangeMin.value = vMax;
+                vMin = vMax;
+            } else {
+                saveRangeMax.value = vMin;
+                vMax = vMin;
+            }
+        }
+        
+        saveFrameRangeVal.textContent = `${vMin} - ${vMax}`;
+        
+        // 实时更新主视图
+        // 如果动的是 min，显示 min 帧；动的是 max，显示 max 帧
+        if (item) {
+            item.currentFrame = (e.target === saveRangeMin) ? vMin : vMax;
+            // 更新该 dataset 对应的 slider UI（虽然在模态框里看不到，但保持状态一致）
+            const mainSlider = document.getElementById(item.sliderId);
+            if(mainSlider) mainSlider.value = item.currentFrame;
+            render(contextMenuTargetName);
+        }
+    }
+
+    saveRangeMin.addEventListener('input', handleDualSliderInput);
+    saveRangeMax.addEventListener('input', handleDualSliderInput);
+
+    // 确定保存
+    confirmSaveTrajBtn.addEventListener('click', async () => {
+        const name = saveModalDatasetName.textContent;
+        const start = parseInt(saveRangeMin.value);
+        const end = parseInt(saveRangeMax.value);
+        const dest = document.querySelector('input[name="saveDest"]:checked').value;
+        const compress = document.getElementById('saveCompress').checked;
+
+        const payload = {
+            name: name,
+            start_frame: start,
+            end_frame: end,
+            destination: dest,
+            compress: compress
+        };
+
+        // 关闭模态框
+        saveTrajModal.hide();
+        
+        log(`正在请求保存轨迹: ${name} [${start}-${end}] -> ${dest}`);
+
+        try {
+            const res = await fetch('/api/save_trajectory', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (dest === 'local') {
+                if (res.ok) {
+                    const blob = await res.blob();
+                    // 从 Content-Disposition 获取文件名
+                    const disposition = res.headers.get('Content-Disposition');
+                    let filename = `trajectory.csv${compress ? '.tz' : ''}`;
+                    if (disposition && disposition.indexOf('attachment') !== -1) {
+                        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+                        if (matches != null && matches[1]) { 
+                            filename = matches[1].replace(/['"]/g, '');
+                        }
+                    }
+                    // 触发下载
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                    log('下载已开始。');
+                } else {
+                    const err = await res.json();
+                    alert('下载失败: ' + (err.msg || 'Unknown error'));
+                }
+            } else {
+                const msg = await res.json();
+                if (msg.status === 'ok') {
+                    log('保存成功:', msg.msg);
+                    alert('保存成功: ' + msg.msg);
+                } else {
+                    alert('保存失败: ' + msg.msg);
+                }
+            }
+        } catch (e) {
+            console.error(e);
+            alert('请求发送失败');
+        }
+    });
+
 
     // === 全局：为 slidersDiv 启用拖拽排序 ===
     slidersDiv.addEventListener('dragover', (ev) => {

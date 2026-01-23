@@ -1,16 +1,19 @@
 """ uvicorn app:app --host 0.0.0.0 --port 12345 """
+import io
 import json
 import torch
 import asyncio
+import tarfile
 import logging
 import traceback
 import pandas as pd
 from pathlib import Path
 from copy import deepcopy
+from datetime import datetime
+from pydantic import BaseModel
 from argparse import Namespace
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from src.model import Model, RelativeModel, NewModel
@@ -63,6 +66,10 @@ DATASET_DICT = {} # 缓存加载的真实数据集以及模拟的仿真数据集
 MANAGER_DICT = {} # 缓存每个 WebSocket 连接对应的仿真任务
 MODEL = None
 ARGS = None
+
+# 确保保存目录存在
+SAVE_DIR = Path("./logs/app/saved_trajectories")
+SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Pedestrian Simulation Backend")
 app.add_middleware(
@@ -184,6 +191,47 @@ async def update_args(new_args: dict):
     _logger.info(f"Args updated via API: {new_args}")
     return JSONResponse(content={"status": "ok", "msg": "Parameters updated successfully."})
 
+
+class SaveTrajectoryReq(BaseModel):
+    name: str
+    start_frame: int
+    end_frame: int
+    destination: str = "server"  # 'server' or 'local'
+    compress: bool = True
+
+
+@app.post("/api/save_trajectory")
+async def save_trajector(req: SaveTrajectoryReq):
+    if req.name not in DATASET_DICT:
+        return JSONResponse(content={"status": "error", "msg": "Dataset not found."})
+
+    dataset = DATASET_DICT[req.name]
+    df = dataset.df_data
+
+    mask = (df['f'] >= req.start_frame) & (df['f'] <= req.end_frame)
+    df_save = df.loc[mask].copy()
+    if df_save.empty:
+         return JSONResponse(content={"status": "error", "msg": "No data in selected range."})
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    clean_name = req.name.replace(" ", "_").replace("/", "-")
+    ext = ".csv.gz" if req.compress else ".csv"
+    filename = f"{date_str}-{clean_name}{ext}"
+
+    if req.destination == 'server':
+        save_file = SAVE_DIR / filename
+        df_save.to_csv(save_file, index=False)
+        return JSONResponse(content={"status": "ok", "msg": f"Saved to {save_file}"})
+    else:
+        content = io.BytesIO()
+        df_save.to_csv(content, index=False, compression='gzip' if req.compress else None)
+        content.seek(0)
+        media_type = "application/gzip" if req.compress else "text/csv"
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
