@@ -431,7 +431,7 @@ class BaseDataset(D.Dataset):
         """
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_name = f"{name}_{args.fps}_{args.hist_step}_{args.pred_step}_{args.skip_step}.pkl"
+        cache_name = f"{name}_{args.fps}_{args.hist_step}_{args.pred_step}_{args.skip_step}_{args.dot_per_meter}.pkl"
         # key = f"{data_path}_{args.fps}_{args.hist_step}_{args.pred_step}_{args.skip_step}.pkl"
         # hash_key = hashlib.md5(key.encode()).hexdigest()[:10]
         # cache_name = f"{name}_{hash_key}.pkl"

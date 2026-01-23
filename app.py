@@ -21,8 +21,8 @@ from src.diffusion import DDPM, DDIM
 from src.dataset import UCYDataset, ETHDataset, GCDataset, SDDDataset, WayMoDataset, ORCADataset
 from src.utils.logger import init_logger
 from src.utils.auto_gpu import AutoGPU
-from src.web.utils.json_compatible import json_compatible
-from src.web.utils.simulate import init_simulation, simulate_one_step
+from src.utils.json_compatible import json_compatible
+from src.tasks import init_simulation, simulate_one_step
 from src.utils.use_npu import USE_NPU, npu_attention_fallback
 
 _logger = logging.getLogger("src")
