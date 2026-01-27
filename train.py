@@ -1,16 +1,13 @@
 import re
 import sys
-import time
 import json
 import torch
 import shlex
 import random
 import logging
 import numpy as np
-import matplotlib.pyplot as plt
 import torch.utils.data as D
 from copy import deepcopy
-from tqdm import tqdm
 from pathlib import Path
 from datetime import datetime
 from socket import gethostname
@@ -22,12 +19,10 @@ from src.diffusion import DDPM, DDIM
 from src.utils.logger import init_logger
 from src.utils.seed import seed_all
 from src.utils.timer import NamedTimer
-from src.utils.plot import get_fig
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
-from src.utils.calc_xy_error import calc_xy_error
 from src.tasks import train_once, test_once
 
 _logger = logging.getLogger("src.train")
@@ -298,7 +293,7 @@ def main(args):
         ))
 
         # 释放额外的显存
-        if train_records is not None:
+        if args.minimize_gpu and train_records is not None:
             peak = torch.cuda.max_memory_allocated(args.device) / 1024 / 1024
             reserved_raw = torch.cuda.memory_reserved(args.device) / 1024 / 1024
             torch.cuda.empty_cache() # 释放 reserved 但是未被 allocated 的 block
@@ -355,12 +350,6 @@ def main(args):
     _logger.note(f"Training finished. Re-run: {args.command}")
 
 
-
-
-
-
-
-
 if __name__ == "__main__":
     parser = ArgumentParser()
     # 基础配置
@@ -371,6 +360,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", type=str, default="./logs/train", help="日志和模型权重的保存根目录")
     parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出更多日志，不保存部分文件）")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader 的工作线程数（0 表示主线程）")
+    parser.add_argument("--minimize_gpu", action="store_true", default=False, help="是否在每个 epoch 结束后尽可能释放显存以供其他进程使用")
     
     # 训练超参数
     parser.add_argument("--batch_size", type=int, default=128, help="训练批次大小")
@@ -379,7 +369,7 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, default=20, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
-    parser.add_argument('--required_memory_MB', type=int, default=6000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
+    parser.add_argument('--required_memory_MB', type=int, default=5000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
 
     # 扩散模型参数 (Diffusion)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'], help="采样/生成方法")

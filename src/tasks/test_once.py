@@ -10,6 +10,7 @@ from ..model import Model
 from ..diffusion import DDPM
 from ..utils.timer import NamedTimer
 from ..utils.tag2ansi import tag2ansi
+from ..utils.calc_xy_error import calc_xy_error
 from .visualize import visualize
 
 _logger = logging.getLogger(__name__)

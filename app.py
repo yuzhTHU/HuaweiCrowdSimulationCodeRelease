@@ -343,10 +343,10 @@ async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         diffusion.to(ARGS.device)
         _logger.info(f"Simulation worker using device {ARGS.device}")
         ws.send_json({'status': 'ok', 'msg': f'Simulation worker using device {ARGS.device}.'})
-        now = await asyncio.to_thread(init_simulation, ARGS, dataset, frame_idx, MODEL) # 运行 100~200ms
-        _logger.info(f"Frame {frame_idx}: {len(now[0])} pedestrians, {len(now[1])} vehicles.")
+        state = await asyncio.to_thread(init_simulation, ARGS, dataset, frame_idx, MODEL) # 运行 100~200ms
+        _logger.info(f"Frame {frame_idx}: {len(state.ped_list)} pedestrians, {len(state.veh_list)} vehicles.")
         for _ in range(frame_num):
-            df_new, now = await asyncio.to_thread(simulate_one_step, ARGS, MODEL, diffusion, *now) # 运行 100~200ms
+            df_new, state = await asyncio.to_thread(simulate_one_step, ARGS, MODEL, diffusion, state) # 运行 100~200ms
             await result_queue.put(df_new)
     except asyncio.CancelledError:
         _logger.info("Simulation worker cancelled.")

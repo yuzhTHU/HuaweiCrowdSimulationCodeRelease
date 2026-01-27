@@ -22,7 +22,7 @@ from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
-from train import test_once
+from src.tasks import test_once
 
 _logger = logging.getLogger("src.test")
 
