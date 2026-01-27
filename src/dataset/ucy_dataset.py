@@ -178,6 +178,24 @@ class UCYDataset(BaseDataset):
             post1 = np.array([[32, 73], [630, 80], [78, 341], [593, 342]]) # - np.array([[360, 288]])
             post2 = np.array([[0, 0], [width, 0], [0, length], [width, length]])
             H = calc_homography_mat(post1, post2)
+        # elif mat_name == 'students003': # https://github.com/erichhhhho/DataExtraction/blob/master/univ/H.txt
+        #     H = np.array([
+        #         [-2.3002776e-02,   5.3741914e-04,   8.6657256e+00],
+        #         [-5.2753792e-04,   1.9565153e-02,  -6.0889188e+00],
+        #         [0.0000000e+00,  -0.0000000e+00,   1.0000000e+00],
+        #     ])
+        # elif mat_name == 'crowds_zara01':
+        #     H = np.array([
+        #         [-2.5956517e-02,  -5.1572804e-18,   7.8388681e+00],
+        #         [-1.0953874e-03,   2.1664330e-02,  -1.0032272e+01],
+        #         [ 1.9540125e-20,   4.2171410e-19,   1.0000000e+00],
+        #     ])
+        # elif mat_name == 'crowds_zara02':
+        #     H = np.array([
+        #         [-2.5956517e-02,  -5.1572804e-18,   7.8388681e+00],
+        #         [-1.0953874e-03,   2.1664330e-02,  -1.0032272e+01],
+        #         [ 1.9540125e-20,   4.2171410e-19,   1.0000000e+00],
+        #     ])
         else:
             raise ValueError(f"Unknown mat_name: {mat_name}")
         return H

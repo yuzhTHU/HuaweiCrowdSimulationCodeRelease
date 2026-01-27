@@ -25,7 +25,190 @@ from src.utils.tag2ansi import tag2ansi
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 from src.tasks import train_once, test_once
 
-_logger = logging.getLogger("src.train")
+from baselines.social_stgcnn.metrics import bivariate_loss
+
+_logger = logging.getLogger("src.train_social_stgcnn")
+
+from typing import Dict, List
+import torch.nn as nn
+
+def train_once(
+    args,
+    train_loaders: List[D.DataLoader],
+    model: Model,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    diffusion: DDPM,
+    epoch: int,
+) -> Dict:
+
+    model.train()
+    loss_batch = 0 
+    batch_count = 0
+    is_fst_loss = True
+    loader_len = len(train_loaders)
+    turn_point = -1 # int(loader_len / args.batch_size) * args.batch_size + loader_len % args.batch_size - 1
+
+    train_timer = NamedTimer(unit='it', mode='pace')
+    records_list = []
+    for loader in train_loaders:
+        records = dict(loss=[], rollout_loss=[])
+        for cnt, batch in enumerate(loader):
+            batch_count+=1
+
+            #Get data
+            batch = [tensor.cuda() for tensor in batch]
+            obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,loss_mask,V_obs,A_obs,V_tr,A_tr = batch
+
+            optimizer.zero_grad()
+            V_obs_tmp = V_obs.permute(0,3,1,2)
+            V_pred,_ = model(V_obs_tmp, A_obs.squeeze())
+            train_timer.add('forward')
+            V_pred = V_pred.permute(0,2,3,1)
+            V_tr = V_tr.squeeze()
+            A_tr = A_tr.squeeze()
+            V_pred = V_pred.squeeze()
+            if batch_count % args.batch_size != 0 and cnt != turn_point:
+                l = bivariate_loss(V_pred, V_tr)
+                if is_fst_loss :
+                    loss = l
+                    is_fst_loss = False
+                else:
+                    loss += l
+            else:
+                loss = loss / args.batch_size
+                is_fst_loss = True
+                loss.backward()
+                if args.clip_grad is not None:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
+                optimizer.step()
+                records['loss'].extend([loss.item()] * args.batch_size)
+                train_timer.add('backward')
+        records_list.append(records)
+        _logger.debug(
+            f"[Epoch {epoch}/{args.epochs}] Train on {loader.dataset.name}: "
+            f"Loss={np.mean(records['loss']):.4f}"
+        )
+    all_records = {
+        'epoch': epoch,
+        'dataset_names': [loader.dataset.name for loader in train_loaders],
+        'sample_nums': [len(loader.dataset) for loader in train_loaders],
+    }
+    for records in records_list:
+        for k, v in records.items():
+            if k not in all_records:
+                all_records[k] = []
+            if isinstance(v[0], (int, float)):
+                mean_v = np.mean(v)
+            else: 
+                mean_v = np.mean(v, axis=0).tolist()
+            all_records[k].append(mean_v)
+    _logger.info(tag2ansi(
+        f"[#66CCFF][Epoch {epoch}/{args.epochs}] "
+        f"[#66CCFF]Loss={np.mean(all_records['loss']):.4f} "
+        f"[#66CCFF]Rollout Loss={np.mean(all_records['rollout_loss'], axis=0).round(4).tolist()} "
+        f"[#66CCFF]Time={train_timer}"
+    ))
+    return records
+
+
+def test_once(
+    args,
+    test_loaders: List[D.DataLoader],
+    model: Model,
+    criterion: nn.Module,
+    diffusion: DDPM,
+    epoch: int,
+) -> Dict:
+    model.eval()
+    ade_bigls = []
+    fde_bigls = []
+    raw_data_dict = {}
+    step = 0
+    loader = test_loaders[0]
+
+    for batch in loader: 
+        step+=1
+        obs_traj, pred_traj_gt, obs_traj_rel, pred_traj_gt_rel, non_linear_ped,loss_mask,V_obs,A_obs,V_tr,A_tr = batch
+        num_of_objs = obs_traj_rel.shape[1]
+        V_obs_tmp = V_obs.permute(0,3,1,2)
+        V_pred, _ = model(V_obs_tmp,A_obs.squeeze())
+        V_pred = V_pred.permute(0,2,3,1)
+        V_tr = V_tr.squeeze()
+        A_tr = A_tr.squeeze()
+        V_pred = V_pred.squeeze()
+        num_of_objs = obs_traj_rel.shape[1]
+        V_pred,V_tr =  V_pred[:,:num_of_objs,:],V_tr[:,:num_of_objs,:]
+        sx = torch.exp(V_pred[:,:,2]) #sx
+        sy = torch.exp(V_pred[:,:,3]) #sy
+        corr = torch.tanh(V_pred[:,:,4]) #corr
+        
+        cov = torch.zeros(V_pred.shape[0],V_pred.shape[1],2,2).cuda()
+        cov[:,:,0,0]= sx*sx
+        cov[:,:,0,1]= corr*sx*sy
+        cov[:,:,1,0]= corr*sx*sy
+        cov[:,:,1,1]= sy*sy
+        mean = V_pred[:,:,0:2]
+        
+        mvnormal = torchdist.MultivariateNormal(mean,cov)
+
+
+        ### Rel to abs 
+        ##obs_traj.shape = torch.Size([1, 6, 2, 8]) Batch, Ped ID, x|y, Seq Len 
+        
+        #Now sample 20 samples
+        ade_ls = {}
+        fde_ls = {}
+        V_x = seq_to_nodes(obs_traj.data.cpu().numpy().copy())
+        V_x_rel_to_abs = nodes_rel_to_nodes_abs(V_obs.data.cpu().numpy().squeeze().copy(),
+                                                 V_x[0,:,:].copy())
+
+        V_y = seq_to_nodes(pred_traj_gt.data.cpu().numpy().copy())
+        V_y_rel_to_abs = nodes_rel_to_nodes_abs(V_tr.data.cpu().numpy().squeeze().copy(),
+                                                 V_x[-1,:,:].copy())
+        
+        raw_data_dict[step] = {}
+        raw_data_dict[step]['obs'] = copy.deepcopy(V_x_rel_to_abs)
+        raw_data_dict[step]['trgt'] = copy.deepcopy(V_y_rel_to_abs)
+        raw_data_dict[step]['pred'] = []
+
+        for n in range(num_of_objs):
+            ade_ls[n]=[]
+            fde_ls[n]=[]
+
+        for k in range(KSTEPS):
+
+            V_pred = mvnormal.sample()
+
+
+
+            #V_pred = seq_to_nodes(pred_traj_gt.data.numpy().copy())
+            V_pred_rel_to_abs = nodes_rel_to_nodes_abs(V_pred.data.cpu().numpy().squeeze().copy(),
+                                                     V_x[-1,:,:].copy())
+            raw_data_dict[step]['pred'].append(copy.deepcopy(V_pred_rel_to_abs))
+            
+           # print(V_pred_rel_to_abs.shape) #(12, 3, 2) = seq, ped, location
+            for n in range(num_of_objs):
+                pred = [] 
+                target = []
+                obsrvs = [] 
+                number_of = []
+                pred.append(V_pred_rel_to_abs[:,n:n+1,:])
+                target.append(V_y_rel_to_abs[:,n:n+1,:])
+                obsrvs.append(V_x_rel_to_abs[:,n:n+1,:])
+                number_of.append(1)
+
+                ade_ls[n].append(ade(pred,target,number_of))
+                fde_ls[n].append(fde(pred,target,number_of))
+        
+        for n in range(num_of_objs):
+            ade_bigls.append(min(ade_ls[n]))
+            fde_bigls.append(min(fde_ls[n]))
+
+    ade_ = sum(ade_bigls)/len(ade_bigls)
+    fde_ = sum(fde_bigls)/len(fde_bigls)
+    return ade_,fde_,raw_data_dict
+
 
 def main(args):
     ## Load Dataset
@@ -175,7 +358,7 @@ def main(args):
         train_loaders.append(D.DataLoader(
             dataset,
             shuffle=True,
-            batch_size=args.batch_size,
+            batch_size=1,
             num_workers=args.num_workers,
             collate_fn=dataset.collate_fn,
         ))
@@ -186,7 +369,7 @@ def main(args):
         test_loaders.append(D.DataLoader(
             dataset,
             shuffle=False,
-            batch_size=args.batch_size // args.sample_num,  # 在实际测试时 batch_size 会乘上 sample_num，可能会很大导致 OOM
+            batch_size=1,
             num_workers=args.num_workers,
             collate_fn=dataset.collate_fn,
         ))
@@ -197,20 +380,20 @@ def main(args):
     )
 
     ## Load Model
-    if args.use_new_model:
-        model = NewModel(args).to(args.device)
-    elif args.use_relative_model:
-        model = RelativeModel(args).to(args.device)
-    else:
-        model = Model(args).to(args.device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    criterion = torch.nn.MSELoss()
-    if args.sampling_method == "DDIM":
-        diffusion = DDIM(args)
-    elif args.sampling_method == "DDPM":
-        diffusion = DDPM(args, flexibility=0.0)
-    else:
-        raise ValueError(f"Unknown sampling_method {args.sampling_method}!")
+    from baselines.social_stgcnn.model import social_stgcnn
+    model = social_stgcnn(
+        n_stgcnn=args.n_stgcnn,
+        n_txpcnn=args.n_txpcnn,
+        output_feat=args.output_size,
+        seq_len=args.obs_seq_len,
+        kernel_size=args.kernel_size,
+        pred_seq_len=args.pred_seq_len
+    ).to(args.device)
+    optimizer = torch.optim.SGD(model.parameters(),lr=args.lr)
+    if args.use_lrschd:
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_sh_rate, gamma=0.2)
+    criterion = None
+    diffusion = None
     _logger.note(
         "Model Parameters:\n"
         f"Trainable: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}\n"
@@ -271,6 +454,12 @@ def main(args):
             timer.add('test')
         else:
             test_records = None
+
+        if args.use_lrschd:
+            scheduler.step()
+        
+        train_records = {}
+        test_records = {}
 
         # 保存日志
         with open(f"{args.save_path}/records.jsonl", "a") as f:
@@ -411,11 +600,11 @@ def main(args):
 if __name__ == "__main__":
     parser = ArgumentParser()
     # 基础配置
-    parser.add_argument("--name", type=str, default="train", help="实验任务名称，用于生成实验ID")
+    parser.add_argument("--name", type=str, default="train_social_stgcnn", help="实验任务名称，用于生成实验ID")
     parser.add_argument("--exp_name", type=str, default=None, help="手动指定实验名称（若指定则覆盖自动生成的名称）")
     parser.add_argument("--device", type=str, default="auto", help="计算设备，可选 'cpu', 'cuda:0' 或 'auto'（自动选择显存充足的 GPU）")
     parser.add_argument("--seed", type=int, default=None, help="随机种子，固定以复现实验结果")
-    parser.add_argument("--save_dir", type=str, default="./logs/train", help="日志和模型权重的保存根目录")
+    parser.add_argument("--save_dir", type=str, default="./logs/train_social_stgcnn", help="日志和模型权重的保存根目录")
     parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出更多日志，不保存部分文件）")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader 的工作线程数（0 表示主线程）")
     parser.add_argument("--minimize_gpu", action="store_true", default=False, help="是否在每个 epoch 结束后尽可能释放显存以供其他进程使用")

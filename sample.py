@@ -351,6 +351,7 @@ if __name__ == "__main__":
     parser.add_argument('--test_ratio', type=float, default=None, help="自动划分测试集的比例 (0.0 ~ 1.0)")
     parser.add_argument('--split_by_scenario', action='store_true', help="是否按场景划分训练/测试集（否则按轨迹样本划分）")
     parser.add_argument('--cache_dataset', action='store_true', default=True, help="是否缓存预处理后的数据集以加速加载")
+    parser.add_argument('--collision_threshold', type=float, default=0.6, help="碰撞检测的距离阈值（单位：米）")
 
     # 消融实验/条件控制
     parser.add_argument('--no_destination', action='store_true', default=False, help="[消融] 强制不使用目的地条件进行生成")

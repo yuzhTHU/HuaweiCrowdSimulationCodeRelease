@@ -228,7 +228,7 @@ def test_once(
                 valid_pair_mask
             )
             collision_rate = collision_matrix.sum() / (S * mask.sum() * T)
-            records['collision_ped'].append(collision_rate.cpu().item())
+            records['collision_ped'].append(collision_rate.item())
 
             if future_veh.shape[1] == 0:
                 records['collision_veh'].append(float('nan'))
@@ -240,9 +240,9 @@ def test_once(
                 veh_mask = torch.arange(V, device=args.device).expand(B, V) < veh_length.unsqueeze(-1)  # (B, V)
                 veh_mask_expanded = veh_mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, V) # (B, V) -> (1, B, 1, V) -> (S, B, T, V) -> (S*B*T, V)
                 valid_pair_mask = mask_expanded.unsqueeze(2) & veh_mask_expanded.unsqueeze(1) # (S*B*T, P, V)
-                collision_matrix = (dist_matrix < args.collision_threshold) & valid_pair_mask / 2 # 除以 2 因为碰撞双方只有一方是行人
-                collision_rate = collision_matrix.sum() / (S * mask.sum() * T)
-                records['collision_veh'].append(collision_rate.cpu().item())
+                collision_matrix = (dist_matrix < args.collision_threshold) & valid_pair_mask
+                collision_rate = collision_matrix.sum() / 2 / (S * mask.sum() * T) # 除以 2 因为碰撞双方只有一方是行人
+                records['collision_veh'].append(collision_rate.item())
 
             if not np.isfinite(map_data.map).any():
                 records['collision_map'].append(float('nan'))
@@ -251,7 +251,7 @@ def test_once(
                 jdx = pos_pred[..., 1].sub(map_data.ymin).div(map_data.ymax-map_data.ymin).mul(map_data.map.shape[1]).round().long().clamp(0, map_data.map.shape[1] - 1)  # (batch_size, #pedestrian)
                 sur_info = map_data.map[idx.cpu().numpy(), jdx.cpu().numpy()] # (batch_size, #pedestrian)
                 collision_rate = (sur_info > 0.9).mean()
-                records['collision_map'].append(collision_rate.cpu().item())
+                records['collision_map'].append(collision_rate.item())
             # 计算轨迹长度
             trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1)[mask] # (valid{B*#pedestrian})
             records['trajlen'].extend(trajlen.cpu().tolist()) # List[float]
