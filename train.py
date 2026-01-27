@@ -29,7 +29,7 @@ _logger = logging.getLogger("src.train")
 
 def main(args):
     ## Load Dataset
-    if args.test_datasets is not None:
+    if args.test_datasets:
         train_dataset = []
         test_dataset = []
         for (datasets, dataset_names) in zip((train_dataset, test_dataset), (args.train_datasets, args.test_datasets)):
@@ -331,6 +331,11 @@ def main(args):
                     f"at epoch [#66CCFF]{best_records['epoch']}[reset]. "
                     f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
                     f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
+                    f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
+                    f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
+                    f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']):.2%}, "
+                    f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']):.2%}, "
+                    f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']):.2%}, "
                     f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
                     f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
                     f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
@@ -377,6 +382,11 @@ def main(args):
         f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
         f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
         f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
+        f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
+        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
+        f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']):.2%}, "
+        f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']):.2%}, "
+        f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']):.2%}, "
         f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
         f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
         f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
@@ -399,6 +409,11 @@ def main(args):
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
+                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * best_records['norm_err']) / np.sum(w * np.isfinite(best_records['norm_err'])):.4f}, "
+                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * best_records['tan_err']) / np.sum(w * np.isfinite(best_records['tan_err'])):.4f}, "
+                f"[#66CCFF]Collision-Ped={np.sum(w * best_records['collision_ped']):.2%}, "
+                f"[#66CCFF]Collision-Veh={np.sum(w * best_records['collision_veh']):.2%}, "
+                f"[#66CCFF]Collision-Map={np.sum(w * best_records['collision_map']):.2%}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "

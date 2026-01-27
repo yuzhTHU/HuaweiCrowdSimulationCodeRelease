@@ -204,16 +204,6 @@ def test_once(
                 veh_vel[~has_vehicle] = float('nan')
             records['norm_err'], records['tan_err'] = calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel)
             # 计算碰撞数
-            # collision_num = 0
-            # for s in range(pos_pred.shape[0]): # sample
-            #     for b in range(pos_pred.shape[1]): # batch
-            #         for t in range(pos_pred.shape[3]): # time step
-            #             valid_pedestrian_position = pos_pred[s, b, mask[b], t, :] # (#pedestrian, 2)
-            #             dist = (valid_pedestrian_position[None, :, :] - valid_pedestrian_position[:, None, :]).norm(dim=-1) # (#pedestrian, #pedestrian)
-            #             dist.fill_diagonal_(float('inf'))
-            #             collision_matrix = dist < 0.6
-            #             collision_num += collision_matrix.sum() / 2
-            # collision_rate = collision_num / (pos_pred.shape[0] * mask.sum() * pos_pred.shape[3]) # 每人每时间步的平均碰撞率
             S, B, P, T, _ = pos_pred.shape
             flat_pos = pos_pred.permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## 将 (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
             dist_matrix = torch.cdist(flat_pos, flat_pos, p=2)  # (S*B*T, P, P)
