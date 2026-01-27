@@ -12,6 +12,8 @@ from ..utils.timer import NamedTimer
 from ..utils.tag2ansi import tag2ansi
 from ..utils.calc_xy_error import calc_xy_error
 from .visualize import visualize
+from .guidance import guidance
+from .simulate import SimulateState
 
 _logger = logging.getLogger(__name__)
 
@@ -52,7 +54,7 @@ def test_once(
             ymax=map_data.ymax,
         )
         test_timer.add('embed map')
-        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[])
+        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[], collision_ped=[], collision_veh=[], collision_map=[])
         for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
@@ -105,12 +107,20 @@ def test_once(
                         ped_length=ped_length_repeat, 
                         veh_length=veh_length_repeat,
                     )  # (S*B, #pedestrian, pred_step, 2)
-                    if args.predict_noise:
-                        for_plot[-1].append(diffusion.noise_to_x0(xt=xt, denoise_t=t, noise=output) / args.scale_accelerate)
-                        xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
-                    else:
-                        for_plot[-1].append(output / args.scale_accelerate)
-                        xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
+                    ## 获取估计的 x0
+                    x0 = diffusion.noise_to_x0(xt, denoise_t, output) if args.predict_noise else output
+                    ## 尝试各种引导，各种 guidance 应为 0~1 左右的系数
+                    state = SimulateState(
+                        df_ped=None, df_veh=None, map_data=None, 
+                        ped_list=None, veh_list=None, frame=None,
+                        pos_now=pos_now, vel_now=vel_now, des_now=des_now, 
+                        hst_now=hst_now, spd_now=spd_now, veh_now=veh_now,
+                    )
+                    x0 = x0 + guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_length_repeat, veh_length_repeat)
+                    ## 去噪
+                    xt = diffusion.denoise(xt, t, x0=x0, stride=min(stride, t))
+                    for_plot[-1].append(x0 / args.scale_accelerate)
+
                 acc_new = xt / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
                 acc_pred.append(acc_new)
                 test_timer.add('denoise')
@@ -145,9 +155,9 @@ def test_once(
             loss = criterion(acc_pred, acc_true.expand(acc_pred.shape)) # float
             records['loss'].extend([loss.item()] * future_acc.shape[0]) # List[float]
             # 计算 distance error
-            vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
-            pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
-            dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, pred_step)
+            vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, roll_step*pred_step, 2)
+            pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, roll_step*pred_step, 2)
+            dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, roll_step*pred_step)
             test_timer.add('evaluate')
             # 可视化
             if batch_idx == 0:
@@ -156,18 +166,18 @@ def test_once(
                 visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path, pid)
                 test_timer.add('visualize')
             # 移除 padding 的行人
-            dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, pred_step)
+            dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, roll_step*pred_step)
             # 选择 ade 最佳的 sample
             sample_idx = dis_err.mean(dim=-1).argmin(dim=0)  # (valid{B*#pedestrian},)
             valid_idx = torch.arange(dis_err.shape[1], device=args.device)  # (valid{B*#pedestrian},)
-            dis_err = dis_err[sample_idx, valid_idx, :]  # (valid{B*#pedestrian}, pred_step)
+            dis_err = dis_err[sample_idx, valid_idx, :]  # (valid{B*#pedestrian}, roll_step*pred_step)
             # 计算 ade, fde
             ade = dis_err.mean(dim=-1) # (valid{B*#pedestrian})
             fde = dis_err[..., -1] # (valid{B*#pedestrian})
             records['ade'].extend(ade.cpu().tolist()) # List[float]
             records['fde'].extend(fde.cpu().tolist()) # List[float]
             # 计算切向误差和法向误差
-            traj_diff = (pos_pred - pos_true)[:, mask, :, :][sample_idx, valid_idx, :, :] # (valid{B*#pedestrian}, pred_step, 2)
+            traj_diff = (pos_pred - pos_true)[:, mask, :, :][sample_idx, valid_idx, :, :] # (valid{B*#pedestrian}, roll_step*pred_step, 2)
             ped_pos = pos[mask, :] # (valid{B*#pedestrian}, 2)
             batch_indices = torch.nonzero(mask)[:, 0]  # 有效行人所属的 batch index (valid{B*#pedestrian},)
             num_valid_ped = batch_indices.shape[0]
@@ -193,6 +203,55 @@ def test_once(
                 veh_pos[~has_vehicle] = float('nan')
                 veh_vel[~has_vehicle] = float('nan')
             records['norm_err'], records['tan_err'] = calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel)
+            # 计算碰撞数
+            # collision_num = 0
+            # for s in range(pos_pred.shape[0]): # sample
+            #     for b in range(pos_pred.shape[1]): # batch
+            #         for t in range(pos_pred.shape[3]): # time step
+            #             valid_pedestrian_position = pos_pred[s, b, mask[b], t, :] # (#pedestrian, 2)
+            #             dist = (valid_pedestrian_position[None, :, :] - valid_pedestrian_position[:, None, :]).norm(dim=-1) # (#pedestrian, #pedestrian)
+            #             dist.fill_diagonal_(float('inf'))
+            #             collision_matrix = dist < 0.6
+            #             collision_num += collision_matrix.sum() / 2
+            # collision_rate = collision_num / (pos_pred.shape[0] * mask.sum() * pos_pred.shape[3]) # 每人每时间步的平均碰撞率
+            S, B, P, T, _ = pos_pred.shape
+            flat_pos = pos_pred.permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## 将 (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
+            dist_matrix = torch.cdist(flat_pos, flat_pos, p=2)  # (S*B*T, P, P)
+            eye_matrix = torch.eye(P, device=pos_pred.device, dtype=torch.bool).unsqueeze(0)
+            # 只有当行人 i 和行人 j 都有效 (mask=True) 时才计入碰撞
+            mask_expanded = mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, P) # (B, P) -> (1, B, 1, P) -> (S, B, T, P) -> (S*B*T, P)
+            valid_pair_mask = mask_expanded.unsqueeze(2) & mask_expanded.unsqueeze(1)
+            # fiends = (dist_matrix.reshape(S, B, T, P, P) < args.collision_threshold).float().mean(axis=2)
+            collision_matrix = (
+                (dist_matrix < args.collision_threshold) &
+                (~eye_matrix) &
+                valid_pair_mask
+            )
+            collision_rate = collision_matrix.sum() / (S * mask.sum() * T)
+            records['collision_ped'].append(collision_rate.cpu().item())
+
+            if future_veh.shape[1] == 0:
+                records['collision_veh'].append(float('nan'))
+            else:
+                _, V, _, _ = future_veh.shape # (B, V, T, 2)
+                flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## 将 (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
+                dist_matrix = torch.cdist(flat_pos, flat_veh, p=2) # (S*B*T, P, V)
+                # 只有当行人 i 和车辆 j 都有效时才计入碰撞
+                veh_mask = torch.arange(V, device=args.device).expand(B, V) < veh_length.unsqueeze(-1)  # (B, V)
+                veh_mask_expanded = veh_mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, V) # (B, V) -> (1, B, 1, V) -> (S, B, T, V) -> (S*B*T, V)
+                valid_pair_mask = mask_expanded.unsqueeze(2) & veh_mask_expanded.unsqueeze(1) # (S*B*T, P, V)
+                collision_matrix = (dist_matrix < args.collision_threshold) & valid_pair_mask / 2 # 除以 2 因为碰撞双方只有一方是行人
+                collision_rate = collision_matrix.sum() / (S * mask.sum() * T)
+                records['collision_veh'].append(collision_rate.cpu().item())
+
+            if not np.isfinite(map_data.map).any():
+                records['collision_map'].append(float('nan'))
+            else:
+                idx = pos_pred[..., 0].sub(map_data.xmin).div(map_data.xmax-map_data.xmin).mul(map_data.map.shape[0]).round().long().clamp(0, map_data.map.shape[0] - 1)  # (batch_size, #pedestrian)
+                jdx = pos_pred[..., 1].sub(map_data.ymin).div(map_data.ymax-map_data.ymin).mul(map_data.map.shape[1]).round().long().clamp(0, map_data.map.shape[1] - 1)  # (batch_size, #pedestrian)
+                sur_info = map_data.map[idx.cpu().numpy(), jdx.cpu().numpy()] # (batch_size, #pedestrian)
+                collision_rate = (sur_info > 0.9).mean()
+                records['collision_map'].append(collision_rate.cpu().item())
             # 计算轨迹长度
             trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1)[mask] # (valid{B*#pedestrian})
             records['trajlen'].extend(trajlen.cpu().tolist()) # List[float]
@@ -211,6 +270,9 @@ def test_once(
             f"[#66CCFF]FDE={np.mean(records['fde']):.4f}, "
             f"[#66CCFF]X_ERROR (normal)={np.nanmean(records['norm_err']):.4f}, "
             f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(records['tan_err']):.4f}, "
+            f"[#66CCFF]Collision-Ped={np.mean(records['collision_ped']):.2%}, "
+            f"[#66CCFF]Collision-Veh={np.mean(records['collision_veh']):.2%}, "
+            f"[#66CCFF]Collision-Map={np.mean(records['collision_map']):.2%}, "
             f"[#66CCFF]AvgLen={np.mean(records['trajlen']):.4f}, "
             f"[#66CCFF]PedNum={np.mean(records['ped_num']):.1f}, "
             f"[#66CCFF]VehNum={np.mean(records['veh_num']):.1f}, "
@@ -240,6 +302,9 @@ def test_once(
         f"[#66CCFF]FDE={np.sum(w * all_records['fde']):.4f}, "
         f"[#66CCFF]X_ERROR (normal)={np.nansum(w * all_records['norm_err']) / np.sum(w * np.isfinite(all_records['norm_err'])):.4f}, "
         f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * all_records['tan_err']) / np.sum(w * np.isfinite(all_records['tan_err'])):.4f}, "
+        f"[#66CCFF]Collision-Ped={np.sum(w * all_records['collision_ped']):.2%}, "
+        f"[#66CCFF]Collision-Veh={np.sum(w * all_records['collision_veh']):.2%}, "
+        f"[#66CCFF]Collision-Map={np.sum(w * all_records['collision_map']):.2%}, "
         f"[#66CCFF]AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
         f"[#66CCFF]PedNum={np.sum(w * all_records['ped_num']):.4f}, "
         f"[#66CCFF]VehNum={np.sum(w * all_records['veh_num']):.4f}, "
@@ -268,6 +333,9 @@ def test_once(
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
                 f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
                 f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
+                f"[#66CCFF]Collision-Ped={np.sum(w * all_records['collision_ped']):.2%}, "
+                f"[#66CCFF]Collision-Veh={np.sum(w * all_records['collision_veh']):.2%}, "
+                f"[#66CCFF]Collision-Map={np.sum(w * all_records['collision_map']):.2%}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "

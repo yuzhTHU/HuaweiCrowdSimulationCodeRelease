@@ -148,9 +148,22 @@ def main(args):
         f"[#66CCFF]Rollout Time={records['rollout_time']*1000:.2f}ms/step,\n"
         f"[bold orange]FPS={records['FPS']:.2f}Hz."
     ))
-    
+
     # Visualize rollout
-    save_file = save_path / f"{args.exp_name}_rollout.png"
+    if False:
+        save_file = save_path / f"{args.exp_name}_rollout.png"
+        fig = visualize_png(args, initial_state, state, pred, frame_idx)
+        fig.savefig(save_file, bbox_inches='tight')
+    else:
+        save_file = save_path / f"{args.exp_name}_rollout.gif"
+        fig, ani = visualize_gif(args, initial_state, state, pred, frame_idx)
+        ani.save(save_file, writer='pillow', fps=10)
+    _logger.info(tag2ansi(f"Rollout figure saved to [green]{save_file}[reset]"))
+
+    _logger.note(f"Sampling finished. Re-run: {args.command}")
+
+
+def visualize_png(args, initial_state, state, pred, frame_idx):
     fi, fig, axes = get_fig(1, 1, AW=6, AH=6, dpi=300)
     ax = axes[0]
     pos = initial_state.pos_now[0].cpu().numpy()
@@ -178,11 +191,113 @@ def main(args):
     ax.set_xlabel("X (m)")
     ax.set_ylabel("Y (m)")
     ax.grid(True, linestyle='--', alpha=0.5, zorder=0)
-    fig.savefig(save_file, bbox_inches='tight')
-    plt.close()
-    _logger.info(tag2ansi(f"Rollout figure saved to [green]{save_file}[reset]"))
+    return fig
 
-    _logger.note(f"Sampling finished. Re-run: {args.command}")
+
+def visualize_gif(args, initial_state, state, pred, frame_idx):
+    import matplotlib.animation as animation
+
+    save_file = save_path / f"{args.exp_name}_rollout.gif"
+    fi, fig, axes = get_fig(1, 1, AW=6, AH=6, dpi=300)
+    ax = axes[0]
+
+    # 设置背景颜色和地图
+    ax.set_facecolor('#b2bec3')
+    ax.imshow(state.map_data.map.T, extent=(state.map_data.xmin, state.map_data.xmax, state.map_data.ymin, state.map_data.ymax), cmap='gray_r', zorder=0, origin='lower')
+
+    # 绘制车辆 (全静态)
+    veh = initial_state.veh_now[0].cpu().numpy()
+    for i, vid in enumerate(state.veh_list):
+        # 车辆历史
+        ax.plot(veh[i, :, 0], veh[i, :, 1], color='gray', linewidth=1, zorder=10)
+        # 车辆真实未来
+        future = state.df_veh.loc[pd.IndexSlice[frame_idx+1:, vid], :].values
+        ax.plot(future[:, 0], future[:, 1], color='blue', linestyle='--', linewidth=1, zorder=10)
+
+    # 绘制行人静态部分 (历史轨迹, 真实未来轨迹, 目的地)
+    pos = initial_state.pos_now[0].cpu().numpy()
+    des = initial_state.des_now[0].cpu().numpy()
+    hst = initial_state.hst_now[0].cpu().numpy()
+
+    # 存储动态对象的容器
+    dynamic_lines = []  # 存储预测轨迹线对象
+    dynamic_dots = []   # 存储当前位置点对象
+
+    for i, pid in enumerate(state.ped_list):
+        color = sns.color_palette("hsv", pred.shape[1])[i]
+        
+        # Static: 目的地 (X / Star)
+        ax.scatter(des[i, 0], des[i, 1], marker='*', color=color, s=20, zorder=10, label='Dest' if i==0 else "")
+        
+        # Static: 历史轨迹
+        ax.plot(hst[i, :, 0], hst[i, :, 1], color=color, linewidth=1, zorder=10)
+        
+        # Static: 真实未来轨迹 (GT)
+        future = state.df_ped.loc[pd.IndexSlice[frame_idx+1:, pid], :].values
+        ax.plot(future[:, 0], future[:, 1], color=color, linestyle='--', linewidth=1, zorder=10)
+
+        # ------------------------------------------------------
+        # 2. 初始化动态对象 (预测轨迹线 + 移动的点)
+        # ------------------------------------------------------
+        # 每个行人有 args.sample_num 条预测轨迹
+        ped_lines = []
+        ped_dots = []
+        
+        for s in range(args.sample_num):
+            # 初始化线：一开始是空的或者只有起点
+            line, = ax.plot([], [], alpha=0.5, color=color, linewidth=1.5)
+            ped_lines.append(line)
+            
+            # 初始化点：表示轨迹的"头" (当前推进的位置)
+            # 你的原始代码中 pos[i] 是 t=0 的位置。
+            dot = ax.scatter([], [], marker='o', color=color, s=15, zorder=11)
+            ped_dots.append(dot)
+        
+        dynamic_lines.append(ped_lines)
+        dynamic_dots.append(ped_dots)
+
+    # 设置轴标签和网格
+    ax.set_title(f"Rollout Animation ({args.roll_step * args.pred_step} steps)")
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.grid(True, linestyle='--', alpha=0.5, zorder=0)
+
+    # ------------------------------------------------------------------
+    # 3. 动画更新函数
+    # ------------------------------------------------------------------
+    # pred shape 假设为: [sample_num, num_peds, time_steps, 2]
+    total_steps = pred.shape[2]
+
+    def update(frame):
+        # frame 从 0 到 total_steps-1
+        # 每一帧，我们画出从 0 到 frame 的轨迹，并将点移动到 frame 的位置
+        
+        for i in range(len(state.ped_list)): # 遍历行人
+            for s in range(args.sample_num): # 遍历 Sample
+                # 获取该 sample 该行人的完整轨迹数据
+                # 数据切片：取直到当前 frame 的所有点
+                current_x_path = pred[s, i, :frame+1, 0]
+                current_y_path = pred[s, i, :frame+1, 1]
+                
+                # 更新轨迹线 (随着时间变长)
+                dynamic_lines[i][s].set_data(current_x_path, current_y_path)
+                
+                # 更新点的位置 (位于轨迹的最前端)
+                # scatter 的 set_offsets 需要一个 (N, 2) 的数组
+                current_pos = np.c_[pred[s, i, frame, 0], pred[s, i, frame, 1]]
+                dynamic_dots[i][s].set_offsets(current_pos)
+                
+        return [item for sublist in dynamic_lines for item in sublist] + \
+            [item for sublist in dynamic_dots for item in sublist]
+
+    # ------------------------------------------------------------------
+    # 4. 生成并保存 GIF
+    # ------------------------------------------------------------------
+    # 数据是 2.5Hz (即每个点间隔 0.4秒)。
+    # 为了加速效果，我们设置 fps=10 (即每秒播放10帧数据)，这意味着 4倍速 播放。
+    # 也可以根据喜好调整 fps。
+    ani = animation.FuncAnimation(fig, update, frames=total_steps, blit=True)
+    return fig, ani
 
 
 if __name__ == "__main__":
@@ -252,23 +367,24 @@ if __name__ == "__main__":
     parser.add_argument('--use_spatial_anchor', action='store_true', default=True, help="是否使用空间锚点增强位置编码")
     parser.add_argument('--use_new_model', action='store_true', default=False, help="是否使用改进版的新模型结构")
 
-    parser.add_argument('--des_cfg', type=float, default=None, help="通过 CFG 方式控制目的地条件的影响强度")
-    parser.add_argument('--map_cfg', type=float, default=None, help="通过 CFG 方式控制地图条件的影响强度")
-    parser.add_argument('--direction_cg', type=float, default=None, help="通过 CG 方式控制行进方向条件的影响强度")
-    parser.add_argument('--energy_cg', type=float, default=None, help="通过 CG 方式控制与目的地距离的影响强度")
-    parser.add_argument('--sfm_des_cg', type=float, default=None, help="通过 CG 方式控制目的地条件的影响强度（SFM 模型专用）")
-    parser.add_argument('--sfm_map_cg', type=float, default=None, help="通过 CG 方式控制地图条件的影响强度（SFM 模型专用）")
-    parser.add_argument('--sfm_social_cg', type=float, default=None, help="通过 CG 方式控制社交条件的影响强度（SFM 模型专用）")
-    parser.add_argument('--r', type=float, default=10.0, help="影响距离阈值（用于条件增强的距离计算）")
-    parser.add_argument('--t_des_force', type=float, default=0.5, help="目的地引导力的强度系数")
-    parser.add_argument('--a_map_force', type=float, default=3.0, help="地图引导力的强度系数")
-    parser.add_argument('--d_map_force', type=float, default=0.6, help="地图引导力的衰减系数")
-    parser.add_argument('--a_ped_force', type=float, default=2.0, help="行人引导力的强度系数")
-    parser.add_argument('--d_ped_force', type=float, default=0.3, help="行人引导力的衰减系数")
-    parser.add_argument('--a_veh_force', type=float, default=5.0, help="车辆引导力的强度系数")
-    parser.add_argument('--d_veh_force', type=float, default=0.5, help="车辆引导力的衰减系数")
-    parser.add_argument('--vel_damping', type=float, default=0.5, help="速度阻尼系数（用于计算引导力时的速度衰减）")
-    parser.add_argument('--use_sfm', action='store_true', default=False, help="是否使用社会力模型 (Social Force Model) 计算引导力")
+    # 条件引导参数
+    parser.add_argument('--cfg_des', type=float, default=None, help="通过 Classifier-Free Guidance 引导控制目的地条件的影响强度")
+    parser.add_argument('--cfg_map', type=float, default=None, help="通过 Classifier-Free Guidance 引导控制地图条件的影响强度")
+    parser.add_argument('--cg_dir', type=float, default=None, help="通过 Classifier Guidance 引导控制向目的地前进的影响强度")
+    parser.add_argument('--cg_dis', type=float, default=None, help="通过 Classifier Guidance 引导控制与目的地距离的影响强度")
+    parser.add_argument('--cg_sfm_des', type=float, default=None, help="通过 Classifier Guidance 引导控制社会力目标引导条件的影响强度")
+    parser.add_argument('--cg_sfm_obs', type=float, default=None, help="通过 Classifier Guidance 引导控制社会力地图排斥条件的影响强度")
+    parser.add_argument('--cg_sfm_soc', type=float, default=None, help="通过 Classifier Guidance 引导控制社会力社交排斥条件的影响强度")
+    parser.add_argument('--sfm_t_des', type=float, default=0.5, help="社会力中目标引导力的弛豫时间")
+    parser.add_argument('--sfm_a_ped', type=float, default=25, help="社会力中行人排斥力的强度系数")
+    parser.add_argument('--sfm_a_veh', type=float, default=30, help="社会力中车辆排斥力的强度系数")
+    parser.add_argument('--sfm_a_map', type=float, default=30, help="社会力中地图排斥力的强度系数")
+    parser.add_argument('--sfm_b_ped', type=float, default=0.08, help="社会力中行人排斥力的衰减系数")
+    parser.add_argument('--sfm_b_veh', type=float, default=0.10, help="社会力中车辆排斥力的衰减系数")
+    parser.add_argument('--sfm_b_map', type=float, default=0.10, help="社会力中地图排斥力的衰减系数")
+    parser.add_argument('--sfm_r_map', type=int, default=10, help="社会力中地图排斥力距离阈值 (in pixel)")
+    parser.add_argument('--sfm_a_damp', type=float, default=0.5, help="社会力中速度阻尼系数（用于计算引导力时的速度衰减）")
+    parser.add_argument('--use_sfm', action='store_true', default=False, help="使用社会力模型代替神经网络计算引导力")
 
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true
