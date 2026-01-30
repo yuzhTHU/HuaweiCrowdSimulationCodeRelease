@@ -377,6 +377,9 @@ def test_once(
             trajlen = np.array([all_records['trajlen'][i] for i in idxs])
             ped_num = np.array([all_records['ped_num'][i] for i in idxs])
             veh_num = np.array([all_records['veh_num'][i] for i in idxs])
+            collision_ped = np.array([all_records['collision_ped'][i] for i in idxs])
+            collision_veh = np.array([all_records['collision_veh'][i] for i in idxs])
+            collision_map = np.array([all_records['collision_map'][i] for i in idxs])
             rollout_time = np.array([all_records['rollout_time'][i] for i in idxs])
             w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
@@ -388,9 +391,9 @@ def test_once(
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
                 f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
                 f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
-                f"[#66CCFF]Collision-Ped={np.sum(w * all_records['collision_ped']):.2%}, "
-                f"[#66CCFF]Collision-Veh={np.sum(w * all_records['collision_veh']):.2%}, "
-                f"[#66CCFF]Collision-Map={np.sum(w * all_records['collision_map']):.2%}, "
+                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
+                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
+                f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
@@ -575,7 +578,7 @@ def main(args):
         eval_loaders.append(D.DataLoader(
             dataset,
             shuffle=False,
-            batch_size=args.batch_size,
+            batch_size=1,
             num_workers=args.num_workers,
             collate_fn=dataset.collate_fn,
         ))
@@ -946,7 +949,7 @@ if __name__ == "__main__":
     parser.add_argument('--test_ratio', type=float, default=None, help="自动划分测试集的比例 (0.0 ~ 1.0)")
     parser.add_argument('--split_by_scenario', action='store_true', help="是否按场景划分训练/测试集（否则按轨迹样本划分）")
     parser.add_argument('--cache_dataset', action='store_true', default=True, help="是否缓存预处理后的数据集以加速加载")
-    parser.add_argument('--test_before_train', action='store_true', default=True, help="是否在训练开始前先运行一次测试")
+    parser.add_argument('--test_before_train', action='store_true', default=False, help="是否在训练开始前先运行一次测试")
     parser.add_argument('--test_per_epoch', type=int, default=10, help="每隔多少个 epoch 运行一次测试")
     parser.add_argument('--collision_threshold', type=float, default=0.6, help="碰撞检测的距离阈值（单位：米）")
 
@@ -990,7 +993,7 @@ if __name__ == "__main__":
     parser.add_argument('--pred_seq_len', type=int, default=12)
     parser.add_argument('--dataset', default='eth', help='eth,hotel,univ,zara1,zara2')    
     parser.add_argument('--batch_size', type=int, default=128, help='minibatch size')
-    parser.add_argument('--epochs', type=int, default=250, help='number of epochs')
+    parser.add_argument('--epochs', type=int, default=10000, help='number of epochs')
     parser.add_argument('--clip_grad', type=float, default=None, help='gradient clipping')        
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
     parser.add_argument('--lr_sh_rate', type=int, default=150, help='number of steps to drop the lr')  
