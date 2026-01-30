@@ -312,6 +312,9 @@ def test_once(
             trajlen = np.array([all_records['trajlen'][i] for i in idxs])
             ped_num = np.array([all_records['ped_num'][i] for i in idxs])
             veh_num = np.array([all_records['veh_num'][i] for i in idxs])
+            collision_ped = np.array([all_records['collision_ped'][i] for i in idxs])
+            collision_veh = np.array([all_records['collision_veh'][i] for i in idxs])
+            collision_map = np.array([all_records['collision_map'][i] for i in idxs])
             rollout_time = np.array([all_records['rollout_time'][i] for i in idxs])
             w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
@@ -323,9 +326,9 @@ def test_once(
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
                 f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
                 f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
-                f"[#66CCFF]Collision-Ped={np.sum(w * all_records['collision_ped']):.2%}, "
-                f"[#66CCFF]Collision-Veh={np.sum(w * all_records['collision_veh']):.2%}, "
-                f"[#66CCFF]Collision-Map={np.sum(w * all_records['collision_map']):.2%}, "
+                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
+                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
+                f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
