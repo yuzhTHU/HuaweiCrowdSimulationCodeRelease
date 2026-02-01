@@ -8,6 +8,7 @@ import shlex
 import random
 import logging
 import numpy as np
+import torch.nn as nn
 import torch.utils.data as D
 import torch.distributions.multivariate_normal as torchdist
 from copy import deepcopy
@@ -35,7 +36,6 @@ from baselines.social_stgcnn.utils import seq_to_graph
 
 _logger = logging.getLogger("src.train_social_stgcnn")
 
-import torch.nn as nn
 
 def train_once(
     args,
@@ -97,15 +97,15 @@ def train_once(
             V_tr = V_tr.squeeze(0)
             train_timer.add('forward')
 
-            if batch_count % args.batch_size != 0 and cnt != turn_point:
-                l = bivariate_loss(V_pred, V_tr)
-                if is_fst_loss:
-                    loss = l
-                    is_fst_loss = False
-                else:
-                    loss += l
-                train_timer.add('loss')
+            l = bivariate_loss(V_pred, V_tr)
+            if is_fst_loss:
+                loss = l
+                is_fst_loss = False
             else:
+                loss += l
+            train_timer.add('loss')
+            
+            if batch_count % args.batch_size == 0 or cnt == len(loader)-1 or batch_count == turn_point:
                 loss = loss / args.batch_size
                 is_fst_loss = True
                 loss.backward()
@@ -128,7 +128,9 @@ def train_once(
         for k, v in records.items():
             if k not in all_records:
                 all_records[k] = []
-            if isinstance(v[0], (int, float)):
+            if not isinstance(v, (list, tuple, np.ndarray)) or len(v) == 0:
+                mean_v = np.nan
+            elif isinstance(v[0], (int, float)):
                 mean_v = np.mean(v)
             else: 
                 mean_v = np.mean(v, axis=0).tolist()
@@ -149,6 +151,8 @@ def test_once(
     diffusion: DDPM,
     epoch: int,
 ) -> Dict:
+    
+    model.eval()
     test_timer = NamedTimer(unit='it', mode='pace')
     records_list = []
     step = 0
@@ -196,14 +200,14 @@ def test_once(
             rollout_time = (time.time() - start_time)
 
             mean = V_pred[:, :, 0:2]
-            sx = torch.exp(V_pred[:, :, 2]) #sx
-            sy = torch.exp(V_pred[:, :, 3]) #sy
-            corr = torch.tanh(V_pred[:, :, 4]) #corr
+            sx = torch.exp(V_pred[:, :, 2]) + 1e-4 #sx
+            sy = torch.exp(V_pred[:, :, 3]) + 1e-4 #sy
+            corr = torch.tanh(V_pred[:, :, 4]).clamp(-1+1e-4, 1-1e-4) #corr
             cov = torch.zeros(V_pred.shape[0], V_pred.shape[1],2,2).to(args.device)
-            cov[:,:,0,0] = sx*sx
+            cov[:,:,0,0] = sx*sx + 1e-4
             cov[:,:,0,1] = corr*sx*sy
             cov[:,:,1,0] = corr*sx*sy
-            cov[:,:,1,1] = sy*sy
+            cov[:,:,1,1] = sy*sy + 1e-4
             mvnormal = torchdist.MultivariateNormal(mean,cov)
             V_x = hist_traj_abs.squeeze(0).permute(1, 0, 2)
             # V_x_rel_to_abs = nodes_rel_to_nodes_abs(V_obs.cpu().numpy(), V_x[0,:,:].cpu().numpy())
@@ -747,7 +751,9 @@ def main(args):
                     f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
                     f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
                     f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-                    f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f})"
+                    f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}), "
+                    f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
+                    f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
                 ))
             timer.add('save_best')
 
@@ -789,6 +795,9 @@ def main(args):
     model.load_state_dict(torch.load(best_path, map_location=args.device)["model"])
     test_records = test_once(args, test_loaders, model, criterion, diffusion, best_records['epoch'])
     timer.add('final_eval')
+    with open(f"{args.save_path}/records.jsonl", "a") as f:
+        if test_records is not None:
+            f.write(json.dumps(test_records) + "\n")
 
     ## Log Best Result
     _logger.note(tag2ansi(
@@ -804,7 +813,9 @@ def main(args):
         f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
         f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
         f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-        f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}"
+        f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}, "
+        f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
+        f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
     ))
     if len(set(best_records['dataset_class'])) > 1:
         for klass in sorted(list(set(best_records['dataset_class']))):
@@ -843,39 +854,41 @@ def main(args):
     ## Log Test Result
     _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
     _logger.note(tag2ansi(
-        f"[bold underline orange]Test Accuracy={best_records['accuracy']:.2%}[reset] "
-        f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
-        f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
-        f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']):.2%}, "
-        f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']):.2%}, "
-        f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']):.2%}, "
-        f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
-        f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
-        f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-        f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}"
+        f"[bold underline orange]Test Accuracy={test_records['accuracy']:.2%}[reset] "
+        f"at [#66CCFF]epoch {test_records['epoch']}[reset]. "
+        f"[#66CCFF]ADE={np.mean(test_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.mean(test_records['fde']):.4f}, "
+        f"[#66CCFF]X_ERROR (normal)={np.nanmean(test_records['norm_err']):.4f}, "
+        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(test_records['tan_err']):.4f}, "
+        f"[#66CCFF]Collision-Ped={np.mean(test_records['collision_ped']):.2%}, "
+        f"[#66CCFF]Collision-Veh={np.mean(test_records['collision_veh']):.2%}, "
+        f"[#66CCFF]Collision-Map={np.mean(test_records['collision_map']):.2%}, "
+        f"[#66CCFF]AvgLen={np.mean(test_records['trajlen']):.4f}, "
+        f"[#66CCFF]Loss={np.mean(test_records['loss']):.4f}, "
+        f"[#66CCFF]PedNum={np.mean(test_records['ped_num']):.1f}, "
+        f"[#66CCFF]VehNum={np.mean(test_records['veh_num']):.1f}, "
+        f"[#66CCFF]RolloutTime={np.mean(test_records['rollout_time'])*1000:.2}ms "
+        f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz[reset])"
     ))
-    if len(set(best_records['dataset_class'])) > 1:
-        for klass in sorted(list(set(best_records['dataset_class']))):
-            idxs = [i for i, k in enumerate(best_records['dataset_class']) if k == klass]
-            ade = np.array([best_records['ade'][i] for i in idxs])
-            fde = np.array([best_records['fde'][i] for i in idxs])
-            trajlen = np.array([best_records['trajlen'][i] for i in idxs])
-            ped_num = np.array([best_records['ped_num'][i] for i in idxs])
-            veh_num = np.array([best_records['veh_num'][i] for i in idxs])
-            norm_err = np.array([best_records['norm_err'][i] for i in idxs])
-            tan_err = np.array([best_records['tan_err'][i] for i in idxs])
-            collision_ped = np.array([best_records['collision_ped'][i] for i in idxs])
-            collision_veh = np.array([best_records['collision_veh'][i] for i in idxs])
-            collision_map = np.array([best_records['collision_map'][i] for i in idxs])
-            rollout_time = np.array([best_records['rollout_time'][i] for i in idxs])
-            w = np.array([best_records['sample_nums'][i] for i in idxs], dtype=float)
+    if len(set(test_records['dataset_class'])) > 1:
+        for klass in sorted(list(set(test_records['dataset_class']))):
+            idxs = [i for i, k in enumerate(test_records['dataset_class']) if k == klass]
+            ade = np.array([test_records['ade'][i] for i in idxs])
+            fde = np.array([test_records['fde'][i] for i in idxs])
+            trajlen = np.array([test_records['trajlen'][i] for i in idxs])
+            ped_num = np.array([test_records['ped_num'][i] for i in idxs])
+            veh_num = np.array([test_records['veh_num'][i] for i in idxs])
+            norm_err = np.array([test_records['norm_err'][i] for i in idxs])
+            tan_err = np.array([test_records['tan_err'][i] for i in idxs])
+            collision_ped = np.array([test_records['collision_ped'][i] for i in idxs])
+            collision_veh = np.array([test_records['collision_veh'][i] for i in idxs])
+            collision_map = np.array([test_records['collision_map'][i] for i in idxs])
+            rollout_time = np.array([test_records['rollout_time'][i] for i in idxs])
+            w = np.array([test_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
             acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
             _logger.info(tag2ansi(
-                f"[#66CCFF][Epoch {best_records['epoch']}/{args.epochs}] Overall on {klass} datasets: "
+                f"[#66CCFF][Epoch {test_records['epoch']}/{args.epochs}] Overall on {klass} datasets: "
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
@@ -890,6 +903,7 @@ def main(args):
                 f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
                 f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
             ))
+
     _logger.note(f"Training finished. Re-run: {args.command}")
 
 
