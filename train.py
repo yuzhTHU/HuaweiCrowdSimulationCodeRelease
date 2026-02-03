@@ -266,6 +266,11 @@ def main(args):
         if 'args' in checkpoint:
             saved_args = checkpoint['args']
             for key in sorted(set(saved_args.keys()) | set(vars(args).keys())):
+                if key in [
+                    'device', 'save_dir', 'save_path', 'command', 'name', 'exp_name',
+                    'seed', 'reload_checkpoint', 'test_before_train', 'test_per_epoch',
+                ]:
+                    continue
                 val1 = saved_args.get(key, None)
                 val2 = getattr(args, key, None)
                 if val1 != val2:
@@ -371,7 +376,9 @@ def main(args):
                     f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
                     f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
                     f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-                    f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f})"
+                    f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}), "
+                    f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
+                    f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
                 ))
             timer.add('save_best')
 
@@ -408,15 +415,6 @@ def main(args):
             _logger.warning(tag2ansi(f"Early stopping at epoch [lightred]{epoch}/{args.epochs}[reset], "))
             break
 
-    ## Test
-    best_path = Path(args.save_path) / 'best.pth'
-    model.load_state_dict(torch.load(best_path, map_location=args.device)["model"])
-    test_records = test_once(args, test_loaders, model, criterion, diffusion, best_records['epoch'])
-    timer.add('final_eval')
-    with open(f"{args.save_path}/records.jsonl", "a") as f:
-        if test_records is not None:
-            f.write(json.dumps(test_records) + "\n")
-
     ## Log Best Result
     _logger.note(tag2ansi(
         f"[bold underline orange]best Evaluation Accuracy={best_records['accuracy']:.2%}[reset] "
@@ -433,7 +431,7 @@ def main(args):
         f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
         f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}, "
         f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
-        f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz)[reset])"
+        f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
     ))
     if len(set(best_records['dataset_class'])) > 1:
         for klass in sorted(list(set(best_records['dataset_class']))):
@@ -469,22 +467,42 @@ def main(args):
                 f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
             ))
 
+    ## Test
+    best_path = Path(args.save_path) / 'best.pth'
+    checkpoint = torch.load(best_path, map_location=args.device)
+    if checkpoint['epoch'] != best_records['epoch']:
+        _logger.warning(tag2ansi(
+            f"Best epoch in records.jsonl ({best_records['epoch']}) does not match that in best.pth ({checkpoint['epoch']})!"
+        ))
+    model.load_state_dict(checkpoint["model"])
+    torch.set_grad_enabled(False)
+    model.eval()
+    with npu_attention_fallback_context(model, enable=USE_NPU):
+        test_records = test_once(args, test_loaders, model, criterion, diffusion, best_records['epoch'])
+    with open(f"{args.save_path}/records.jsonl", "a") as f:
+        if test_records is not None:
+            f.write(json.dumps(test_records) + "\n")
+
     ## Log Test Result
     _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
+    w = np.array(test_records['sample_nums'], dtype=float)
+    w /= w.sum()
+    test_records['accuracy'] = 1 - np.sum(w * test_records['ade']) / np.sum(w * test_records['trajlen'])
+    test_records['unweighted_accuracy'] = 1 - np.mean(test_records['ade']) / np.mean(test_records['trajlen'])
     _logger.note(tag2ansi(
-        f"[bold underline orange]Test Accuracy={test_records['accuracy']:.2%}[reset] "
+        f"[bold underline orange]Test Accuracy={test_records['accuracy']:.2%}[reset] (unweighted={test_records['unweighted_accuracy']:.2%}), "
         f"at [#66CCFF]epoch {test_records['epoch']}[reset]. "
-        f"[#66CCFF]ADE={np.mean(test_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.mean(test_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nanmean(test_records['norm_err']):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(test_records['tan_err']):.4f}, "
-        f"[#66CCFF]Collision-Ped={np.mean(test_records['collision_ped']):.2%}, "
-        f"[#66CCFF]Collision-Veh={np.mean(test_records['collision_veh']):.2%}, "
-        f"[#66CCFF]Collision-Map={np.mean(test_records['collision_map']):.2%}, "
-        f"[#66CCFF]AvgLen={np.mean(test_records['trajlen']):.4f}, "
-        f"[#66CCFF]Loss={np.mean(test_records['loss']):.4f}, "
-        f"[#66CCFF]PedNum={np.mean(test_records['ped_num']):.1f}, "
-        f"[#66CCFF]VehNum={np.mean(test_records['veh_num']):.1f}, "
+        f"[#66CCFF]ADE={np.sum(w * test_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.sum(w * test_records['fde']):.4f}, "
+        f"[#66CCFF]X_ERROR (normal)={np.nansum(w * test_records['norm_err']) / np.sum(w * np.isfinite(test_records['norm_err'])):.4f}, "
+        f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * test_records['tan_err']) / np.sum(w * np.isfinite(test_records['tan_err'])):.4f}, "
+        f"[#66CCFF]Collision-Ped={np.sum(w * test_records['collision_ped']):.2%}, "
+        f"[#66CCFF]Collision-Veh={np.sum(w * test_records['collision_veh']):.2%}, "
+        f"[#66CCFF]Collision-Map={np.sum(w * test_records['collision_map']):.2%}, "
+        f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
+        f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
+        f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.1f}, "
+        f"[#66CCFF]VehNum={np.sum(w * test_records['veh_num']):.1f}, "
         f"[#66CCFF]RolloutTime={np.mean(test_records['rollout_time'])*1000:.2f}ms "
         f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz)[reset])"
     ))
@@ -541,7 +559,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=128, help="训练批次大小")
     parser.add_argument("--lr", type=float, default=2e-4, help="学习率 (Learning Rate)")
     parser.add_argument("--epochs", type=int, default=10000, help="最大训练轮数")
-    parser.add_argument('--patience', type=int, default=100, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
+    parser.add_argument('--patience', type=int, default=20, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
     parser.add_argument('--force_new_experiment', action='store_true', help="是否强制不使用 checkpoint 继续训练，即使存在 checkpoint 文件")

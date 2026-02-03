@@ -724,7 +724,7 @@ def main(args):
     model = AutoEncoder(config, encoder = None).to(args.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.999)
-    criterion = None
+    criterion = torch.nn.MSELoss()
     diffusion = None
     _logger.note(
         "Model Parameters:\n"
@@ -770,6 +770,10 @@ def main(args):
     ## Train
     timer = NamedTimer()
     for epoch in range(start_epoch, args.epochs+1):
+        # 仅测试模式
+        if args.test:
+            break
+
         # 训练一个 epoch
         if epoch > 0:
             torch.set_grad_enabled(True)
@@ -894,15 +898,6 @@ def main(args):
             _logger.warning(tag2ansi(f"Early stopping at epoch [lightred]{epoch}/{args.epochs}[reset], "))
             break
 
-    ## Test
-    best_path = Path(args.save_path) / 'best.pth'
-    model.load_state_dict(torch.load(best_path, map_location=args.device)["model"])
-    test_records = test_once(args, test_loaders, model, criterion, diffusion, best_records['epoch'])
-    timer.add('final_eval')
-    with open(f"{args.save_path}/records.jsonl", "a") as f:
-        if test_records is not None:
-            f.write(json.dumps(test_records) + "\n")
-
     ## Log Best Result
     _logger.note(tag2ansi(
         f"[bold underline orange]best Evaluation Accuracy={best_records['accuracy']:.2%}[reset] "
@@ -954,6 +949,15 @@ def main(args):
                 f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
                 f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
             ))
+
+    ## Test
+    best_path = Path(args.save_path) / 'best.pth'
+    model.load_state_dict(torch.load(best_path, map_location=args.device)["model"])
+    test_records = test_once(args, test_loaders, model, criterion, diffusion, best_records['epoch'])
+    timer.add('final_eval')
+    with open(f"{args.save_path}/records.jsonl", "a") as f:
+        if test_records is not None:
+            f.write(json.dumps(test_records) + "\n")
 
     ## Log Test Result
     _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
@@ -1014,6 +1018,7 @@ def main(args):
 if __name__ == "__main__":
     parser = ArgumentParser()
     # 基础配置
+    parser.add_argument('--test', action='store_true', help="是否仅运行测试流程（跳过训练）")
     parser.add_argument("--name", type=str, default="train_spdiff", help="实验任务名称，用于生成实验ID")
     parser.add_argument("--exp_name", type=str, default=None, help="手动指定实验名称（若指定则覆盖自动生成的名称）")
     parser.add_argument("--device", type=str, default="auto", help="计算设备，可选 'cpu', 'cuda:0' 或 'auto'（自动选择显存充足的 GPU）")
@@ -1027,7 +1032,7 @@ if __name__ == "__main__":
     # parser.add_argument("--batch_size", type=int, default=128, help="训练批次大小")
     # parser.add_argument("--lr", type=float, default=2e-4, help="学习率 (Learning Rate)")
     parser.add_argument("--epochs", type=int, default=10000, help="最大训练轮数")
-    parser.add_argument('--patience', type=int, default=100, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
+    parser.add_argument('--patience', type=int, default=20, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
     parser.add_argument('--force_new_experiment', action='store_true', help="是否强制不使用 checkpoint 继续训练，即使存在 checkpoint 文件")
