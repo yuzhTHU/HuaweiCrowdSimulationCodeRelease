@@ -475,6 +475,7 @@ def main(args):
             f"Best epoch in records.jsonl ({best_records['epoch']}) does not match that in best.pth ({checkpoint['epoch']})!"
         ))
     model.load_state_dict(checkpoint["model"])
+    _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
     torch.set_grad_enabled(False)
     model.eval()
     with npu_attention_fallback_context(model, enable=USE_NPU):
@@ -484,7 +485,6 @@ def main(args):
             f.write(json.dumps(test_records) + "\n")
 
     ## Log Test Result
-    _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
     w = np.array(test_records['sample_nums'], dtype=float)
     w /= w.sum()
     test_records['accuracy'] = 1 - np.sum(w * test_records['ade']) / np.sum(w * test_records['trajlen'])

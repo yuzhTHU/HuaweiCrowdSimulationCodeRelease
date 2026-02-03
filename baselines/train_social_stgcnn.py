@@ -631,6 +631,9 @@ def main(args):
     elif args.reload_checkpoint is not None:
         # 如果指定了 checkpoint 路径，则从该路径加载
         checkpoint_path = Path(args.reload_checkpoint)
+    elif args.test and (Path(args.save_path) / "best.pth").exists():
+        # 测试模式优先加载 Best checkpoint
+        checkpoint_path = Path(args.save_path) / "best.pth"
     elif (Path(args.save_path) / "checkpoint.pth").exists():
         # 如果当前保存路径下存在 checkpoint，则从该路径加载
         checkpoint_path = Path(args.save_path) / "checkpoint.pth"
@@ -662,12 +665,20 @@ def main(args):
             optimizer.load_state_dict(checkpoint["optimizer"])
         else:
             _logger.warning("Optimizer state not found in checkpoint, optimizer re-initialized.")
+        if args.use_lrschd and "scheduler" in checkpoint and checkpoint["scheduler"] is not None:
+            scheduler.load_state_dict(checkpoint["scheduler"])
+        else:
+            _logger.warning("Scheduler state not found in checkpoint, scheduler re-initialized.")
     else:
         start_epoch = 0
 
     ## Train
     timer = NamedTimer()
     for epoch in range(start_epoch, args.epochs+1):
+        # 只测试
+        if args.test:
+            break
+        
         # 训练一个 epoch
         if epoch > 0:
             torch.set_grad_enabled(True)
@@ -707,6 +718,7 @@ def main(args):
                 "args": vars(args),
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict() if args.use_lrschd else None,
             }, save_path)
             _logger.info(tag2ansi(f"Checkpoint saved to [underline green]{save_path}[reset]."))
             timer.add('save_checkpoint')
@@ -721,6 +733,7 @@ def main(args):
                 "args": vars(args),
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict() if args.use_lrschd else None,
             }, save_path)
             _logger.note(tag2ansi(f"Model saved to [underline green]{save_path}[reset]"))
             timer.add('save_periodly')
@@ -739,6 +752,7 @@ def main(args):
                     "args": vars(args),
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict() if args.use_lrschd else None,
                 }, save_path)
                 _logger.note(tag2ansi(f"Best model saved to [underline green]{save_path}[reset]"))
             else:
@@ -797,65 +811,69 @@ def main(args):
             break
 
     ## Log Best Result
-    _logger.note(tag2ansi(
-        f"[bold underline orange]best Evaluation Accuracy={best_records['accuracy']:.2%}[reset] "
-        f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
-        f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
-        f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']):.2%}, "
-        f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']):.2%}, "
-        f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']):.2%}, "
-        f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
-        f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
-        f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-        f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}, "
-        f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
-        f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
-    ))
-    if len(set(best_records['dataset_class'])) > 1:
-        for klass in sorted(list(set(best_records['dataset_class']))):
-            idxs = [i for i, k in enumerate(best_records['dataset_class']) if k == klass]
-            ade = np.array([best_records['ade'][i] for i in idxs])
-            fde = np.array([best_records['fde'][i] for i in idxs])
-            trajlen = np.array([best_records['trajlen'][i] for i in idxs])
-            ped_num = np.array([best_records['ped_num'][i] for i in idxs])
-            veh_num = np.array([best_records['veh_num'][i] for i in idxs])
-            norm_err = np.array([best_records['norm_err'][i] for i in idxs])
-            tan_err = np.array([best_records['tan_err'][i] for i in idxs])
-            collision_ped = np.array([best_records['collision_ped'][i] for i in idxs])
-            collision_veh = np.array([best_records['collision_veh'][i] for i in idxs])
-            collision_map = np.array([best_records['collision_map'][i] for i in idxs])
-            rollout_time = np.array([best_records['rollout_time'][i] for i in idxs])
-            w = np.array([best_records['sample_nums'][i] for i in idxs], dtype=float)
-            w /= w.sum()
-            acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
-            _logger.info(tag2ansi(
-                f"[#66CCFF][Epoch {best_records['epoch']}/{args.epochs}] Overall on {klass} datasets: "
-                f"[bold underline orange]Accuracy={acc:.2%}[reset], "
-                f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
-                f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
-                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
-                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
-                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
-                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
-                f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
-                f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
-                f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
-                f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
-                f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
-                f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
+    if not args.test:
+        _logger.note(tag2ansi(
+            f"[bold underline orange]best Evaluation Accuracy={best_records['accuracy']:.2%}[reset] "
+            f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
+            f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
+            f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
+            f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
+            f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
+            f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']):.2%}, "
+            f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']):.2%}, "
+            f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']):.2%}, "
+            f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
+            f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
+            f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
+            f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}, "
+            f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
+            f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
+        ))
+        if len(set(best_records['dataset_class'])) > 1:
+            for klass in sorted(list(set(best_records['dataset_class']))):
+                idxs = [i for i, k in enumerate(best_records['dataset_class']) if k == klass]
+                ade = np.array([best_records['ade'][i] for i in idxs])
+                fde = np.array([best_records['fde'][i] for i in idxs])
+                trajlen = np.array([best_records['trajlen'][i] for i in idxs])
+                ped_num = np.array([best_records['ped_num'][i] for i in idxs])
+                veh_num = np.array([best_records['veh_num'][i] for i in idxs])
+                norm_err = np.array([best_records['norm_err'][i] for i in idxs])
+                tan_err = np.array([best_records['tan_err'][i] for i in idxs])
+                collision_ped = np.array([best_records['collision_ped'][i] for i in idxs])
+                collision_veh = np.array([best_records['collision_veh'][i] for i in idxs])
+                collision_map = np.array([best_records['collision_map'][i] for i in idxs])
+                rollout_time = np.array([best_records['rollout_time'][i] for i in idxs])
+                w = np.array([best_records['sample_nums'][i] for i in idxs], dtype=float)
+                w /= w.sum()
+                acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
+                _logger.info(tag2ansi(
+                    f"[#66CCFF][Epoch {best_records['epoch']}/{args.epochs}] Overall on {klass} datasets: "
+                    f"[bold underline orange]Accuracy={acc:.2%}[reset], "
+                    f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
+                    f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
+                    f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
+                    f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
+                    f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
+                    f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
+                    f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
+                    f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
+                    f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
+                    f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
+                    f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
+                    f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
+                ))
+        best_path = Path(args.save_path) / 'best.pth'
+        checkpoint = torch.load(best_path, map_location=args.device)
+        if checkpoint['epoch'] != best_records['epoch']:
+            _logger.warning(tag2ansi(
+                f"Best epoch in records.jsonl ({best_records['epoch']}) does not match that in best.pth ({checkpoint['epoch']})!"
             ))
+        model.load_state_dict(checkpoint["model"])
+        _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
+    else:
+        best_records = {'epoch': start_epoch - 1}
 
     ## Test
-    best_path = Path(args.save_path) / 'best.pth'
-    checkpoint = torch.load(best_path, map_location=args.device)
-    if checkpoint['epoch'] != best_records['epoch']:
-        _logger.warning(tag2ansi(
-            f"Best epoch in records.jsonl ({best_records['epoch']}) does not match that in best.pth ({checkpoint['epoch']})!"
-        ))
-    model.load_state_dict(checkpoint["model"])
     torch.set_grad_enabled(False)
     model.eval()
     with npu_attention_fallback_context(model, enable=USE_NPU):
@@ -865,7 +883,6 @@ def main(args):
             f.write(json.dumps(test_records) + "\n")
 
     ## Log Test Result
-    _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
     w = np.array(test_records['sample_nums'], dtype=float)
     w /= w.sum()
     test_records['accuracy'] = 1 - np.sum(w * test_records['ade']) / np.sum(w * test_records['trajlen'])
