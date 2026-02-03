@@ -3,9 +3,13 @@ __pycache__/
 /venv/
 /logs/
 *.bak.py
+.DS_Store
 /.vscode/
 /data/
 /baselines/*/.git.bak
 /baselines/social_stgcnn/checkpoint/
 /baselines/social_stgcnn/datasets/
 /baselines/social_stgcnn/datasets/
+/baselines/spdiff/data_origin/
+/baselines/spdiff/experiments/
+/baselines/spdiff/dataset_built/
