@@ -513,9 +513,6 @@ def train_once(
 
             loss.backward()
 
-            if args.clip_grad is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
-                
             optimizer.step()
             # [TRACE] 4. EMA Step (Important!)
             # If using EMA, you must manually update it here
@@ -1352,7 +1349,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
     parser.add_argument('--force_new_experiment', action='store_true', help="是否强制不使用 checkpoint 继续训练，即使存在 checkpoint 文件")
-    parser.add_argument('--required_memory_MB', type=int, default=10000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
+    parser.add_argument('--required_memory_MB', type=int, default=6500, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
 
     # 扩散模型参数 (Diffusion)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'], help="采样/生成方法")
@@ -1423,21 +1420,9 @@ if __name__ == "__main__":
     parser.add_argument('--use_sfm', action='store_true', default=False, help="使用社会力模型代替神经网络计算引导力")
 
     # TRACE 特定参数
-    parser.add_argument('--input_size', type=int, default=2)
-    parser.add_argument('--output_size', type=int, default=5)
-    parser.add_argument('--n_stgcnn', type=int, default=1,help='Number of ST-GCNN layers')
-    parser.add_argument('--n_txpcnn', type=int, default=5, help='Number of TXPCNN layers')
-    parser.add_argument('--kernel_size', type=int, default=3)
-    parser.add_argument('--obs_seq_len', type=int, default=8)
-    parser.add_argument('--pred_seq_len', type=int, default=12)
-    parser.add_argument('--dataset', default='eth', help='eth,hotel,univ,zara1,zara2')    
     parser.add_argument('--batch_size', type=int, default=8, help='minibatch size')
     parser.add_argument('--epochs', type=int, default=10000, help='number of epochs')
-    parser.add_argument('--clip_grad', type=float, default=None, help='gradient clipping')        
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
-    parser.add_argument('--lr_sh_rate', type=int, default=150, help='number of steps to drop the lr')  
-    parser.add_argument('--use_lrschd', action="store_true", default=True, help='Use lr rate scheduler')
-    parser.add_argument('--tag', default='tag', help='personal tag for the model ')
 
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true
