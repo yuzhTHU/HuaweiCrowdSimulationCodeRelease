@@ -13,3 +13,6 @@ __pycache__/
 /baselines/spdiff/data_origin/
 /baselines/spdiff/experiments/
 /baselines/spdiff/dataset_built/
+/baselines/mid/experiments/
+/baselines/mid/processed_data/
+/baselines/mid/raw_data/
