@@ -1,9 +1,8 @@
+import os
 import re
 import sys
 import json
-import yaml
 import time
-import dill
 import torch
 import shlex
 import random
@@ -11,15 +10,15 @@ import logging
 import numpy as np
 import torch.nn as nn
 import torch.utils.data as D
+import torch.distributions.multivariate_normal as torchdist
 from tqdm import tqdm
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 from datetime import datetime
 from socket import gethostname
+from argparse import ArgumentParser
 from setproctitle import setproctitle
-from argparse import ArgumentParser, Namespace
-from scipy.spatial.distance import pdist, squareform
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset, ORCADataset
 from src.model import Model, RelativeModel, NewModel
 from src.diffusion import DDPM, DDIM
@@ -32,52 +31,430 @@ from src.utils.tag2ansi import tag2ansi
 from src.utils.calc_xy_error import calc_xy_error
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 
-from baselines.mid.models.trajectron import Trajectron
-from baselines.mid.utils.model_registrar import ModelRegistrar
-from baselines.mid.utils.trajectron_hypers import get_traj_hypers
-from baselines.mid.environment.scene_graph import TemporalSceneGraph
-from baselines.mid.environment.node_type import NodeType
-from baselines.mid.models.autoencoder import AutoEncoder
-from baselines.mid.models.encoders.mgcvae import MultimodalGenerativeCVAE
-from baselines.mid.environment.environment import Environment
-from baselines.mid.environment.scene import Scene
+from baselines.social_stgcnn.model import social_stgcnn
+from baselines.social_stgcnn.metrics import bivariate_loss, seq_to_nodes, nodes_rel_to_nodes_abs, ade, fde
+from baselines.social_stgcnn.utils import seq_to_graph
 
-_logger = logging.getLogger("src.train_mid")
+_logger = logging.getLogger("src.train_trace")
 
+
+import torch
+import torch.nn.functional as F
+
+def get_local_map_data(
+    global_map_tensor, 
+    pos, 
+    yaw, 
+    map_xmin, map_xmax, map_ymin, map_ymax,
+    raster_size=224, 
+    pixel_size=1.0/2.0, # 默认 2 pixels per meter (根据需求调整，TRACE 可能用 1/2 或 1/4)
+    ego_center=(0.5, 0.5), # Agent 在局部图中心
+    device='cuda'
+):
+    """
+    Args:
+        global_map_tensor: (W, H) float tensor. 0=Free, 1=Obstacle, NaN=Void.
+        pos: (B*N, 2) Global positions.
+        yaw: (B*N, 1) Global headings (radians).
+        map_xmin, ...: Global map boundaries.
+        raster_size: Output image size (H, W).
+        pixel_size: Meters per pixel.
+        
+    Returns:
+        image: (B*N, 1, raster_size, raster_size)
+               Ch0: Obstacle (1.0 where map==1)
+               Ch1: Drivable (1.0 where map==0)
+               Ch2: Valid (1.0 where map is not NaN)
+        raster_from_agent: (B*N, 3, 3) Transformation matrix.
+    """
+    num_agents = pos.shape[0]
+    
+    # 1. 准备 Global Map 用于 grid_sample
+    # map 是 (W, H)，对应 (X, Y)。
+    # PyTorch image 是 (H, W) 即 (Rows, Cols)。
+    # grid_sample 的 grid 是 (x, y)，对应 (Width, Height)。
+    # 所以我们需要把 map 转置为 (H, W) 以匹配 grid_sample 的 (y, x) 逻辑
+    # Input: (1, 1, H, W)
+    map_in = global_map_tensor.T.unsqueeze(0).unsqueeze(0).to(device) # (1, 1, H_global, W_global)
+
+    # 2. 构建 raster_from_agent (Agent Frame -> Image Pixel Frame)
+    # 定义: Agent X+ (Forward) -> Image U+ (Right)
+    #       Agent Y+ (Left)    -> Image V- (Up)  (图像坐标系 Y 向下)
+    s = 1.0 / pixel_size
+    u0 = raster_size * ego_center[0]
+    v0 = raster_size * ego_center[1]
+    
+    # M = [[s, 0, u0], [0, -s, v0], [0, 0, 1]]
+    raster_from_agent = torch.tensor([
+        [s,   0.0, u0],
+        [0.0, -s,  v0],
+        [0.0, 0.0, 1.0]
+    ], device=device).unsqueeze(0).expand(num_agents, -1, -1)
+
+    # 3. 生成采样网格 (Inverse Warp: Pixel -> Global)
+    # (A) Generate Pixel Grid (u, v)
+    u_grid, v_grid = torch.meshgrid(
+        torch.arange(raster_size, device=device, dtype=torch.float32),
+        torch.arange(raster_size, device=device, dtype=torch.float32),
+        indexing='xy'
+    )
+    # (N, H, W, 3) Homogeneous
+    pixel_grid = torch.stack([u_grid, v_grid, torch.ones_like(u_grid)], dim=-1)
+    pixel_grid = pixel_grid.unsqueeze(0).expand(num_agents, -1, -1, -1)
+    
+    # (B) Pixel -> Agent (M_inv)
+    M_inv = torch.inverse(raster_from_agent) # (N, 3, 3)
+    
+    # Reshape for matmul: (N, H*W, 3)
+    pixel_flat = pixel_grid.reshape(num_agents, -1, 3)
+    agent_flat = torch.bmm(pixel_flat, M_inv.transpose(1, 2)) # (x_a, y_a, 1)
+
+    # (C) Agent -> Global
+    # Global = R(yaw) * Agent + Pos
+    c = torch.cos(yaw).squeeze(-1).unsqueeze(1) # (N, 1)
+    s = torch.sin(yaw).squeeze(-1).unsqueeze(1)
+    p_x = pos[..., 0].unsqueeze(1)
+    p_y = pos[..., 1].unsqueeze(1)
+    
+    x_a = agent_flat[..., 0]
+    y_a = agent_flat[..., 1]
+    
+    x_global = x_a * c - y_a * s + p_x
+    y_global = x_a * s + y_a * c + p_y
+    
+    # (D) Global -> Normalized Grid [-1, 1] for grid_sample
+    # map index i = (x - xmin) / (xmax - xmin) * W
+    # normalized = (i / W) * 2 - 1 = (x - xmin)/(range) * 2 - 1
+    
+    norm_x = (x_global - map_xmin) / (map_xmax - map_xmin) * 2.0 - 1.0
+    norm_y = (y_global - map_ymin) / (map_ymax - map_ymin) * 2.0 - 1.0
+    
+    # Stack into (N, H, W, 2)
+    # 注意: grid_sample 期望最后一个维度是 (x, y)，对应 map_in 的 (Width, Height)
+    # 我们的 map_in 是 (H_global, W_global)。
+    # grid.x 采样 Width (dim 3), grid.y 采样 Height (dim 2)
+    # 这里的 norm_x 对应 W_global，norm_y 对应 H_global，顺序正确
+    grid = torch.stack([norm_x, norm_y], dim=-1).reshape(num_agents, raster_size, raster_size, 2)
+
+    # 4. 采样
+    # map_in: (1, 1, H, W) -> expand N
+    # mode='nearest' 因为是分类地图
+    # padding_mode='zeros' 越界视为 0 (空地/未知)
+    # sampled: (N, 1, H, W)
+    raw_crop = F.grid_sample(map_in.expand(num_agents, -1, -1, -1), grid, mode='nearest', padding_mode='zeros', align_corners=False)
+
+    # 5. 构建多通道 Image
+    # 原始值: 0=空, 1=障, NaN=缺失
+    # 通道设计:
+    # Ch0: Obstacle (1 if val==1)
+    # Ch1: Drivable (1 if val==0)
+    # Ch2: Valid Area (1 if not NaN)
+    
+    is_nan = torch.isnan(raw_crop)
+    is_obstacle = (raw_crop == 1.0) & (~is_nan)
+    is_drivable = (raw_crop == 0.0) & (~is_nan)
+    is_valid = ~is_nan
+    
+    image = (
+        1 * is_obstacle.float() +
+        0 * is_drivable.float() +
+        0 * is_valid.float() 
+    ) # (N, 1, H, W)
+
+    return image, raster_from_agent
+
+
+def parse_data(args, batch, map_data):
+    # 1. 读取基础数据
+    pos = batch['pos'].to(args.device)  # (B, N, 2)
+    vel = batch['vel'].to(args.device)  # (B, N, 2)
+    hst = batch['hst'].to(args.device)  # (B, N, 8, 2)
+    future_pos = batch['future_pos'].to(args.device) # (B, N, 12, 2)
+    ped_length = batch['ped_length'].to(args.device) # (B,) 每个场景的有效行人数
+
+    B, N, _ = pos.shape
+    
+    # === [关键修正 1] 构建精确的 Valid Mask ===
+    # 形状: (B, N)
+    # 对应位置为 True 表示该行人是真实存在的，False 表示是 Padding
+    range_tensor = torch.arange(N, device=args.device).unsqueeze(0) # (1, N)
+    valid_mask = range_tensor < ped_length.unsqueeze(1) # (B, 1) -> (B, N)
+
+    # 2. 拼接与切片 History
+    # hst(8) + pos(1) -> 9 帧 -> 切片取后 8 帧
+    # 注意: Padding 的数据在这里依然保留，但在最后一步会被过滤掉
+    history_full = torch.concat([hst, pos.unsqueeze(-2)], dim=-2)
+    required_frames = 8 
+    history_global = history_full[..., -required_frames:, :] # (B, N, 8, 2)
+
+    # 3. 建立局部坐标系参数
+    origin = pos.view(B, N, 1, 1, 2)
+    theta = torch.atan2(vel[..., 1], vel[..., 0]).view(B, N, 1, 1)
+    c, s = torch.cos(theta), torch.sin(theta)
+
+    # 辅助函数
+    def global_to_local(points_global):
+        delta = points_global - origin
+        x = delta[..., 0] * c + delta[..., 1] * s
+        y = delta[..., 0] * (-s) + delta[..., 1] * c
+        return torch.stack([x, y], dim=-1)
+
+    def normalize_yaw(yaw_global):
+        if yaw_global.dim() == 3: 
+            ref = theta.view(B, N, 1)
+        elif yaw_global.dim() == 4:
+            ref = theta # (B, N, 1, 1)
+        else:
+            ref = theta
+        yaw_rel = yaw_global - ref
+        return (yaw_rel + torch.pi) % (2 * torch.pi) - torch.pi
+
+    # 4. Target 处理
+    target_pos_local = global_to_local(future_pos.unsqueeze(2)).squeeze(2)
+    target_vel_local = target_pos_local.diff(dim=2, prepend=torch.zeros(B, N, 1, 2, device=args.device)) * args.fps
+    target_yaws_local = torch.atan2(target_vel_local[..., 1], target_vel_local[..., 0]).unsqueeze(-1)
+    # Target Avail: 只要是 Valid Agent，我们假设其 Future 都是需要预测的 (除非 Future 也是 NaN)
+    # 这里简单处理，稍后统一用 valid_mask 过滤
+
+    # 5. Ego History 处理
+    history_pos_local = global_to_local(history_global.unsqueeze(2)).squeeze(2)
+    
+    history_vel_global = history_global.diff(dim=-2, prepend=torch.zeros(B, N, 1, 2, device=args.device)) * args.fps
+    # 修正首帧速度 (复制第二帧)
+    # history_vel_global[:, :, 0] = history_vel_global[:, :, 1] # 可选优化
+    
+    history_speeds = history_vel_global.norm(dim=-1)
+    history_yaw_global = torch.atan2(history_vel_global[..., 1], history_vel_global[..., 0])
+    history_yaws_local = normalize_yaw(history_yaw_global).unsqueeze(-1)
+    
+    curr_speed = vel.norm(dim=-1)
+
+    # 6. Neighbor History 处理
+    # 构造邻居索引 (N, N-1)
+    indices = torch.arange(N, device=args.device)
+    mask_eye = ~torch.eye(N, dtype=torch.bool, device=args.device)
+    neighbor_indices = indices.unsqueeze(0).expand(N, N)[mask_eye].reshape(N, N-1)
+    
+    raw_neighbor_pos = history_global[:, neighbor_indices] # (B, N, N-1, 8, 2)
+    neighbor_pos_local = global_to_local(raw_neighbor_pos)
+
+    raw_neighbor_vel = raw_neighbor_pos.diff(dim=-2) * args.fps
+    raw_neighbor_vel = torch.cat([raw_neighbor_vel[..., :1, :], raw_neighbor_vel], dim=-2)
+    
+    neighbor_speeds = raw_neighbor_vel.norm(dim=-1)
+    raw_neighbor_yaw = torch.atan2(raw_neighbor_vel[..., 1], raw_neighbor_vel[..., 0])
+    neighbor_yaws_local = normalize_yaw(raw_neighbor_yaw).unsqueeze(-1)
+    neighbor_extents = torch.zeros(B, N, N-1, 3, device=args.device)
+
+    # === [关键修正 2] Neighbor Mask 处理 ===
+    # 我们需要判断取到的 "邻居" 是否是 Padding 里的无效行人
+    # valid_mask: (B, N)
+    # 我们需要将其扩展并 gather 到 (B, N, N-1)
+    
+    # 1. 扩展 Valid Mask: (B, N) -> (B, N, N) (每个 Ego 看到的 N 个潜在邻居)
+    valid_mask_expanded = valid_mask.unsqueeze(1).expand(B, N, N)
+    
+    # 2. 使用 neighbor_indices 提取 N-1 个邻居的有效性
+    # neighbor_indices: (N, N-1) -> (B, N, N-1)
+    idx_expanded = neighbor_indices.unsqueeze(0).expand(B, N, N-1)
+    
+    # 3. Gather 得到邻居的有效性 Mask
+    # shape: (B, N, N-1)
+    # True 表示该邻居是真实存在的，False 表示该邻居是 Padding
+    neighbor_validity_mask = torch.gather(valid_mask_expanded, 2, idx_expanded)
+    
+    # 4. 结合原本的数据 NaN 检查 (双重保险)
+    neigh_data_valid = ~raw_neighbor_pos.isnan().any(dim=-1) # (B, N, N-1, 8)
+    
+    # 最终 Neighbor Avail: (数据非NaN) AND (邻居是真实行人)
+    # 注意广播: (B, N, N-1, 8) & (B, N, N-1, 1)
+    neighbor_avail = (neigh_data_valid & neighbor_validity_mask.unsqueeze(-1)).float()
+
+
+    # 7. Ego Availability
+    ego_data_valid = ~history_global.isnan().any(dim=-1) # (B, N, 8)
+    # Ego Avail 不需要在这里与 valid_mask 结合，因为最后我们会直接丢弃无效 Ego
+    history_avail = ego_data_valid.float()
+
+    # 8. Clean Data (置零)
+    def clean_data(data, mask):
+        while mask.dim() < data.dim():
+            mask = mask.unsqueeze(-1)
+        return data * mask
+    
+    history_pos_local = clean_data(history_pos_local, history_avail)
+    history_yaws_local = clean_data(history_yaws_local, history_avail)
+    history_speeds = clean_data(history_speeds, history_avail)
+
+    neighbor_pos_local = clean_data(neighbor_pos_local, neighbor_avail)
+    neighbor_yaws_local = clean_data(neighbor_yaws_local, neighbor_avail)
+    neighbor_speeds = clean_data(neighbor_speeds, neighbor_avail)
+    
+    target_pos_local[torch.isnan(target_pos_local)] = 0.0
+    target_yaws_local[torch.isnan(target_yaws_local)] = 0.0
+    extent = torch.zeros(B, N, 3, device=args.device)
+
+    # === [关键修正 3] 只保留 Valid Agents ===
+    # 使用 valid_mask (B, N) 对所有数据进行索引
+    # 结果将自动 Flatten 为 (Total_Valid_Agents, ...)
+    
+    # 提取有效行人的数据
+    valid_ego_pos = history_pos_local[valid_mask]         # (M, 8, 2)
+    valid_ego_yaws = history_yaws_local[valid_mask]       # (M, 8, 1)
+    valid_ego_speeds = history_speeds[valid_mask]         # (M, 8)
+    valid_ego_avail = history_avail[valid_mask]           # (M, 8)
+    valid_extent = extent[valid_mask]                     # (M, 3)
+    valid_curr_speed = curr_speed[valid_mask]             # (M)
+    
+    valid_target_pos = target_pos_local[valid_mask]       # (M, 12, 2)
+    valid_target_yaws = target_yaws_local[valid_mask]     # (M, 12, 1)
+    
+    # 邻居数据也要对应提取 (只保留有效 Ego 的邻居数据)
+    # 这一步过滤的是 "Ego"，保留的是 "该有效 Ego 的 N-1 个邻居"
+    # 至于这 N-1 个邻居里哪些是 Padding，已经由 neighbor_avail 处理为 0 了
+    valid_neigh_pos = neighbor_pos_local[valid_mask]      # (M, N-1, 8, 2)
+    valid_neigh_yaws = neighbor_yaws_local[valid_mask]    # (M, N-1, 8, 1)
+    valid_neigh_speeds = neighbor_speeds[valid_mask]      # (M, N-1, 8)
+    valid_neigh_avail = neighbor_avail[valid_mask]        # (M, N-1, 8)
+    valid_neigh_extents = neighbor_extents[valid_mask]    # (M, N-1, 3)
+
+    # 处理 Single Agent 情况 (防止 reshape 报错)
+    if valid_neigh_pos.shape[1] == 0:
+         curr_bs = valid_neigh_pos.shape[0]
+         valid_neigh_pos = torch.zeros(curr_bs, 1, 8, 2, device=args.device)
+         valid_neigh_yaws = torch.zeros(curr_bs, 1, 8, 1, device=args.device)
+         valid_neigh_speeds = torch.zeros(curr_bs, 1, 8, device=args.device)
+         valid_neigh_extents = torch.zeros(curr_bs, 1, 3, device=args.device)
+         valid_neigh_avail = torch.zeros(curr_bs, 1, 8, device=args.device)
+
+    # 9. Pack
+    model_input = {
+        'target_positions': valid_target_pos.nan_to_num(0.0),
+        'target_yaws': valid_target_yaws.nan_to_num(0.0),
+        'curr_speed': valid_curr_speed.nan_to_num(0.0),
+        
+        'history_positions': valid_ego_pos.nan_to_num(0.0),
+        'history_yaws': valid_ego_yaws.nan_to_num(0.0),
+        'history_speeds': valid_ego_speeds.nan_to_num(0.0),
+        'extent': valid_extent.nan_to_num(0.0),
+        'history_availabilities': valid_ego_avail.nan_to_num(0.0),
+        
+        'all_other_agents_history_positions': valid_neigh_pos.nan_to_num(0.0),
+        'all_other_agents_history_yaws': valid_neigh_yaws.nan_to_num(0.0),
+        'all_other_agents_history_speeds': valid_neigh_speeds.nan_to_num(0.0),
+        'all_other_agents_extents': valid_neigh_extents.nan_to_num(0.0),
+        'all_other_agents_history_availabilities': valid_neigh_avail.nan_to_num(0.0),
+        
+        # Image 和 Raster 也要只保留 Valid Ego 的
+        'image': torch.zeros(valid_ego_pos.shape[0], 1, 224, 224, device=args.device),
+        'raster_from_agent': torch.eye(3, device=args.device).unsqueeze(0).expand(valid_ego_pos.shape[0], -1, -1),
+    }
+
+    sample_valid_mask = torch.arange(N, device=args.device).unsqueeze(0) < ped_length.unsqueeze(1)
+    yaw = torch.atan2(vel[..., 1], vel[..., 0]).unsqueeze(-1)
+    valid_pos = pos[sample_valid_mask]
+    valid_yaw = yaw[sample_valid_mask]
+    img, r_f_a = get_local_map_data(
+        global_map_tensor=torch.from_numpy(map_data.map).float().to(args.device),
+        pos=valid_pos,
+        yaw=valid_yaw,
+        map_xmin=map_data.xmin,
+        map_xmax=map_data.xmax, 
+        map_ymin=map_data.ymin, 
+        map_ymax=map_data.ymax,
+        device=args.device
+    )
+    model_input['image'] = img
+    model_input['raster_from_agent'] = r_f_a
+
+    return model_input
+
+
+import torch
+
+def convert_predictions_to_global(pred_trajs, batch, args):
+    """
+    将模型输出的局部坐标轨迹转换为与 future_pos 对齐的全局坐标轨迹。
+    
+    Args:
+        pred_trajs: (Valid_Ped, Sample, T, 2) 模型预测的局部轨迹
+                    其中 Valid_Ped = sum(batch['ped_length'])
+        batch: DataLoader yield 的 batch 字典，必须包含 'pos', 'vel', 'ped_length', 'future_pos'
+        args: 包含 device 设置
+        
+    Returns:
+        pos_pred_global: (B, N, Sample, T, 2) 全局坐标下的预测轨迹 (Padding部分为NaN或0)
+        pos_true_global: (B, N, 1, T, 2) 扩展维度后的 Ground Truth，可直接与前者作差
+    """
+    # 1. 获取 Batch 基础信息
+    pos = batch['pos'].to(args.device)  # (B, N, 2) 当前全局位置
+    vel = batch['vel'].to(args.device)  # (B, N, 2) 当前全局速度 (用于确定航向)
+    ped_length = batch['ped_length'].to(args.device) # (B,) 每个样本的有效行人数
+    
+    B, N, _ = pos.shape
+    num_samples = pred_trajs.shape[1]
+    horizon = pred_trajs.shape[2]
+
+    # 2. 构建有效行人掩码 (Valid Mask)
+    # shape: (B, N) -> True 表示该位置是有效行人
+    valid_mask = torch.arange(N, device=args.device).unsqueeze(0) < ped_length.unsqueeze(1)
+    
+    # 3. 提取有效行人的参考系参数 (Origin & Heading)
+    # origin: (Valid_Ped, 2)
+    origin_valid = pos[valid_mask] 
+    
+    # heading: (Valid_Ped,)
+    vel_valid = vel[valid_mask]
+    theta = torch.atan2(vel_valid[..., 1], vel_valid[..., 0])
+    
+    # 准备旋转矩阵参数，并扩展维度以支持广播: (Valid_Ped, 1, 1) -> 对应 (Sample, Time)
+    c = torch.cos(theta).view(-1, 1, 1) 
+    s = torch.sin(theta).view(-1, 1, 1)
+    origin_valid = origin_valid.view(-1, 1, 1, 2)
+
+    # 4. 执行逆变换 (Local -> Global)
+    # 公式: 
+    # x_global = x_local * cos - y_local * sin + origin_x
+    # y_global = x_local * sin + y_local * cos + origin_y
+    
+    x_local = pred_trajs[..., 0] # (Valid_Ped, S, T)
+    y_local = pred_trajs[..., 1]
+    
+    x_global = x_local * c - y_local * s + origin_valid[..., 0]
+    y_global = x_local * s + y_local * c + origin_valid[..., 1]
+    
+    # (Valid_Ped, S, T, 2)
+    pred_global_valid = torch.stack([x_global, y_global], dim=-1)
+    
+    # 5. Scatter 回 (B, N) 的网格结构
+    # 初始化一个全 NaN 的容器 (避免 Padding 位置的 0 干扰 min/mean 计算)
+    pos_pred_global = torch.full((B, N, num_samples, horizon, 2), float('nan'), device=args.device)
+    
+    # 将有效轨迹填入对应的位置
+    pos_pred_global[valid_mask] = pred_global_valid
+    
+    return pos_pred_global
 
 def train_once(
     args,
     train_loaders: List[D.DataLoader],
     model: Model,
     optimizer: torch.optim.Optimizer,
-    scheduler,
     criterion: nn.Module,
     diffusion: DDPM,
     epoch: int,
 ) -> Dict:
-    """ 
-    进行单步训练
 
-    Args:
-        args: 全局参数
-        train_loaders: 训练数据加载器列表
-        model: 待训练模型
-        optimizer: 优化器
-        criterion: 损失函数
-        diffusion: 扩散模型
-        epoch: 当前训练轮数
-    
-    Returns:
-        all_records: 训练记录字典
-    """
+    model.train()
+
     train_timer = NamedTimer(unit='it', mode='pace')
     records_list = []
     for loader in train_loaders:
-        map_data = loader.dataset.map_data
-        map = torch.from_numpy(map_data.map).to(args.device).float()
         records = dict(loss=[])
-        for batch in tqdm(loader, total=len(loader), disable=False, leave=False, dynamic_ncols=True):
+        map_data = loader.dataset.map_data
+        for cnt, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
             optimizer.zero_grad()
+
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
             hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
@@ -91,92 +468,66 @@ def train_once(
             veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
             train_timer.add('prepare data')
 
-            batch_size, ped_num, _ = pos.shape
-            mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
-            history = torch.zeros(hst.shape[0], hst.shape[1], hst.shape[2]+1, 6, device=args.device)
-            history[:, :, :-1, :2] = (hst_pos := hst)
-            history[:, :, 1:-1, 2:4] = (hst_vel := hst_pos.diff(axis=-2) * args.fps)
-            history[:, :, 2:-1, 4:6] = (hst_acc := hst_vel.diff(axis=-2) * args.fps)
-            history[:, :, -1, :2] = pos
-            history[:, :, -1, 2:4] = vel
-            history[:, :, -1, 4:6] = (vel - (hst[:, :, -1, :] - hst[:, :, -2, :]) * args.fps) * args.fps
-            history = history[:, :, 1:, :]
-            history = history.nan_to_num(0.0)
-            future = future_acc.nan_to_num(0.0)
-            x_t_list = []
-            x_st_t_list = []
-            y_t_list = []
-            y_st_t_list = []
-            neighbors_data_st_list = []
-            neighbors_edge_value_list = []
-            for batch_idx in range(pos.shape[0]):
-                history_t = history[batch_idx, mask[batch_idx], :, :]
-                future_t = future[batch_idx, mask[batch_idx], :, :]
-                dist_cube = np.stack([
-                    squareform(pdist(history_t[:, -3, :].cpu().numpy(), metric='euclidean')),
-                    squareform(pdist(history_t[:, -2, :].cpu().numpy(), metric='euclidean')),
-                    squareform(pdist(history_t[:, -1, :].cpu().numpy(), metric='euclidean'))
-                ], axis=0)
-                adj_cube = (dist_cube < 3.0).astype(int)
-                weight_cube = np.divide(1., dist_cube, out=np.zeros_like(dist_cube), where=(dist_cube>0))
-                edge_scaling = TemporalSceneGraph.calculate_edge_scaling(adj_cube, edge_addition_filter=[0.25, 0.5, 0.75, 1.0], edge_removal_filter=[1.0, 0.0])
-                connection_mask = edge_scaling > 1e-2
-                weight_cube = torch.from_numpy(weight_cube).float().to(args.device)
-                connection_mask = torch.from_numpy(connection_mask).float().to(args.device)
-                x_t = history_t  # (num_pedestrian, hist_step, 6)
-                x_st_t = x_t - x_t[:, (-1,), :]; x_st_t[:, :2] /= 3  # (num_pedestrian, hist_step, 6)
-                y_t = future_t  # (num_pedestrian, pred_step, 2)
-                y_st_t = y_t # - y_t[:, (0,), :2]; y_st_t[:, :2] /= 2  # (num_pedestrian, pred_step, 2)
-                neighbors_data_st = [[] for i in range(mask[batch_idx].sum())]
-                neighbors_edge_value = [[] for i in range(mask[batch_idx].sum())]
-                for i, j in connection_mask[0, :, :].nonzero():
-                    neighbors_data_st[i].append(x_st_t[j])
-                    neighbors_edge_value[i].append(weight_cube[-1, i, j])
-                x_t_list.extend(list(x_t))
-                x_st_t_list.extend(list(x_st_t))
-                y_t_list.extend(list(y_t))
-                y_st_t_list.extend(list(y_st_t))
-                neighbors_data_st_list.extend(neighbors_data_st)
-                neighbors_edge_value_list.extend([torch.stack(x) if len(x) else torch.tensor([]) for x in neighbors_edge_value])
-            x_t = torch.stack(x_t_list, dim=0)  # (batch_size * num_pedestrian, hist_step, 6)
-            x_st_t = torch.stack(x_st_t_list, dim=0)  # (batch_size * num_pedestrian, hist_step, 6)
-            y_t = torch.stack(y_t_list, dim=0)  # (batch_size * num_pedestrian, pred_step, 2)
-            y_st_t = torch.stack(y_st_t_list, dim=0)  # (batch_size * num_pedestrian, pred_step, 2)
-            node_type = NodeType('PEDESTRIAN', 1)
-            neighbors_data_st = {(node_type, node_type): neighbors_data_st_list}
-            neighbors_edge_value = {(node_type, node_type): neighbors_edge_value_list}
-            first_history_index = torch.zeros(x_t.shape[0], dtype=torch.long).to(args.device)
-            robot_traj_st_t = None
-            mid_map = None
-            batch = (
-                first_history_index,  # 0
-                x_t,  # (batch_size, hist-step, 6)
-                y_t,  # (batch_size, pred-step, 2)
-                x_st_t,  # (batch_size, hist-step, 6) 
-                y_st_t,  # (batch_size, pred-step, 2)
-                neighbors_data_st, # (batch_size, hist-step, 6)
-                neighbors_edge_value, #
-                robot_traj_st_t, # None
-                mid_map # None
-            )
+            model_input = parse_data(args, batch, map_data)            
 
-            x0 = future_acc # [mask, :, :]
-            batch_size = x0.shape[0]
-            denoise_t = torch.randint(1, args.T+1, (batch_size,), device=args.device)  # (batch_size,)
-            denoise_t = denoise_t.long()
-            at = diffusion.alpha_bar[denoise_t].view(batch_size, 1, 1, 1)
-            noise = torch.randn_like(x0, device=args.device)
-            xt = torch.sqrt(at) * x0 + torch.sqrt(1 - at) * noise
-            feat_x_encoded = model.encode(batch, node_type) # B * 64
-            x0_hat = model.diffusion.net(xt[mask], beta=denoise_t[:, None].expand(xt.shape[:2])[mask], context=feat_x_encoded)
-            loss = torch.nn.functional.mse_loss(x0_hat, x0[mask])
-            train_timer.add('forward')
+            # Move data to device (Assuming batch_utils logic or manual move)
+            # In your snippet, you unpacked specific vars. TRACE needs the dict.
+            model_input = {k: v.to(args.device) if hasattr(v, 'to') else v for k, v in model_input.items()}
             
-            ## Backpropagate
+            # [TRACE] Conditioning Dropout Logic (from algos.py training_step)
+            # This logic mimics the random masking of map/neighbors for classifier-free guidance
+            if hasattr(model, 'use_cond') and model.use_cond:
+                # 1. Map Dropout
+                if hasattr(model, 'use_rasterized_map') and model.use_rasterized_map:
+                    if model.cond_drop_map_p > 0:
+                        # Assuming 'image' is in batch (B, C, H, W)
+                        num_sem_layers = model_input['maps'].size(1) if 'maps' in model_input else 0
+                        drop_mask = torch.rand((model_input["image"].size(0)), device=args.device) < model.cond_drop_map_p
+                        # Fill last N layers with fill value
+                        if 'image' in model_input:
+                             model_input["image"][drop_mask, -num_sem_layers:] = model.cond_fill_val
+
+                # 2. Neighbor Dropout
+                if model.cond_drop_neighbor_p > 0:
+                    if "all_other_agents_history_availabilities" in model_input:
+                        B = model_input["all_other_agents_history_availabilities"].size(0)
+                        drop_mask = torch.rand((B), device=args.device) < model.cond_drop_neighbor_p
+                        model_input["all_other_agents_history_availabilities"][drop_mask] = 0
+            
+            # --- [TRACE] 3. Loss Calculation ---
+            # The model computes losses internally based on the batch
+            # Note: We access the internal policy if wrapped in LightningModule
+            policy_net = model.nets["policy"] if hasattr(model, 'nets') else model
+            loss_dict = policy_net.compute_losses(model_input)
+            # Aggregate losses using weights from config
+            loss = 0.0
+            loss_weights = args.loss_weights if hasattr(args, 'loss_weights') else {}
+
+            for lk, l in loss_dict.items():
+                # Apply weight if it exists, otherwise default to 1.0
+                weight = loss_weights.get(lk, 1.0)
+                loss += l * weight
+                
+                # Optional: Record individual losses
+                # records[lk] = records.get(lk, []) + [l.item()] * args.batch_size
+
             loss.backward()
+
+            if args.clip_grad is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
+                
             optimizer.step()
-            records['loss'].extend([loss.item()] * future_acc.shape[0])
-            train_timer.add('backpropagate')
+            # [TRACE] 4. EMA Step (Important!)
+            # If using EMA, you must manually update it here
+            if hasattr(model, 'use_ema') and model.use_ema:
+                # Assuming 'step' is tracked, otherwise use cnt or global_step
+                current_step = (epoch - 1) * len(loader) + cnt 
+                if current_step % model.ema_update_every == 0:
+                    model.step_ema(current_step)
+
+            records['loss'].extend([loss.item()] * args.batch_size)
+            train_timer.add('backward')
+
         records_list.append(records)
         _logger.debug(
             f"[Epoch {epoch}/{args.epochs}] Train on {loader.dataset.name}: "
@@ -191,7 +542,9 @@ def train_once(
         for k, v in records.items():
             if k not in all_records:
                 all_records[k] = []
-            if isinstance(v[0], (int, float)):
+            if not isinstance(v, (list, tuple, np.ndarray)) or len(v) == 0:
+                mean_v = np.nan
+            elif isinstance(v[0], (int, float)):
                 mean_v = np.mean(v)
             else: 
                 mean_v = np.mean(v, axis=0).tolist()
@@ -201,7 +554,7 @@ def train_once(
         f"[#66CCFF]Loss={np.mean(all_records['loss']):.4f} "
         f"[#66CCFF]Time={train_timer}"
     ))
-    return all_records
+    return records
 
 
 def test_once(
@@ -212,28 +565,17 @@ def test_once(
     diffusion: DDPM,
     epoch: int,
 ) -> Dict:
-    """
-    进行单步测试
-
-    Args:
-        args: 全局参数
-        test_loaders: 测试数据加载器列表
-        model: 待测试模型
-        criterion: 损失函数
-        diffusion: 扩散模型
-        epoch: 当前训练轮数
-
-    Returns:
-        all_records: 测试记录字典    
-    """
+    
+    model.eval()
     test_timer = NamedTimer(unit='it', mode='pace')
     records_list = []
+    step = 0
     for loader in test_loaders:
         map_data = loader.dataset.map_data
-        map = torch.from_numpy(map_data.map).to(args.device).float()
-        test_timer.add('prepare data')
         records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[], collision_ped=[], collision_veh=[], collision_map=[])
-        for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
+        for batch in tqdm(loader, leave=False, disable=False, dynamic_ncols=True): 
+            step+=1
+
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
             hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
@@ -245,128 +587,31 @@ def test_once(
             future_veh = batch['future_veh'].to(args.device)  # (batch_size, #vehicle, pred_step*roll_step, 2)
             ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
             veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
-            test_timer.add('prepare data', n=0)
+            test_timer.add('prepare_data')
 
             start_time = time.time()
-
-            batch_size, ped_num, _ = pos.shape
-            mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
-            history = torch.zeros(hst.shape[0], hst.shape[1], hst.shape[2]+1, 6, device=args.device)
-            history[:, :, :-1, :2] = (hst_pos := hst)
-            history[:, :, 1:-1, 2:4] = (hst_vel := hst_pos.diff(axis=-2) * args.fps)
-            history[:, :, 2:-1, 4:6] = (hst_acc := hst_vel.diff(axis=-2) * args.fps)
-            history[:, :, -1, :2] = pos
-            history[:, :, -1, 2:4] = vel
-            history[:, :, -1, 4:6] = (vel - (hst[:, :, -1, :] - hst[:, :, -2, :]) * args.fps) * args.fps
-            history = history[:, :, 1:, :]
-            history = history.nan_to_num(0.0)
-            future = future_acc.nan_to_num(0.0)
-            x_t_list = []
-            x_st_t_list = []
-            y_t_list = []
-            y_st_t_list = []
-            neighbors_data_st_list = []
-            neighbors_edge_value_list = []
-            for batch_idx in range(pos.shape[0]):
-                history_t = history[batch_idx, mask[batch_idx], :, :]
-                future_t = future[batch_idx, mask[batch_idx], :, :]
-                dist_cube = np.stack([
-                    squareform(pdist(history_t[:, -3, :].cpu().numpy(), metric='euclidean')),
-                    squareform(pdist(history_t[:, -2, :].cpu().numpy(), metric='euclidean')),
-                    squareform(pdist(history_t[:, -1, :].cpu().numpy(), metric='euclidean'))
-                ], axis=0)
-                adj_cube = (dist_cube < 3.0).astype(int)
-                weight_cube = np.divide(1., dist_cube, out=np.zeros_like(dist_cube), where=(dist_cube>0))
-                edge_scaling = TemporalSceneGraph.calculate_edge_scaling(adj_cube, edge_addition_filter=[0.25, 0.5, 0.75, 1.0], edge_removal_filter=[1.0, 0.0])
-                connection_mask = edge_scaling > 1e-2
-                weight_cube = torch.from_numpy(weight_cube).float().to(args.device)
-                connection_mask = torch.from_numpy(connection_mask).float().to(args.device)
-                x_t = history_t  # (num_pedestrian, hist_step, 6)
-                x_st_t = x_t - x_t[:, (-1,), :]; x_st_t[:, :2] /= 3  # (num_pedestrian, hist_step, 6)
-                y_t = future_t  # (num_pedestrian, pred_step, 2)
-                y_st_t = y_t # - y_t[:, (0,), :2]; y_st_t[:, :2] /= 2  # (num_pedestrian, pred_step, 2)
-                neighbors_data_st = [[] for i in range(mask[batch_idx].sum())]
-                neighbors_edge_value = [[] for i in range(mask[batch_idx].sum())]
-                for i, j in connection_mask[0, :, :].nonzero():
-                    neighbors_data_st[i].append(x_st_t[j])
-                    neighbors_edge_value[i].append(weight_cube[-1, i, j])
-                x_t_list.extend(list(x_t))
-                x_st_t_list.extend(list(x_st_t))
-                y_t_list.extend(list(y_t))
-                y_st_t_list.extend(list(y_st_t))
-                neighbors_data_st_list.extend(neighbors_data_st)
-                neighbors_edge_value_list.extend([torch.stack(x) if len(x) else torch.tensor([]) for x in neighbors_edge_value])
-            x_t = torch.stack(x_t_list, dim=0)  # (batch_size * num_pedestrian, hist_step, 6)
-            x_st_t = torch.stack(x_st_t_list, dim=0)  # (batch_size * num_pedestrian, hist_step, 6)
-            y_t = torch.stack(y_t_list, dim=0)  # (batch_size * num_pedestrian, pred_step, 2)
-            y_st_t = torch.stack(y_st_t_list, dim=0)  # (batch_size * num_pedestrian, pred_step, 2)
-            node_type = NodeType('PEDESTRIAN', 1)
-            neighbors_data_st = {(node_type, node_type): neighbors_data_st_list}
-            neighbors_edge_value = {(node_type, node_type): neighbors_edge_value_list}
-            first_history_index = torch.zeros(x_t.shape[0], dtype=torch.long).to(args.device)
-            robot_traj_st_t = None
-            mid_map = None
-            batch = (
-                first_history_index,  # 0
-                x_t,  # (batch_size, hist-step, 6)
-                y_t,  # (batch_size, pred-step, 2)
-                x_st_t,  # (batch_size, hist-step, 6) 
-                y_st_t,  # (batch_size, pred-step, 2)
-                neighbors_data_st, # (batch_size, hist-step, 6)
-                neighbors_edge_value, #
-                robot_traj_st_t, # None
-                mid_map # None
+            model_input = parse_data(args, batch, map_data)
+            output = model(
+                model_input, 
+                num_samp=args.sample_num, 
+                class_free_guide_w=0.0,   # 如果需要 CFG 可以设为 > 0
+                return_diffusion=False,
             )
+            # [Fix 3] 直接从 output 中获取 positions，无需再通过 ['predictions']
+            # DiffuserTrafficModel.forward 返回的是 cur_policy(...)["predictions"]
+            pred_trajs = output['positions'] # (B*N, S, T, 2) 或 (B*N, T, 2) 取决于模型输出
+            pos_pred = convert_predictions_to_global(pred_trajs, batch, args)
+            pos_pred = pos_pred.permute(2, 0, 1, 3, 4)
+            rollout_time = time.time() - start_time
+            test_timer.add('sample')
 
-            feat_x_encoded = model.encode(batch, node_type).repeat(args.sample_num, 1)
-            xt = torch.randn((feat_x_encoded.shape[0], args.pred_step*args.roll_step, 2), device=args.device)  # 从噪声开始
-            steps = reversed(range(1, 101, 1))
-            for t in tqdm(steps, disable=True, leave=False, dynamic_ncols=True):
-                denoise_t = torch.full((feat_x_encoded.shape[0],), t, device=args.device, dtype=torch.long)
-                x0_hat = model.diffusion.net(xt, beta=denoise_t, context=feat_x_encoded)
-                xt = diffusion.denoise(xt, t, x0=x0_hat, stride=1)
-            predicted_y_acc = xt.reshape(args.sample_num, -1, args.roll_step*args.pred_step, 2).cpu().numpy()
-            acc_pred = torch.zeros((args.sample_num, batch_size, ped_num, args.roll_step*args.pred_step, 2), device=args.device)
-            acc_pred[:, mask, :, :] = torch.from_numpy(predicted_y_acc).to(args.device)
-            rollout_time = (time.time() - start_time)
-          
-            # edicted_y_pos = model.diffusion.sample(
-            #     args.roll_step*args.pred_step, 
-            #     feat_x_encoded, 
-            #     args.sample_num,
-            #     bestof=True, 
-            #     flexibility=0.0, 
-            #     ret_traj=False, 
-            #     sampling='ddpm', 
-            #     step=100
-            # ).cpu().numpy()
-            # traj_pred = model.generate(batch, node_type, num_points=12, sample=args.sample_num, bestof=True, sampling='ddim', step=100//5) # B * 20 * 12 * 2
-            # cnt = 0
-            # pos_pred = np.zeros((args.sample_num, batch_size, ped_num, args.roll_step*args.pred_step, 2))
-            # for i, m in enumerate(mask.cpu().numpy()):
-            #     n = m.sum()
-            #     pos_pred[:, i, m, :, :] = predicted_y_pos[:, :n, :, :]
-            #     cnt += n
-            # pos_pred = torch.from_numpy(pos_pred).to(args.device)
-            
-            batch_size, ped_num, _, _ = future_acc.shape
             # 获取有效的行人掩模
-            mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
+            mask = torch.arange(pos.shape[1], device=args.device).expand(pos.shape[0], pos.shape[1]) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
             # 计算 pos_true 和 vel_true
             acc_true = future_acc # (B, #pedestrian, roll_step*pred_step, 2)
             vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
             pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
-            max_err = np.nanmax((pos_true - future_pos).abs().cpu().numpy(), axis=(-2, -1))
-            _logger.debug(
-                f"pos_true 和 future 最大差距 > 1: {(max_err > 1).mean():.2%}, "
-                f"pos_true 和 future 最大差距 > 1e-6: {(max_err > 1e-6).mean():.2%}"
-            )
-            # pos_true = future_pos # (B, #pedestrian, roll_step*pred_step, 2)
-            # 计算 loss
-            records['loss'].extend([np.nan] * future_acc.shape[0]) # List[float]
             # 计算 distance error
-            vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, roll_step*pred_step, 2)
-            pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, roll_step*pred_step, 2)
             dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, roll_step*pred_step)
             # 移除 padding 的行人
             dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, roll_step*pred_step)
@@ -717,7 +962,7 @@ def main(args):
         eval_loaders.append(D.DataLoader(
             dataset,
             shuffle=False,
-            batch_size=args.batch_size // args.sample_num,  # 在实际测试时 batch_size 会乘上 sample_num，可能会很大导致 OOM
+            batch_size=args.batch_size, # //args.sample_num,
             num_workers=args.num_workers,
             collate_fn=dataset.collate_fn,
         ))
@@ -728,7 +973,7 @@ def main(args):
         test_loaders.append(D.DataLoader(
             dataset,
             shuffle=False,
-            batch_size=args.batch_size // args.sample_num,  # 在实际测试时 batch_size 会乘上 sample_num，可能会很大导致 OOM
+            batch_size=args.batch_size, # //args.sample_num,
             num_workers=args.num_workers,
             collate_fn=dataset.collate_fn,
         ))
@@ -740,49 +985,40 @@ def main(args):
     )
 
     ## Load Model
-    config = yaml.safe_load(open(args.config))
-    config["exp_name"] = args.config.split("/")[-1].split(".")[0]
-    # config["dataset"] = args.dataset
-    config = Namespace(**config)
-    config.device = args.device
+    # --- [TRACE] 1. Model & Optimizer Definition ---
+    from baselines.trace.tbsim.algos.algos import DiffuserTrafficModel
+    from baselines.trace.tbsim.configs.registry import get_registered_experiment_config
+    
+    # Load Config
+    # Assuming args.config_name corresponds to a registered TRACE config
+    cfg = get_registered_experiment_config('mixed_ped_diff')
+    cfg.algo.history_num_frames = 7
+    cfg.algo.history_num_frames_ego = 7
+    cfg.algo.history_num_frames_agents = 7
+    cfg.algo.future_num_frames = 12
+    cfg.algo.horizon = 12
+    
+    # 1. Define Model
+    # We instantiate the LightningModule wrapper as it contains the init logic
+    # modality_shapes must be known (usually from datamodule.modality_shapes)
+    # You might need to hardcode this or fetch from your dataset
+    modality_shapes = {
+        "image": (1, 224, 224), # Example shape
+        "history": (8, 2)
+    }
+    model = DiffuserTrafficModel(algo_config=cfg.algo, modality_shapes=modality_shapes)
+    model.to(args.device)
 
-    hyperparams = get_traj_hypers()
-    hyperparams['enc_rnn_dim_edge'] = config.encoder_dim//2
-    hyperparams['enc_rnn_dim_edge_influence'] = config.encoder_dim//2
-    hyperparams['enc_rnn_dim_history'] = config.encoder_dim//2
-    hyperparams['enc_rnn_dim_future'] = config.encoder_dim//2
-    registrar = ModelRegistrar(args.save_dir, args.device)
-    encoder = Trajectron(registrar, hyperparams, args.device)
-    model = AutoEncoder(config, encoder = encoder).to(args.device)
-    optimizer = torch.optim.Adam([
-        {'params': registrar.get_all_but_name_match('map_encoder').parameters()},
-        {'params': model.parameters()}
-    ], lr=args.lr)
-    node_type = NodeType('PEDESTRIAN', 1)
-    scene = Scene(0, dt=1/args.fps)
-    env = Environment(
-        ['PEDESTRIAN'], 
-        {'PEDESTRIAN': {'position': {'x': {'mean': 0, 'std': 1}, 'y': {'mean': 0, 'std': 1}}, 'velocity': {'x': {'mean': 0, 'std': 2}, 'y': {'mean': 0, 'std': 2}}, 'acceleration': {'x': {'mean': 0, 'std': 1}, 'y': {'mean': 0, 'std': 1}}}},
-        [scene],
-        attention_radius={(node_type, node_type): 3.0},
-        robot_type=None
+    # 2. Define Optimizer
+    # TRACE uses Adam with params from the config
+    optim_params = cfg.algo.optim_params["policy"]
+    optimizer = torch.optim.Adam(
+        params=model.nets["policy"].parameters(),
+        lr=optim_params["learning_rate"]["initial"]
     )
-    encoder.node_models_dict[node_type] = MultimodalGenerativeCVAE(
-        env,
-        node_type,
-        registrar,
-        hyperparams,
-        args.device,
-        [(node_type, node_type)]
-    )
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,gamma=0.98)
-    criterion = torch.nn.MSELoss()
-    if args.sampling_method == "DDIM":
-        diffusion = DDIM(args)
-    elif args.sampling_method == "DDPM":
-        diffusion = DDPM(args, flexibility=0.0)
-    else:
-        raise ValueError(f"Unknown sampling_method {args.sampling_method}!")
+    
+    criterion = None # Loss is computed inside the model
+    diffusion = None # Diffusion logic is inside the model
     _logger.note(
         "Model Parameters:\n"
         f"Trainable: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}\n"
@@ -829,10 +1065,6 @@ def main(args):
             optimizer.load_state_dict(checkpoint["optimizer"])
         else:
             _logger.warning("Optimizer state not found in checkpoint, optimizer re-initialized.")
-        if args.use_lrschd and "scheduler" in checkpoint and checkpoint["scheduler"] is not None:
-            scheduler.load_state_dict(checkpoint["scheduler"])
-        else:
-            _logger.warning("Scheduler state not found in checkpoint, scheduler re-initialized.")
     else:
         start_epoch = 0
 
@@ -847,7 +1079,7 @@ def main(args):
         if epoch > 0:
             torch.set_grad_enabled(True)
             model.train()
-            train_records = train_once(args, train_loaders, model, optimizer, scheduler, criterion, diffusion, epoch)
+            train_records = train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoch)
             timer.add('train')
         else:
             train_records = None
@@ -879,7 +1111,6 @@ def main(args):
                 "args": vars(args),
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
             }, save_path)
             _logger.info(tag2ansi(f"Checkpoint saved to [underline green]{save_path}[reset]."))
             timer.add('save_checkpoint')
@@ -894,7 +1125,6 @@ def main(args):
                 "args": vars(args),
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
             }, save_path)
             _logger.note(tag2ansi(f"Model saved to [underline green]{save_path}[reset]"))
             timer.add('save_periodly')
@@ -913,7 +1143,6 @@ def main(args):
                     "args": vars(args),
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
-                    "scheduler": scheduler.state_dict(),
                 }, save_path)
                 _logger.note(tag2ansi(f"Best model saved to [underline green]{save_path}[reset]"))
             else:
@@ -1106,29 +1335,29 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     # 基础配置
     parser.add_argument('--test', action='store_true', help="是否仅运行测试流程（跳过训练）")
-    parser.add_argument("--name", type=str, default="train_mid", help="实验任务名称，用于生成实验ID")
+    parser.add_argument("--name", type=str, default="train_trace", help="实验任务名称，用于生成实验ID")
     parser.add_argument("--exp_name", type=str, default=None, help="手动指定实验名称（若指定则覆盖自动生成的名称）")
     parser.add_argument("--device", type=str, default="auto", help="计算设备，可选 'cpu', 'cuda:0' 或 'auto'（自动选择显存充足的 GPU）")
     parser.add_argument("--seed", type=int, default=None, help="随机种子，固定以复现实验结果")
-    parser.add_argument("--save_dir", type=str, default="./logs/train_mid", help="日志和模型权重的保存根目录")
+    parser.add_argument("--save_dir", type=str, default="./logs/train_trace", help="日志和模型权重的保存根目录")
     parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出更多日志，不保存部分文件）")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader 的工作线程数（0 表示主线程）")
     parser.add_argument("--minimize_gpu", action="store_true", default=False, help="是否在每个 epoch 结束后尽可能释放显存以供其他进程使用")
     
     # 训练超参数
-    parser.add_argument("--batch_size", type=int, default=256, help="训练批次大小")
-    parser.add_argument("--lr", type=float, default=1e-3, help="学习率 (Learning Rate)")
-    parser.add_argument("--epochs", type=int, default=10000, help="最大训练轮数")
+    # parser.add_argument("--batch_size", type=int, default=128, help="训练批次大小")
+    # parser.add_argument("--lr", type=float, default=2e-4, help="学习率 (Learning Rate)")
+    # parser.add_argument("--epochs", type=int, default=10000, help="最大训练轮数")
     parser.add_argument('--patience', type=int, default=20, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
     parser.add_argument('--force_new_experiment', action='store_true', help="是否强制不使用 checkpoint 继续训练，即使存在 checkpoint 文件")
-    parser.add_argument('--required_memory_MB', type=int, default=5000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
+    parser.add_argument('--required_memory_MB', type=int, default=10000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
 
     # 扩散模型参数 (Diffusion)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'], help="采样/生成方法")
     parser.add_argument("--T", type=int, default=100, help="训练时的最大扩散步数 (Timesteps)")
-    parser.add_argument('--sample_num', type=int, default=10, help="测试推理时，为每个轨迹生成的样本数量（用于评估多样性和准确性）")
+    parser.add_argument('--sample_num', type=int, default=20, help="测试推理时，为每个轨迹生成的样本数量（用于评估多样性和准确性）")
     parser.add_argument('--denoise_step', type=int, default=2, help="DDIM 采样时的去噪步数（加速采样）")
     parser.add_argument('--step_offset', type=int, default=10, help="采样的起始时间步偏移量（从 T-offset 开始采样）")
     parser.add_argument('--antithetic_sampling', action='store_true', default=True, help="是否使用对偶采样以减少方差")
@@ -1193,8 +1422,22 @@ if __name__ == "__main__":
     parser.add_argument('--sfm_a_damp', type=float, default=0.5, help="社会力中速度阻尼系数（用于计算引导力时的速度衰减）")
     parser.add_argument('--use_sfm', action='store_true', default=False, help="使用社会力模型代替神经网络计算引导力")
 
-    # MID 参数
-    parser.add_argument('--config', type=str, default='./baselines/mid/configs/baseline.yaml', help="MID 模型配置文件路径")
+    # TRACE 特定参数
+    parser.add_argument('--input_size', type=int, default=2)
+    parser.add_argument('--output_size', type=int, default=5)
+    parser.add_argument('--n_stgcnn', type=int, default=1,help='Number of ST-GCNN layers')
+    parser.add_argument('--n_txpcnn', type=int, default=5, help='Number of TXPCNN layers')
+    parser.add_argument('--kernel_size', type=int, default=3)
+    parser.add_argument('--obs_seq_len', type=int, default=8)
+    parser.add_argument('--pred_seq_len', type=int, default=12)
+    parser.add_argument('--dataset', default='eth', help='eth,hotel,univ,zara1,zara2')    
+    parser.add_argument('--batch_size', type=int, default=8, help='minibatch size')
+    parser.add_argument('--epochs', type=int, default=10000, help='number of epochs')
+    parser.add_argument('--clip_grad', type=float, default=None, help='gradient clipping')        
+    parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
+    parser.add_argument('--lr_sh_rate', type=int, default=150, help='number of steps to drop the lr')  
+    parser.add_argument('--use_lrschd', action="store_true", default=True, help='Use lr rate scheduler')
+    parser.add_argument('--tag', default='tag', help='personal tag for the model ')
 
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true
