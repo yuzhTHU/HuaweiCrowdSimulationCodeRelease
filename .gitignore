@@ -5,3 +5,7 @@ __pycache__/
 *.bak.py
 /.vscode/
 /data/
+/baselines/*/.git.bak
+/baselines/social_stgcnn/checkpoint/
+/baselines/social_stgcnn/datasets/
+/baselines/social_stgcnn/datasets/
