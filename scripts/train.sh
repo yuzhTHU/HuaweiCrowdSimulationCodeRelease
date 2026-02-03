@@ -72,6 +72,14 @@ conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_spdiff.
 conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_spdiff.py --minimize_gpu --exp_name "SDD_single_K=10" --train_datasets SDD_train --test_datasets SDD_test --sample_num 10
 conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_spdiff.py --minimize_gpu --exp_name "WayMo_single_K=10" --train_datasets WayMo_train --test_datasets WayMo_test --sample_num 10
 
+conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_mid.py --minimize_gpu --exp_name "eth_single_K=10" --train_datasets hotel zara01 zara02 univ --test_datasets eth --sample_num 10
+conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_mid.py --minimize_gpu --exp_name "hotel_single_K=10" --train_datasets eth zara01 zara02 univ --test_datasets hotel --sample_num 10
+conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_mid.py --minimize_gpu --exp_name "zara01_single_K=10" --train_datasets eth hotel zara02 univ --test_datasets zara01 --sample_num 10
+conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_mid.py --minimize_gpu --exp_name "zara02_single_K=10" --train_datasets eth hotel zara01 univ --test_datasets zara02 --sample_num 10
+conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_mid.py --minimize_gpu --exp_name "univ_single_K=10" --train_datasets eth hotel zara01 zara02 --test_datasets univ --sample_num 10
+conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_mid.py --minimize_gpu --exp_name "GC_single_K=10" --train_datasets GC_train --test_datasets GC_test --sample_num 10
+conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_mid.py --minimize_gpu --exp_name "SDD_single_K=10" --train_datasets SDD_train --test_datasets SDD_test --sample_num 10
+conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_mid.py --minimize_gpu --exp_name "WayMo_single_K=10" --train_datasets WayMo_train --test_datasets WayMo_test --sample_num 10
 
 conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_trace.py --minimize_gpu --exp_name "eth_single_K=10" --train_datasets hotel zara01 zara02 univ --test_datasets eth --sample_num 10
 conda activate ./venv && export PYTHONPATH=. && python ./baselines/train_trace.py --minimize_gpu --exp_name "hotel_single_K=10" --train_datasets eth zara01 zara02 univ --test_datasets hotel --sample_num 10

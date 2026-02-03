@@ -829,10 +829,7 @@ def main(args):
             optimizer.load_state_dict(checkpoint["optimizer"])
         else:
             _logger.warning("Optimizer state not found in checkpoint, optimizer re-initialized.")
-        if args.use_lrschd and "scheduler" in checkpoint and checkpoint["scheduler"] is not None:
-            scheduler.load_state_dict(checkpoint["scheduler"])
-        else:
-            _logger.warning("Scheduler state not found in checkpoint, scheduler re-initialized.")
+        scheduler.load_state_dict(checkpoint["scheduler"])
     else:
         start_epoch = 0
 
@@ -1123,7 +1120,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
     parser.add_argument('--force_new_experiment', action='store_true', help="是否强制不使用 checkpoint 继续训练，即使存在 checkpoint 文件")
-    parser.add_argument('--required_memory_MB', type=int, default=5000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
+    parser.add_argument('--required_memory_MB', type=int, default=6500, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
 
     # 扩散模型参数 (Diffusion)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'], help="采样/生成方法")
@@ -1159,7 +1156,7 @@ if __name__ == "__main__":
     parser.add_argument('--test_ratio', type=float, default=None, help="自动划分测试集的比例 (0.0 ~ 1.0)")
     parser.add_argument('--split_by_scenario', action='store_true', help="是否按场景划分训练/测试集（否则按轨迹样本划分）")
     parser.add_argument('--cache_dataset', action='store_true', default=True, help="是否缓存预处理后的数据集以加速加载")
-    parser.add_argument('--test_before_train', action='store_true', default=True, help="是否在训练开始前先运行一次测试")
+    parser.add_argument('--test_before_train', action='store_true', default=False, help="是否在训练开始前先运行一次测试")
     parser.add_argument('--test_per_epoch', type=int, default=10, help="每隔多少个 epoch 运行一次测试")
     parser.add_argument('--collision_threshold', type=float, default=0.6, help="碰撞检测的距离阈值（单位：米）")
 
