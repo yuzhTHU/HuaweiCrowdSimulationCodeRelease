@@ -88,6 +88,7 @@ def train_once(
             o_y = o_y / map.shape[1] * (map_data.ymax - map_data.ymin) + map_data.ymin
             obstacles = torch.stack((o_x, o_y), dim=-1)  # M, 2
             obstacles = obstacles.unsqueeze(0).expand(pos.shape[0], -1, -1)
+            # obstacles = torch.zeros((pos.shape[0], 1, 2), device=args.device)  # B, 1, 2
             a_res = torch.zeros(future_acc.shape, device=args.device)
 
             a_cur = (vel - (hst[:, :, -1, :] - hst[:, :, -2, :]) * args.fps) * args.fps  # *c, N, 2
@@ -99,7 +100,7 @@ def train_once(
             hst_acc = hst_vel.diff(axis=-2, prepend=hst_vel[:, :, :1, :]).mul(args.fps)
             history_features = torch.cat((hst_pos, hst_vel, hst_acc), dim=-1).nan_to_num(0.0)
 
-            for t in range(args.roll_step * args.pred_step - 1):
+            for t in range(args.multi_frame_rollout - 1):
                 (
                     ped_features,  # (batch, 1, ped, 6, 6)
                     obs_features,  # (batch, 1, ped, 2, 6)

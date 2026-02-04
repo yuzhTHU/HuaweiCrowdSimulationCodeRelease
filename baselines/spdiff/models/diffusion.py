@@ -342,9 +342,9 @@ class DiffusionTraj(Module):
         batch_size = history.shape[0]
         num_ped = context[1].shape[1]
         if bestof:
-            x_T = torch.randn([batch_size, num_ped, point_dim]).to('cuda')
+            x_T = torch.randn([batch_size, num_ped, point_dim]).to(curr.device)
         else:
-            x_T = torch.zeros([batch_size, num_ped, point_dim]).to('cuda')
+            x_T = torch.zeros([batch_size, num_ped, point_dim]).to(curr.device)
         traj = {self.var_sched.num_steps: x_T}
         pbar = range(self.var_sched.num_steps, 0, -1)
         nei_list = None

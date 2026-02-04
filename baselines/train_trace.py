@@ -1009,9 +1009,10 @@ def main(args):
     # 2. Define Optimizer
     # TRACE uses Adam with params from the config
     optim_params = cfg.algo.optim_params["policy"]
+    optim_params["learning_rate"]["initial"] = args.lr
     optimizer = torch.optim.Adam(
         params=model.nets["policy"].parameters(),
-        lr=optim_params["learning_rate"]["initial"]
+        lr=args.lr
     )
     
     criterion = None # Loss is computed inside the model
@@ -1422,7 +1423,7 @@ if __name__ == "__main__":
     # TRACE 特定参数
     parser.add_argument('--batch_size', type=int, default=8, help='minibatch size')
     parser.add_argument('--epochs', type=int, default=10000, help='number of epochs')
-    parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
+    parser.add_argument('--lr', type=float, default=1e-5, help='learning rate')
 
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true
