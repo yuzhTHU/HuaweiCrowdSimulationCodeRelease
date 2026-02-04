@@ -6,6 +6,8 @@ __pycache__/
 .DS_Store
 /.vscode/
 /data/
+/tmp*/_remote_module_non_scriptable.py
+/figures/
 /baselines/*/.git.bak
 /baselines/social_stgcnn/checkpoint/
 /baselines/social_stgcnn/datasets/

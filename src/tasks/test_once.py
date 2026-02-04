@@ -18,6 +18,80 @@ from .simulate import SimulateState
 _logger = logging.getLogger(__name__)
 
 
+def get_xy_error(args, pos, veh, mask, pos_true, pos_pred, sample_idx, valid_idx):
+    traj_diff = (pos_pred - pos_true)[:, mask, :, :][sample_idx, valid_idx, :, :] # (valid{B*#pedestrian}, roll_step*pred_step, 2)
+    ped_pos = pos[mask, :] # (valid{B*#pedestrian}, 2)
+    batch_indices = torch.nonzero(mask)[:, 0]  # 有效行人所属的 batch index (valid{B*#pedestrian},)
+    num_valid_ped = batch_indices.shape[0]
+    if veh.shape[1] == 0: # 场景中完全没有车辆数据
+        veh_pos = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
+        veh_vel = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
+    else: # 找到每个场景中距离各个行人最近的车辆
+        all_veh_pos = veh[..., -1, :] # (batch_size, #vehicle, 2)
+        all_veh_vel = (veh[..., -1, :] - veh[..., -2, :]) * args.fps  # (batch_size, #vehicle, 2)
+                # 取出每个有效行人对应场景的车辆数据
+        batch_veh_pos = all_veh_pos[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
+        batch_veh_vel = all_veh_vel[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
+                # 计算行人到同场景所有车辆的距离 (将无效车辆的距离设为无穷大)
+        dist = (ped_pos.unsqueeze(1) - batch_veh_pos).norm(dim=-1).nan_to_num_(nan=float('inf')) # (valid{B*#pedestrian}, #vehicle)
+                # 找到最近车辆的索引
+        min_dist, nearest_idx = torch.min(dist, dim=1) # (valid{B*#pedestrian},)
+        has_vehicle = min_dist != float('inf')
+                # Gather 最近车辆的位置和速度
+        gather_idx = nearest_idx.view(-1, 1, 1).expand(-1, 1, 2)
+        veh_pos = torch.gather(batch_veh_pos, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
+        veh_vel = torch.gather(batch_veh_vel, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
+                # 如果该行人所在的场景没有任何车辆，设为 NaN
+        veh_pos[~has_vehicle] = float('nan')
+        veh_vel[~has_vehicle] = float('nan')
+    norm_err, tan_err = calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel)
+    return norm_err, tan_err
+
+
+def get_collision_rate(args, map_data, future_veh, veh_length, mask, pos_pred):
+    S, B, P, T, _ = pos_pred.shape
+    flat_pos = pos_pred.permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## 将 (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
+    dist_matrix = torch.cdist(flat_pos, flat_pos, p=2)  # (S*B*T, P, P)
+    eye_matrix = torch.eye(P, device=pos_pred.device, dtype=torch.bool).unsqueeze(0)
+            # 只有当行人 i 和行人 j 都有效 (mask=True) 时才计入碰撞
+    mask_expanded = mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, P) # (B, P) -> (1, B, 1, P) -> (S, B, T, P) -> (S*B*T, P)
+    valid_pair_mask = mask_expanded.unsqueeze(2) & mask_expanded.unsqueeze(1)
+            # fiends = (dist_matrix.reshape(S, B, T, P, P) < args.collision_threshold).float().mean(axis=2)
+    collision_matrix = (
+                (dist_matrix < args.collision_threshold) &
+                (~eye_matrix) &
+                valid_pair_mask
+            )
+    collision_rate = collision_matrix.sum() / (S * mask.sum() * T)
+    collision_ped = collision_rate.item()
+
+    if future_veh.shape[1] == 0:
+        collision_veh = float('nan')
+    else:
+        _, V, _, _ = future_veh.shape # (B, V, T, 2)
+        flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## 将 (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
+        dist_matrix = torch.cdist(flat_pos, flat_veh, p=2) # (S*B*T, P, V)
+                # 只有当行人 i 和车辆 j 都有效时才计入碰撞
+        veh_mask = torch.arange(V, device=args.device).expand(B, V) < veh_length.unsqueeze(-1)  # (B, V)
+        veh_mask_expanded = veh_mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, V) # (B, V) -> (1, B, 1, V) -> (S, B, T, V) -> (S*B*T, V)
+        valid_pair_mask = mask_expanded.unsqueeze(2) & veh_mask_expanded.unsqueeze(1) # (S*B*T, P, V)
+        collision_matrix = (dist_matrix < args.collision_threshold) & valid_pair_mask
+        collision_rate = collision_matrix.sum() / 2 / (S * mask.sum() * T) # 除以 2 因为碰撞双方只有一方是行人
+        collision_veh = collision_rate.item()
+
+
+    if not np.isfinite(map_data.map).any():
+        collision_map = float('nan')
+    else:
+        idx = pos_pred[..., 0].sub(map_data.xmin).div(map_data.xmax-map_data.xmin).mul(map_data.map.shape[0]).round().long().clamp(0, map_data.map.shape[0] - 1)  # (batch_size, #pedestrian)
+        jdx = pos_pred[..., 1].sub(map_data.ymin).div(map_data.ymax-map_data.ymin).mul(map_data.map.shape[1]).round().long().clamp(0, map_data.map.shape[1] - 1)  # (batch_size, #pedestrian)
+        sur_info = map_data.map[idx.cpu().numpy(), jdx.cpu().numpy()] # (batch_size, #pedestrian)
+        collision_rate = (sur_info > 0.9).mean()
+        collision_map = collision_rate.item()
+
+    return collision_ped, collision_veh, collision_map
+
+
 def test_once(
     args,
     test_loaders: List[D.DataLoader],
@@ -54,7 +128,13 @@ def test_once(
             ymax=map_data.ymax,
         )
         test_timer.add('embed map')
-        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[], collision_ped=[], collision_veh=[], collision_map=[])
+        records = dict(
+            loss=[], ade=[], fde=[], trajlen=[], 
+            ped_num=[], veh_num=[], rollout_time=[], 
+            collision_ped=[], collision_veh=[], collision_map=[], 
+            collision_ped_base=[], collision_veh_base=[], collision_map_base=[], 
+            apd=[], norm_err=[], tan_err=[]
+        )
         for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
@@ -177,71 +257,23 @@ def test_once(
             records['ade'].extend(ade.cpu().tolist()) # List[float]
             records['fde'].extend(fde.cpu().tolist()) # List[float]
             # 计算切向误差和法向误差
-            traj_diff = (pos_pred - pos_true)[:, mask, :, :][sample_idx, valid_idx, :, :] # (valid{B*#pedestrian}, roll_step*pred_step, 2)
-            ped_pos = pos[mask, :] # (valid{B*#pedestrian}, 2)
-            batch_indices = torch.nonzero(mask)[:, 0]  # 有效行人所属的 batch index (valid{B*#pedestrian},)
-            num_valid_ped = batch_indices.shape[0]
-            if veh.shape[1] == 0: # 场景中完全没有车辆数据
-                veh_pos = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
-                veh_vel = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
-            else: # 找到每个场景中距离各个行人最近的车辆
-                all_veh_pos = veh[..., -1, :] # (batch_size, #vehicle, 2)
-                all_veh_vel = (veh[..., -1, :] - veh[..., -2, :]) * args.fps  # (batch_size, #vehicle, 2)
-                # 取出每个有效行人对应场景的车辆数据
-                batch_veh_pos = all_veh_pos[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
-                batch_veh_vel = all_veh_vel[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
-                # 计算行人到同场景所有车辆的距离 (将无效车辆的距离设为无穷大)
-                dist = (ped_pos.unsqueeze(1) - batch_veh_pos).norm(dim=-1).nan_to_num_(nan=float('inf')) # (valid{B*#pedestrian}, #vehicle)
-                # 找到最近车辆的索引
-                min_dist, nearest_idx = torch.min(dist, dim=1) # (valid{B*#pedestrian},)
-                has_vehicle = min_dist != float('inf')
-                # Gather 最近车辆的位置和速度
-                gather_idx = nearest_idx.view(-1, 1, 1).expand(-1, 1, 2)
-                veh_pos = torch.gather(batch_veh_pos, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
-                veh_vel = torch.gather(batch_veh_vel, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
-                # 如果该行人所在的场景没有任何车辆，设为 NaN
-                veh_pos[~has_vehicle] = float('nan')
-                veh_vel[~has_vehicle] = float('nan')
-            records['norm_err'], records['tan_err'] = calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel)
+            norm_err, tan_err = get_xy_error(args, pos, veh, mask, pos_true, pos_pred, sample_idx, valid_idx)
+            records['norm_err'].extend(norm_err.cpu().tolist()) # List[float]
+            records['tan_err'].extend(tan_err.cpu().tolist()) # List[float]
             # 计算碰撞数
-            S, B, P, T, _ = pos_pred.shape
-            flat_pos = pos_pred.permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## 将 (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
-            dist_matrix = torch.cdist(flat_pos, flat_pos, p=2)  # (S*B*T, P, P)
-            eye_matrix = torch.eye(P, device=pos_pred.device, dtype=torch.bool).unsqueeze(0)
-            # 只有当行人 i 和行人 j 都有效 (mask=True) 时才计入碰撞
-            mask_expanded = mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, P) # (B, P) -> (1, B, 1, P) -> (S, B, T, P) -> (S*B*T, P)
-            valid_pair_mask = mask_expanded.unsqueeze(2) & mask_expanded.unsqueeze(1)
-            # fiends = (dist_matrix.reshape(S, B, T, P, P) < args.collision_threshold).float().mean(axis=2)
-            collision_matrix = (
-                (dist_matrix < args.collision_threshold) &
-                (~eye_matrix) &
-                valid_pair_mask
-            )
-            collision_rate = collision_matrix.sum() / (S * mask.sum() * T)
-            records['collision_ped'].append(collision_rate.item())
-
-            if future_veh.shape[1] == 0:
-                records['collision_veh'].append(float('nan'))
-            else:
-                _, V, _, _ = future_veh.shape # (B, V, T, 2)
-                flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## 将 (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
-                dist_matrix = torch.cdist(flat_pos, flat_veh, p=2) # (S*B*T, P, V)
-                # 只有当行人 i 和车辆 j 都有效时才计入碰撞
-                veh_mask = torch.arange(V, device=args.device).expand(B, V) < veh_length.unsqueeze(-1)  # (B, V)
-                veh_mask_expanded = veh_mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, V) # (B, V) -> (1, B, 1, V) -> (S, B, T, V) -> (S*B*T, V)
-                valid_pair_mask = mask_expanded.unsqueeze(2) & veh_mask_expanded.unsqueeze(1) # (S*B*T, P, V)
-                collision_matrix = (dist_matrix < args.collision_threshold) & valid_pair_mask
-                collision_rate = collision_matrix.sum() / 2 / (S * mask.sum() * T) # 除以 2 因为碰撞双方只有一方是行人
-                records['collision_veh'].append(collision_rate.item())
-
-            if not np.isfinite(map_data.map).any():
-                records['collision_map'].append(float('nan'))
-            else:
-                idx = pos_pred[..., 0].sub(map_data.xmin).div(map_data.xmax-map_data.xmin).mul(map_data.map.shape[0]).round().long().clamp(0, map_data.map.shape[0] - 1)  # (batch_size, #pedestrian)
-                jdx = pos_pred[..., 1].sub(map_data.ymin).div(map_data.ymax-map_data.ymin).mul(map_data.map.shape[1]).round().long().clamp(0, map_data.map.shape[1] - 1)  # (batch_size, #pedestrian)
-                sur_info = map_data.map[idx.cpu().numpy(), jdx.cpu().numpy()] # (batch_size, #pedestrian)
-                collision_rate = (sur_info > 0.9).mean()
-                records['collision_map'].append(collision_rate.item())
+            collision_ped, collision_veh, collision_map = get_collision_rate(args, map_data, future_veh, veh_length, mask, pos_pred)
+            records['collision_ped'].append(collision_ped)
+            records['collision_veh'].append(collision_veh)
+            records['collision_map'].append(collision_map)
+            collision_ped_base, collision_veh_base, collision_map_base = get_collision_rate(args, map_data, future_veh, veh_length, mask, pos_true.unsqueeze(0))
+            records['collision_ped_base'].append(collision_ped_base)
+            records['collision_veh_base'].append(collision_veh_base)
+            records['collision_map_base'].append(collision_map_base)
+            # 计算 APD 多样性指标
+            tmp = pos_pred[:, mask, :, :] # (S, valid{B*#pedestrian}, roll_step*pred_step, 2)
+            tmp = (tmp[None, :, ...] - tmp[:, None, ...]).norm(dim=-1).mean(dim=-1)  # (S, S, valid{B*#pedestrian})
+            apd = tmp.flatten(0, 1).sum(dim=0) / (S * (S - 1)) # (valid{B*#pedestrian},)
+            records['apd'].extend(apd.cpu().tolist()) # List[float]
             # 计算轨迹长度
             trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1)[mask] # (valid{B*#pedestrian})
             records['trajlen'].extend(trajlen.cpu().tolist()) # List[float]
@@ -260,9 +292,10 @@ def test_once(
             f"[#66CCFF]FDE={np.mean(records['fde']):.4f}, "
             f"[#66CCFF]X_ERROR (normal)={np.nanmean(records['norm_err']):.4f}, "
             f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(records['tan_err']):.4f}, "
-            f"[#66CCFF]Collision-Ped={np.mean(records['collision_ped']):.2%}, "
-            f"[#66CCFF]Collision-Veh={np.mean(records['collision_veh']):.2%}, "
-            f"[#66CCFF]Collision-Map={np.mean(records['collision_map']):.2%}, "
+            f"[#66CCFF]Collision-Ped={np.mean(records['collision_ped']) - (base:= np.mean(records['collision_ped_base'])):.2%} (+{base:.2%}), "
+            f"[#66CCFF]Collision-Veh={np.mean(records['collision_veh']) - (base:= np.mean(records['collision_veh_base'])):.2%} (+{base:.2%}), "
+            f"[#66CCFF]Collision-Map={np.mean(records['collision_map']) - (base:= np.mean(records['collision_map_base'])):.2%} (+{base:.2%}), "
+            f"[#66CCFF]APD={np.mean(records['apd']):.4f}, "
             f"[#66CCFF]AvgLen={np.mean(records['trajlen']):.4f}, "
             f"[#66CCFF]PedNum={np.mean(records['ped_num']):.1f}, "
             f"[#66CCFF]VehNum={np.mean(records['veh_num']):.1f}, "
@@ -292,9 +325,10 @@ def test_once(
         f"[#66CCFF]FDE={np.sum(w * all_records['fde']):.4f}, "
         f"[#66CCFF]X_ERROR (normal)={np.nansum(w * all_records['norm_err']) / np.sum(w * np.isfinite(all_records['norm_err'])):.4f}, "
         f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * all_records['tan_err']) / np.sum(w * np.isfinite(all_records['tan_err'])):.4f}, "
-        f"[#66CCFF]Collision-Ped={np.sum(w * all_records['collision_ped']):.2%}, "
-        f"[#66CCFF]Collision-Veh={np.sum(w * all_records['collision_veh']):.2%}, "
-        f"[#66CCFF]Collision-Map={np.sum(w * all_records['collision_map']):.2%}, "
+        f"[#66CCFF]Collision-Ped={np.sum(w * all_records['collision_ped']) - (base := np.sum(w * all_records['collision_ped_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Veh={np.sum(w * all_records['collision_veh']) - (base := np.sum(w * all_records['collision_veh_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Map={np.sum(w * all_records['collision_map']) - (base := np.sum(w * all_records['collision_map_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]APD={np.sum(w * all_records['apd']):.4f}, "
         f"[#66CCFF]AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
         f"[#66CCFF]PedNum={np.sum(w * all_records['ped_num']):.4f}, "
         f"[#66CCFF]VehNum={np.sum(w * all_records['veh_num']):.4f}, "
@@ -315,7 +349,11 @@ def test_once(
             collision_ped = np.array([all_records['collision_ped'][i] for i in idxs])
             collision_veh = np.array([all_records['collision_veh'][i] for i in idxs])
             collision_map = np.array([all_records['collision_map'][i] for i in idxs])
+            collision_ped_base = np.array([all_records['collision_ped_base'][i] for i in idxs])
+            collision_veh_base = np.array([all_records['collision_veh_base'][i] for i in idxs])
+            collision_map_base = np.array([all_records['collision_map_base'][i] for i in idxs])
             rollout_time = np.array([all_records['rollout_time'][i] for i in idxs])
+            apd = np.array([all_records['apd'][i] for i in idxs])
             w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
             acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
@@ -326,9 +364,10 @@ def test_once(
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
                 f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
                 f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
-                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
-                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
-                f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
+                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped) - (base := np.sum(w * collision_ped_base)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh) - (base := np.sum(w * collision_veh_base)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Map={np.sum(w * collision_map) - (base := np.sum(w * collision_map_base)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]APD={np.sum(w * apd):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "

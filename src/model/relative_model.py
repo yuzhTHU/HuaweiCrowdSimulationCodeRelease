@@ -36,7 +36,7 @@ class RelativeModel(Model):
         """
         super().__init__(args)
         self.map_embedder = nn.Sequential(
-            NanEmbedding(1, args.map_feature_dim//4),
+            NanEmbedding(1, args.map_feature_dim//4, disable=not args.use_nan_embedding),
             nn.ReLU(),
             Permuted(2, 0, 1),  # (H, W, C) -> (C, H, W)
             nn.Conv2d(args.map_feature_dim//4, args.map_feature_dim//2, kernel_size=3, padding=1),

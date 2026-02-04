@@ -31,7 +31,7 @@ def calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel):
     # 综合筛选条件 (1. 数据有效  2. 车辆在移动  3. 行人距离车辆前进射线距离 < 10m)
     final_mask = valid_data_mask & (speed.squeeze(-1) > 0.01) & (dist_to_ray < 10.0)
     if not final_mask.any():
-        return float('nan'), float('nan')
+        return torch.tensor([float('nan')]), torch.tensor([float('nan')])
         
     # 误差分解
     target_diff = traj_diff[final_mask]
@@ -43,4 +43,4 @@ def calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel):
     norm_err = torch.abs((target_diff * target_norm_vec).sum(dim=-1)) # (N_subset, T)
     
     # 返回平均值
-    return norm_err.mean().item(), tang_err.mean().item()
+    return norm_err.mean(dim=-1), tang_err.mean(dim=-1)

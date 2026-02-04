@@ -56,16 +56,16 @@ class Model(nn.Module):
             nn.LayerNorm(args.model_dim),
         )
         self.hst_embedder = nn.Sequential(
-            NanEmbedding(2, args.model_dim),
+            NanEmbedding(2, args.model_dim, disable=not args.use_nan_embedding),
             MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
         self.des_embedder = nn.Sequential(
-            NanEmbedding(2, args.model_dim),
+            NanEmbedding(2, args.model_dim, disable=not args.use_nan_embedding),
             nn.LayerNorm(args.model_dim),
         )
         self.spd_embedder = nn.Sequential(
-            NanEmbedding(1, args.model_dim),
+            NanEmbedding(1, args.model_dim, disable=not args.use_nan_embedding),
             nn.LayerNorm(args.model_dim),
         )
         self.ped_encoder = nn.Sequential(
@@ -75,12 +75,12 @@ class Model(nn.Module):
             nn.Linear(4*args.model_dim, args.model_dim),
         )
         self.veh_embedder = nn.Sequential(
-            NanEmbedding(2, args.model_dim),
+            NanEmbedding(2, args.model_dim, disable=not args.use_nan_embedding),
             MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
         self.map_embedder = nn.Sequential(
-            NanEmbedding(1, args.map_feature_dim//4),
+            NanEmbedding(1, args.map_feature_dim//4, disable=not args.use_nan_embedding),
             Permuted(2, 0, 1),  # (H, W, C) -> (C, H, W)
             nn.Conv2d(args.map_feature_dim//4, args.map_feature_dim//2, kernel_size=3, padding=1),
             nn.ReLU(),

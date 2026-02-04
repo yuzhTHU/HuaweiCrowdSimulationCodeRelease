@@ -222,7 +222,7 @@ def main(args):
     _logger.note(
         "Datasets:\n"
         # f"Train on {[d.name for d in train_dataset]} datasets ({sum([len(d) for d in train_dataset]):,} samples in total)\n"
-        f"Eval on {[d.name for d in eval_dataset]} datasets ({sum([len(d) for d in eval_dataset]):,} samples in total)\n"
+        # f"Eval on {[d.name for d in eval_dataset]} datasets ({sum([len(d) for d in eval_dataset]):,} samples in total)\n"
         f"Test on {[d.name for d in test_dataset]} datasets ({sum([len(d) for d in test_dataset]):,} samples in total)"
     )
 
@@ -310,9 +310,10 @@ def main(args):
         f"[#66CCFF]FDE={np.sum(w * test_records['fde']):.4f}, "
         f"[#66CCFF]X_ERROR (normal)={np.nansum(w * test_records['norm_err']) / np.sum(w * np.isfinite(test_records['norm_err'])):.4f}, "
         f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * test_records['tan_err']) / np.sum(w * np.isfinite(test_records['tan_err'])):.4f}, "
-        f"[#66CCFF]Collision-Ped={np.sum(w * test_records['collision_ped']):.2%}, "
-        f"[#66CCFF]Collision-Veh={np.sum(w * test_records['collision_veh']):.2%}, "
-        f"[#66CCFF]Collision-Map={np.sum(w * test_records['collision_map']):.2%}, "
+        f"[#66CCFF]Collision-Ped={np.sum(w * test_records['collision_ped']) - (base := np.sum(w * test_records['collision_ped_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Veh={np.sum(w * test_records['collision_veh']) - (base := np.sum(w * test_records['collision_veh_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Map={np.sum(w * test_records['collision_map']) - (base := np.sum(w * test_records['collision_map_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]APD={np.sum(w * test_records['apd']):.4f}, "
         f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
         f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
         f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.1f}, "
@@ -333,6 +334,10 @@ def main(args):
             collision_ped = np.array([test_records['collision_ped'][i] for i in idxs])
             collision_veh = np.array([test_records['collision_veh'][i] for i in idxs])
             collision_map = np.array([test_records['collision_map'][i] for i in idxs])
+            collision_ped_base = np.array([test_records['collision_ped_base'][i] for i in idxs])
+            collision_veh_base = np.array([test_records['collision_veh_base'][i] for i in idxs])
+            collision_map_base = np.array([test_records['collision_map_base'][i] for i in idxs])
+            apd = np.array([test_records['apd'][i] for i in idxs])
             rollout_time = np.array([test_records['rollout_time'][i] for i in idxs])
             w = np.array([test_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
@@ -344,9 +349,10 @@ def main(args):
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
                 f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
                 f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
-                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
-                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
-                f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
+                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped) - (base := np.sum(w * collision_ped)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh) - (base := np.sum(w * collision_veh)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Map={np.sum(w * collision_map) - (base := np.sum(w * collision_map)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]APD={np.sum(w * apd):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
@@ -426,6 +432,7 @@ if __name__ == "__main__":
     parser.add_argument('--use_relative_model', action='store_true', default=True, help="是否使用相对坐标模型结构")
     parser.add_argument('--use_spatial_anchor', action='store_true', default=True, help="是否使用空间锚点增强位置编码")
     parser.add_argument('--use_new_model', action='store_true', default=False, help="是否使用改进版的新模型结构")
+    parser.add_argument('--use_nan_embedding', action='store_true', default=True, help="是否使用可学习的空值嵌入")
 
     # 条件引导参数
     parser.add_argument('--cfg_des', type=float, default=None, help="通过 Classifier-Free Guidance 引导控制目的地条件的影响强度")

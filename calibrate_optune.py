@@ -5,6 +5,7 @@ import json
 import torch
 import shlex
 import random
+import optuna
 import logging
 import numpy as np
 import torch.utils.data as D
@@ -27,6 +28,7 @@ from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 from src.tasks import train_once, test_once
 
 _logger = logging.getLogger("src.train")
+
 
 def main(args):
     ## Load Dataset
@@ -287,204 +289,43 @@ def main(args):
     else:
         start_epoch = 0
 
+    ## 定义目标函数
+    def objective(trial):
+        args.cg_sfm_des = trial.suggest_float("cg_sfm_des", 0.0, 0.1)
+        # args.cg_sfm_obs = trial.suggest_float("cg_sfm_obs", 0.0, 0.5)
+        args.cg_sfm_obs = trial.suggest_categorical("cg_sfm_obs", [0.0])
+        args.cg_sfm_soc = trial.suggest_float("cg_sfm_soc", 0.0, 0.1)
+        
+        torch.set_grad_enabled(False)
+        model.eval()
+        with npu_attention_fallback_context(model, enable=USE_NPU):
+            _logger.info(f"Testing with cg_sfm_des={args.cg_sfm_des}, cg_sfm_obs={args.cg_sfm_obs}, cg_sfm_soc={args.cg_sfm_soc}...")
+            test_records = test_once(args, train_loaders, model, criterion, diffusion, trial.number)
+        
+        w = np.array(test_records['sample_nums'], dtype=float)
+        w /= w.sum()
+        ade = np.sum(w * test_records['ade'])
+        collision_ped = np.sum(w * test_records['collision_ped'])
+        return ade + 20 * collision_ped
+
     ## Train
-    timer = NamedTimer()
-    for epoch in range(start_epoch, args.epochs+1):
-        # 训练一个 epoch
-        if epoch > 0:
-            torch.set_grad_enabled(True)
-            model.train()
-            train_records = train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoch)
-            timer.add('train')
-        else:
-            train_records = None
-
-        # 测试一个 epoch
-        if (epoch > 0 and not epoch % args.test_per_epoch) or (epoch == 0 and args.test_before_train):
-            torch.set_grad_enabled(False)
-            model.eval()
-            with npu_attention_fallback_context(model, enable=USE_NPU):
-                test_records = test_once(args, eval_loaders, model, criterion, diffusion, epoch)
-            timer.add('test')
-        else:
-            test_records = None
-
-        # 保存日志
-        with open(f"{args.save_path}/records.jsonl", "a") as f:
-            if train_records is not None:
-                f.write(json.dumps(train_records) + "\n")
-            if test_records is not None:
-                f.write(json.dumps(test_records) + "\n")
-
-        # 保存加载点
-        if '_last_checkpoint_time' not in locals() or (datetime.now() - _last_checkpoint_time).seconds  > 300:
-            # 只在间隔超过 5 min 时保存
-            _last_checkpoint_time = datetime.now()
-            save_path = f"{args.save_path}/checkpoint.pth"
-            torch.save({
-                "epoch": epoch,
-                "args": vars(args),
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-            }, save_path)
-            _logger.info(tag2ansi(f"Checkpoint saved to [underline green]{save_path}[reset]."))
-            timer.add('save_checkpoint')
-        
-        # 定期保存
-        if set(str(epoch)[1:]) == {'0'}:
-            # 只在 epoch=10,20,...,100,...,1000,... 时保存
-            save_path = Path(args.save_path) / "checkpoints" / f"epoch{epoch}.pth"
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({
-                "epoch": epoch,
-                "args": vars(args),
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-            }, save_path)
-            _logger.note(tag2ansi(f"Model saved to [underline green]{save_path}[reset]"))
-            timer.add('save_periodly')
-
-        # 保存最佳模型
-        if test_records is not None:
-            if (
-                'best_records' not in locals() or 
-                np.mean(test_records['ade']) < np.mean(best_records['ade'])
-            ):
-                patience = args.patience
-                best_records = test_records
-                save_path = f"{args.save_path}/best.pth"
-                torch.save({
-                    "epoch": epoch,
-                    "args": vars(args),
-                    "model": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                }, save_path)
-                _logger.note(tag2ansi(f"Best model saved to [underline green]{save_path}[reset]"))
-            else:
-                patience -= 1
-                _logger.info(tag2ansi(
-                    f"Patience left: [brightred]{patience}/{args.patience}[reset] ("
-                    f"[bold underline orange]best Accuracy={best_records['accuracy']:.2%}[reset] "
-                    f"at epoch [#66CCFF]{best_records['epoch']}[reset]. "
-                    f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
-                    f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
-                    f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
-                    f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
-                    f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']) - (base := np.mean(best_records['collision_ped_base'])):.2%} (+{base:.2%}), "
-                    f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']) - (base := np.mean(best_records['collision_veh_base'])):.2%} (+{base:.2%}), "
-                    f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']) - (base := np.mean(best_records['collision_map_base'])):.2%} (+{base:.2%}), "
-                    f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
-                    f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
-                    f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-                    f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}), "
-                    f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
-                    f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
-                ))
-            timer.add('save_best')
-
-        # 打印用时
-        allocated = torch.cuda.memory_allocated(args.device) / 1024 / 1024 / 1024
-        reserved = torch.cuda.memory_reserved(args.device) / 1024 / 1024 / 1024
-        peak = torch.cuda.max_memory_allocated(args.device) / 1024 / 1024 / 1024
-        _logger.info(tag2ansi(
-            f"[pink][Epoch {epoch}/{args.epochs}] finished. "
-            f"Time Usage={timer}, "
-            f"CUDA ({args.device}) usage: allocated={allocated:.1f}GiB, peak={peak:.1f}GiB, reserved={reserved:.1f}GiB"
-            # f"adjust reserved memory from {reserved_raw/1024:.1f}GiB to {reserved_new/1024:.1f}GiB"
-            "[reset]"
-        ))
-
-        # 释放额外的显存
-        if args.minimize_gpu and train_records is not None:
-            peak = torch.cuda.max_memory_allocated(args.device) / 1024 / 1024
-            reserved_raw = torch.cuda.memory_reserved(args.device) / 1024 / 1024
-            torch.cuda.empty_cache() # 释放 reserved 但是未被 allocated 的 block
-            reserved_new = torch.cuda.memory_reserved(args.device) / 1024 / 1024
-            if reserved_new < peak: # 释放了过多的显存，之后可能会 OOM
-                allocated = torch.cuda.memory_allocated(args.device) / 1024 / 1024
-                if (keep_MB := int(np.ceil(peak - allocated))) > 0: # 把需要的显存再占回来
-                    tmp = AutoGPU.allocate_gpu(device=args.device, memory_MB=keep_MB, block_MB=None)
-                    del tmp
-                reserved_new = torch.cuda.memory_reserved(args.device) / 1024 / 1024
-            _logger.info(tag2ansi(
-                f"[brown]Adjust reserved memory from {reserved_raw/1024:.1f}GiB to {reserved_new/1024:.1f}GiB. [reset]"
-            ))
-        
-        # 提前终止
-        if 'patience' in locals() and patience <= 0:
-            _logger.warning(tag2ansi(f"Early stopping at epoch [lightred]{epoch}/{args.epochs}[reset], "))
-            break
-
-    ## Log Best Result
-    _logger.note(tag2ansi(
-        f"[bold underline orange]best Evaluation Accuracy={best_records['accuracy']:.2%}[reset] "
-        f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
-        f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
-        f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']) - (base := np.mean(best_records['collision_ped_base'])):.2%} (+{base:.2%}), "
-        f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']) - (base := np.mean(best_records['collision_veh_base'])):.2%} (+{base:.2%}), "
-        f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']) - (base := np.mean(best_records['collision_map_base'])):.2%} (+{base:.2%}), "
-        f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
-        f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
-        f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-        f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}, "
-        f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
-        f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
-    ))
-    if len(set(best_records['dataset_class'])) > 1:
-        for klass in sorted(list(set(best_records['dataset_class']))):
-            idxs = [i for i, k in enumerate(best_records['dataset_class']) if k == klass]
-            ade = np.array([best_records['ade'][i] for i in idxs])
-            fde = np.array([best_records['fde'][i] for i in idxs])
-            trajlen = np.array([best_records['trajlen'][i] for i in idxs])
-            ped_num = np.array([best_records['ped_num'][i] for i in idxs])
-            veh_num = np.array([best_records['veh_num'][i] for i in idxs])
-            norm_err = np.array([best_records['norm_err'][i] for i in idxs])
-            tan_err = np.array([best_records['tan_err'][i] for i in idxs])
-            collision_ped = np.array([best_records['collision_ped'][i] for i in idxs])
-            collision_veh = np.array([best_records['collision_veh'][i] for i in idxs])
-            collision_map = np.array([best_records['collision_map'][i] for i in idxs])
-            collision_ped_base = np.array([best_records['collision_ped_base'][i] for i in idxs])
-            collision_veh_base = np.array([best_records['collision_veh_base'][i] for i in idxs])
-            collision_map_base = np.array([best_records['collision_map_base'][i] for i in idxs])
-            rollout_time = np.array([best_records['rollout_time'][i] for i in idxs])
-            w = np.array([best_records['sample_nums'][i] for i in idxs], dtype=float)
-            w /= w.sum()
-            acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
-            _logger.info(tag2ansi(
-                f"[#66CCFF][Epoch {best_records['epoch']}/{args.epochs}] Overall on {klass} datasets: "
-                f"[bold underline orange]Accuracy={acc:.2%}[reset], "
-                f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
-                f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
-                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
-                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
-                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped) - (base := np.sum(w * collision_ped)):.2%} (+{base:.2%}), "
-                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh) - (base := np.sum(w * collision_veh)):.2%} (+{base:.2%}), "
-                f"[#66CCFF]Collision-Map={np.sum(w * collision_map) - (base := np.sum(w * collision_map)):.2%} (+{base:.2%}), "
-                f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
-                f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
-                f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
-                f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
-                f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
-            ))
-    
-    ## Load Best Model
-    best_path = Path(args.save_path) / 'best.pth'
-    checkpoint = torch.load(best_path, map_location=args.device)
-    if checkpoint['epoch'] != best_records['epoch']:
-        _logger.warning(tag2ansi(
-            f"Best epoch in records.jsonl ({best_records['epoch']}) does not match that in best.pth ({checkpoint['epoch']})!"
-        ))
-    model.load_state_dict(checkpoint["model"])
-    _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
+    study = optuna.create_study(direction="minimize")
+    study.enqueue_trial({
+        "cg_sfm_des": 0.0, 
+        "cg_sfm_obs": 0.0, 
+        "cg_sfm_soc": 0.0
+    })
+    study.optimize(objective, n_trials=args.epochs)
+    args.cg_sfm_des = study.best_params['cg_sfm_des']
+    args.cg_sfm_obs = study.best_params['cg_sfm_obs']
+    args.cg_sfm_soc = study.best_params['cg_sfm_soc']
+    _logger.note(f"Best hyperparameters: {study.best_params}")
 
     ## Test
     torch.set_grad_enabled(False)
     model.eval()
     with npu_attention_fallback_context(model, enable=USE_NPU):
-        test_records = test_once(args, test_loaders, model, criterion, diffusion, best_records['epoch'])
+        test_records = test_once(args, test_loaders, model, criterion, diffusion, 0)
     with open(f"{args.save_path}/records.jsonl", "a") as f:
         if test_records is not None:
             f.write(json.dumps(test_records) + "\n")
@@ -566,12 +407,12 @@ if __name__ == "__main__":
     # 训练超参数
     parser.add_argument("--batch_size", type=int, default=128, help="训练批次大小")
     parser.add_argument("--lr", type=float, default=2e-4, help="学习率 (Learning Rate)")
-    parser.add_argument("--epochs", type=int, default=10000, help="最大训练轮数")
+    parser.add_argument("--epochs", type=int, default=50, help="最大训练轮数")
     parser.add_argument('--patience', type=int, default=20, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
     parser.add_argument('--force_new_experiment', action='store_true', help="是否强制不使用 checkpoint 继续训练，即使存在 checkpoint 文件")
-    parser.add_argument('--required_memory_MB', type=int, default=5000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
+    parser.add_argument('--required_memory_MB', type=int, default=3000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
 
     # 扩散模型参数 (Diffusion)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'], help="采样/生成方法")
