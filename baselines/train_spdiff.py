@@ -100,7 +100,7 @@ def train_once(
             hst_acc = hst_vel.diff(axis=-2, prepend=hst_vel[:, :, :1, :]).mul(args.fps)
             history_features = torch.cat((hst_pos, hst_vel, hst_acc), dim=-1).nan_to_num(0.0)
 
-            for t in range(args.multi_frame_rollout - 1):
+            for t in range(0, args.multi_frame_rollout):
                 (
                     ped_features,  # (batch, 1, ped, 6, 6)
                     obs_features,  # (batch, 1, ped, 2, 6)
