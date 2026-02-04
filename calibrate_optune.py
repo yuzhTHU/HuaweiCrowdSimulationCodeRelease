@@ -292,8 +292,8 @@ def main(args):
     ## 定义目标函数
     def objective(trial):
         args.cg_sfm_des = trial.suggest_float("cg_sfm_des", 0.0, 0.1)
-        # args.cg_sfm_obs = trial.suggest_float("cg_sfm_obs", 0.0, 0.5)
-        args.cg_sfm_obs = trial.suggest_categorical("cg_sfm_obs", [0.0])
+        args.cg_sfm_obs = trial.suggest_float("cg_sfm_obs", 0.0, 0.1)
+        # args.cg_sfm_obs = trial.suggest_categorical("cg_sfm_obs", [0.0])
         args.cg_sfm_soc = trial.suggest_float("cg_sfm_soc", 0.0, 0.1)
         
         torch.set_grad_enabled(False)
@@ -306,7 +306,9 @@ def main(args):
         w /= w.sum()
         ade = np.sum(w * test_records['ade'])
         collision_ped = np.sum(w * test_records['collision_ped'])
-        return ade + 20 * collision_ped
+        # collision_veh = np.sum(w * test_records['collision_veh'])
+        # collision_map = np.sum(w * test_records['collision_map'])
+        return ade + args.a_collision * collision_ped
 
     ## Train
     study = optuna.create_study(direction="minimize")
@@ -482,6 +484,7 @@ if __name__ == "__main__":
     parser.add_argument('--sfm_r_map', type=int, default=10, help="社会力中地图排斥力距离阈值 (in pixel)")
     parser.add_argument('--sfm_a_damp', type=float, default=0.5, help="社会力中速度阻尼系数（用于计算引导力时的速度衰减）")
     parser.add_argument('--use_sfm', action='store_true', default=False, help="使用社会力模型代替神经网络计算引导力")
+    parser.add_argument('--a_collision', type=float, default=50.0, help="碰撞惩罚在总损失中的权重系数")
 
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true
