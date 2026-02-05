@@ -240,7 +240,7 @@ def test_once(
             dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, roll_step*pred_step)
             test_timer.add('evaluate')
             # 可视化
-            if batch_idx == 0:
+            if False and batch_idx == 0:
                 pid = 0
                 save_path = f"{args.save_path}/visualize/epoch{epoch}_{loader.dataset.name}_idx{batch_idx}_pid{pid}.png"
                 visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path, pid)
