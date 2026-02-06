@@ -1101,8 +1101,8 @@ if __name__ == "__main__":
 
     # SPDiff 参数
     parser.add_argument('--config', type=str, default='./baselines/spdiff/configs/gc.yaml', help="SPDiff 模型配置文件路径")
-    parser.add_argument('--lr', type=float, default=0.0005, help="优化器学习率")
-    parser.add_argument('--batch_size', type=int, default=32, help="训练批次大小")
+    parser.add_argument('--lr', type=float, default=2e-4, help="优化器学习率")
+    parser.add_argument('--batch_size', type=int, default=128, help="训练批次大小")
 
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true
