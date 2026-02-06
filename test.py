@@ -433,6 +433,7 @@ if __name__ == "__main__":
     parser.add_argument('--use_spatial_anchor', action='store_true', default=True, help="是否使用空间锚点增强位置编码")
     parser.add_argument('--use_new_model', action='store_true', default=False, help="是否使用改进版的新模型结构")
     parser.add_argument('--use_nan_embedding', action='store_true', default=True, help="是否使用可学习的空值嵌入")
+    parser.add_argument('--use_latent_query', action='store_true', default=True, help="是否使用 Latent Token 查询地图以缩减计算量")
     parser.add_argument('--use_relative_features', action='store_true', default=True, help="是否使用相对特征")
     parser.add_argument('--use_frequency_encoding', action='store_true', default=True, help="是否使用傅里叶频域位置编码")
 
