@@ -29,7 +29,7 @@ from src.utils.timer import NamedTimer
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
-from src.utils.calc_xy_error import calc_xy_error
+from src.tasks.test_once import get_xy_error, get_collision_rate
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 
 from baselines.mid.models.trajectron import Trajectron
@@ -350,6 +350,7 @@ def test_once(
             # pos_pred = torch.from_numpy(pos_pred).to(args.device)
             
             batch_size, ped_num, _, _ = future_acc.shape
+            S = args.sample_num
             # 获取有效的行人掩模
             mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
             # 计算 pos_true 和 vel_true

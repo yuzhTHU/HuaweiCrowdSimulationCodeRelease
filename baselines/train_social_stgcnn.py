@@ -27,7 +27,7 @@ from src.utils.timer import NamedTimer
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
-from src.utils.calc_xy_error import calc_xy_error
+from src.tasks.test_once import get_xy_error, get_collision_rate
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 
 from baselines.social_stgcnn.model import social_stgcnn
@@ -158,7 +158,13 @@ def test_once(
     step = 0
     for loader in test_loaders:
         map_data = loader.dataset.map_data
-        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[], collision_ped=[], collision_veh=[], collision_map=[])
+        records = dict(
+            loss=[], ade=[], fde=[], trajlen=[], 
+            ped_num=[], veh_num=[], rollout_time=[], 
+            collision_ped=[], collision_veh=[], collision_map=[], 
+            collision_ped_base=[], collision_veh_base=[], collision_map_base=[], 
+            apd=[], norm_err=[], tan_err=[]
+        )
         for batch in loader: 
             step+=1
 
@@ -230,6 +236,7 @@ def test_once(
             test_timer.add('sample')
 
             # 获取有效的行人掩模
+            S = args.sample_num
             mask = torch.arange(pos.shape[1], device=args.device).expand(pos.shape[0], pos.shape[1]) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
             # 计算 distance error
             pos_pred = torch.from_numpy(pred).unsqueeze(1).to(args.device) # (S, B, #pedestrian, roll_step*pred_step, 2)

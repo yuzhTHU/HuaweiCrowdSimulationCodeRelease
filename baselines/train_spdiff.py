@@ -27,9 +27,8 @@ from src.utils.timer import NamedTimer
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
-from src.utils.calc_xy_error import calc_xy_error
-from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 from src.tasks.test_once import get_xy_error, get_collision_rate
+from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 
 from baselines.spdiff.models.autoencoder import AutoEncoder
 
