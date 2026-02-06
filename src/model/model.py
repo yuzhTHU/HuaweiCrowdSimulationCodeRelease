@@ -277,7 +277,10 @@ class Model(nn.Module):
             anchor_phys = torch.stack([anchor_phys_x, anchor_phys_y], dim=-1) # (S, S, 2)
             anchor_pe = self.positional_encoding(anchor_phys) # (S, S, model_dim)
             latent_tokens = latent_tokens + anchor_pe.flatten(0, 1) # (S, S, D) -> (K, D)
-        ltn_embedding = self.latent_attntn(latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
+        if self.args.use_latent_query:
+            ltn_embedding = self.latent_attntn(latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
+        else:
+            ltn_embedding = map_embedding.flatten(0, 1)
         self.map_embedding = map_embedding
         self.ltn_embedding = ltn_embedding
         self.map = map
