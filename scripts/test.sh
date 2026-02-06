@@ -1,0 +1,1 @@
+conda activate ./venv && export CUDA_VISIBLE_DEVICES=0,1,2,3 && python test.py --name "zara02_single_K=10" --train_datasets eth hotel zara01 univ --test_datasets zara02 --sample_num 10 --batch_size 10 --reload_checkpoint "./logs/train/zara02_single_K=10/best.pth" --cg_sfm_des 0.1 --cg_sfm_obs 0.1 --cg_sfm_soc 0.1

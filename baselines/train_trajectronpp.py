@@ -3,6 +3,7 @@ import sys
 import json
 import yaml
 import time
+import dill
 import torch
 import shlex
 import random
@@ -16,8 +17,9 @@ from pathlib import Path
 from typing import List, Dict
 from datetime import datetime
 from socket import gethostname
-from argparse import ArgumentParser, Namespace
 from setproctitle import setproctitle
+from argparse import ArgumentParser, Namespace
+from scipy.spatial.distance import pdist, squareform
 from src.dataset import ETHDataset, UCYDataset, SDDDataset, GCDataset, WayMoDataset, ORCADataset
 from src.model import Model, RelativeModel, NewModel
 from src.diffusion import DDPM, DDIM
@@ -27,18 +29,23 @@ from src.utils.timer import NamedTimer
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
-from src.tasks.test_once import get_xy_error, get_collision_rate
+from src.utils.calc_xy_error import calc_xy_error
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 
-from baselines.spdiff.models.autoencoder import AutoEncoder
+from baselines.trajectronpp.trajectron.model.trajectron import Trajectron
+from baselines.trajectronpp.trajectron.model.model_registrar import ModelRegistrar
+from baselines.trajectronpp.trajectron.environment.scene_graph import TemporalSceneGraph
+from baselines.trajectronpp.trajectron.environment.node_type import NodeType
+from baselines.trajectronpp.trajectron.environment.environment import Environment
+from baselines.trajectronpp.trajectron.environment.scene import Scene
 
-_logger = logging.getLogger("src.train_spdiff")
+_logger = logging.getLogger("src.train_mid")
 
 
 def train_once(
     args,
     train_loaders: List[D.DataLoader],
-    model: Model,
+    model: Trajectron,
     optimizer: torch.optim.Optimizer,
     scheduler,
     criterion: nn.Module,
@@ -60,8 +67,8 @@ def train_once(
     Returns:
         all_records: 训练记录字典
     """
+    model.set_curr_iter(epoch)
     
-    model.train()
     train_timer = NamedTimer(unit='it', mode='pace')
     records_list = []
     for loader in train_loaders:
@@ -83,83 +90,87 @@ def train_once(
             veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
             train_timer.add('prepare data')
 
-            o_x, o_y = (map > 0).nonzero().T
-            o_x = o_x / map.shape[0] * (map_data.xmax - map_data.xmin) + map_data.xmin
-            o_y = o_y / map.shape[1] * (map_data.ymax - map_data.ymin) + map_data.ymin
-            obstacles = torch.stack((o_x, o_y), dim=-1)  # M, 2
-            obstacles = obstacles.unsqueeze(0).expand(pos.shape[0], -1, -1)
-            # obstacles = torch.zeros((pos.shape[0], 1, 2), device=args.device)  # B, 1, 2
-            a_res = torch.zeros(future_acc.shape, device=args.device)
+            batch_size, ped_num, _ = pos.shape
+            mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
+            history = torch.zeros(hst.shape[0], hst.shape[1], hst.shape[2]+1, 6, device=args.device)
+            history[:, :, :-1, :2] = (hst_pos := hst)
+            history[:, :, 1:-1, 2:4] = (hst_vel := hst_pos.diff(axis=-2) * args.fps)
+            history[:, :, 2:-1, 4:6] = (hst_acc := hst_vel.diff(axis=-2) * args.fps)
+            history[:, :, -1, :2] = pos
+            history[:, :, -1, 2:4] = vel
+            history[:, :, -1, 4:6] = (vel - (hst[:, :, -1, :] - hst[:, :, -2, :]) * args.fps) * args.fps
+            history = history[:, :, 1:, :]
+            history = history.nan_to_num(0.0)
+            future = future_acc.nan_to_num(0.0)
+            x_t_list = []
+            x_st_t_list = []
+            y_t_list = []
+            y_st_t_list = []
+            neighbors_data_st_list = []
+            neighbors_edge_value_list = []
+            for batch_idx in range(pos.shape[0]):
+                history_t = history[batch_idx, mask[batch_idx], :, :]
+                future_t = future[batch_idx, mask[batch_idx], :, :]
+                dist_cube = np.stack([
+                    squareform(pdist(history_t[:, -3, :].cpu().numpy(), metric='euclidean')),
+                    squareform(pdist(history_t[:, -2, :].cpu().numpy(), metric='euclidean')),
+                    squareform(pdist(history_t[:, -1, :].cpu().numpy(), metric='euclidean'))
+                ], axis=0)
+                adj_cube = (dist_cube < 3.0).astype(int)
+                weight_cube = np.divide(1., dist_cube, out=np.zeros_like(dist_cube), where=(dist_cube>0))
+                edge_scaling = TemporalSceneGraph.calculate_edge_scaling(adj_cube, edge_addition_filter=[0.25, 0.5, 0.75, 1.0], edge_removal_filter=[1.0, 0.0])
+                connection_mask = edge_scaling > 1e-2
+                weight_cube = torch.from_numpy(weight_cube).float().to(args.device)
+                connection_mask = torch.from_numpy(connection_mask).float().to(args.device)
+                x_t = history_t  # (num_pedestrian, hist_step, 6)
+                x_st_t = x_t - x_t[:, (-1,), :]; x_st_t[:, :2] /= 3  # (num_pedestrian, hist_step, 6)
+                y_t = future_t  # (num_pedestrian, pred_step, 2)
+                y_st_t = y_t # - y_t[:, (0,), :2]; y_st_t[:, :2] /= 2  # (num_pedestrian, pred_step, 2)
+                neighbors_data_st = [[] for i in range(mask[batch_idx].sum())]
+                neighbors_edge_value = [[] for i in range(mask[batch_idx].sum())]
+                for i, j in connection_mask[0, :, :].nonzero():
+                    neighbors_data_st[i].append(x_st_t[j])
+                    neighbors_edge_value[i].append(weight_cube[-1, i, j])
+                x_t_list.extend(list(x_t))
+                x_st_t_list.extend(list(x_st_t))
+                y_t_list.extend(list(y_t))
+                y_st_t_list.extend(list(y_st_t))
+                neighbors_data_st_list.extend(neighbors_data_st)
+                neighbors_edge_value_list.extend([torch.stack(x) if len(x) else torch.tensor([]) for x in neighbors_edge_value])
+            x_t = torch.stack(x_t_list, dim=0)  # (batch_size * num_pedestrian, hist_step, 6)
+            x_st_t = torch.stack(x_st_t_list, dim=0)  # (batch_size * num_pedestrian, hist_step, 6)
+            y_t = torch.stack(y_t_list, dim=0)  # (batch_size * num_pedestrian, pred_step, 2)
+            y_st_t = torch.stack(y_st_t_list, dim=0)  # (batch_size * num_pedestrian, pred_step, 2)
+            node_type = NodeType('PEDESTRIAN', 1)
+            neighbors_data_st = {(node_type, node_type): neighbors_data_st_list}
+            neighbors_edge_value = {(node_type, node_type): neighbors_edge_value_list}
+            first_history_index = torch.zeros(x_t.shape[0], dtype=torch.long).to(args.device)
+            robot_traj_st_t = None
+            mid_map = None
+            batch = (
+                first_history_index,  # 0
+                x_t,  # (batch_size, hist-step, 6)
+                y_t,  # (batch_size, pred-step, 2)
+                x_st_t,  # (batch_size, hist-step, 6) 
+                y_st_t,  # (batch_size, pred-step, 2)
+                neighbors_data_st, # (batch_size, hist-step, 6)
+                neighbors_edge_value, #
+                robot_traj_st_t, # None
+                mid_map # None
+            )
 
-            a_cur = (vel - (hst[:, :, -1, :] - hst[:, :, -2, :]) * args.fps) * args.fps  # *c, N, 2
-            v_cur = vel  # *c, N, 2
-            p_cur = pos  # *c, N, 2
-            curr = torch.cat((p_cur, v_cur, a_cur), dim=-1).nan_to_num(0.0) # *c, N, 6
-            hst_pos = hst
-            hst_vel = hst_pos.diff(axis=-2, prepend=hst_pos[:, :, :1, :]).mul(args.fps)
-            hst_acc = hst_vel.diff(axis=-2, prepend=hst_vel[:, :, :1, :]).mul(args.fps)
-            history_features = torch.cat((hst_pos, hst_vel, hst_acc), dim=-1).nan_to_num(0.0)
-
-            for t in range(0, args.multi_frame_rollout):
-                (
-                    ped_features,  # (batch, 1, ped, 6, 6)
-                    obs_features,  # (batch, 1, ped, 2, 6)
-                    dest_features, # (batch, 1, ped, 2)
-                    near_ped_idx, # (batch, 1, ped, 6)
-                    neigh_ped_mask,  # (batch, 1, ped, 6)
-                    near_obstacle_idx,  # (batch, 1, ped, 2)
-                    neigh_obs_mask  # (batch, 1, ped, 2)
-                ) = model.get_relative_features(
-                    p_cur.unsqueeze(-3).detach(), 
-                    v_cur.unsqueeze(-3).detach(), 
-                    a_cur.unsqueeze(-3).detach(),
-                    des.unsqueeze(-3).detach(), 
-                    obstacles, 
-                    args.topk_ped, 
-                    args.sight_angle_ped,
-                    args.dist_threshold_ped, 
-                    args.topk_obs,
-                    args.sight_angle_obs, 
-                    args.dist_threshold_obs
-                )  # c,1,n,k,2
-                self_features = torch.cat((dest_features.view(*v_cur.shape), v_cur, a_cur, spd), dim=-1).nan_to_num(0.0) # (batch, ped, 7)
-                near_ped_idx = near_ped_idx.squeeze(1)
-                neigh_ped_mask = neigh_ped_mask.squeeze(1)
-                near_obstacle_idx = near_obstacle_idx.squeeze(1)
-                neigh_obs_mask = neigh_obs_mask.squeeze(1)
-
-                a_next = model.diffusion.denoise_fn(
-                    x_0 = future_acc[..., :, t, :] , # (Batch, Ped, 2)
-                    context = (
-                        curr.detach(),  # (Batch, Ped, 6)
-                        neigh_ped_mask.detach(),   # (Batch, Ped, 6) of 0/1
-                        self_features.detach(),  # (Batch, Ped, 7)
-                        near_ped_idx.detach(),  # (Batch, Ped, 6)
-                        history_features.detach(),  # (Batch, Ped, Hist-Step, 6)
-                        obstacles.detach(),  # (Batch, M, 2)
-                        near_obstacle_idx.detach(),  # (Batch, Ped, 5)
-                        neigh_obs_mask.detach()  # (Batch, Ped, 5)
-                    ),  
-                    curr = curr.detach()  # (Batch, Ped, 6)
-                ).view(*a_cur.shape) # (Batch, Ped, 2)
-                a_next = a_next.nan_to_num(0.0)
-                a_res[:, :, t, :] = a_next
-                a_cur = a_next
-                v_cur = v_cur + a_cur * 1/args.fps
-                p_cur = p_cur + v_cur * 1/args.fps  # *c, n, 2
-                curr = torch.cat((p_cur, v_cur, a_cur), dim=-1).detach().nan_to_num(0.0)
-                history_features = torch.cat([history_features[:, :, 1:, :], curr.clone().unsqueeze(-2)], dim=-2).nan_to_num(0.0)
-
-            loss = model.multiple_rollout_mse_loss(a_res, future_acc, args.time_decay, reduction='sum')
-            # rollout_loss = loss.item()
+            node_type = NodeType('PEDESTRIAN', 1) # 假设只训练行人
+            model.step_annealers(node_type)
+            loss = model.train_loss(batch, node_type)
             train_timer.add('forward')
             
             ## Backpropagate
             loss.backward()
+            if args.grad_clip is not None:
+                nn.utils.clip_grad_value_(model.model_registrar.parameters(), args.grad_clip)
             optimizer.step()
-            scheduler.step()
             records['loss'].extend([loss.item()] * future_acc.shape[0])
-            train_timer.add('backward')
+            train_timer.add('backpropagate')
         records_list.append(records)
         _logger.debug(
             f"[Epoch {epoch}/{args.epochs}] Train on {loader.dataset.name}: "
@@ -174,9 +185,7 @@ def train_once(
         for k, v in records.items():
             if k not in all_records:
                 all_records[k] = []
-            if not isinstance(v, (list, tuple, np.ndarray)) or len(v) == 0:
-                mean_v = np.nan
-            elif isinstance(v[0], (int, float)):
+            if isinstance(v[0], (int, float)):
                 mean_v = np.mean(v)
             else: 
                 mean_v = np.mean(v, axis=0).tolist()
@@ -211,21 +220,13 @@ def test_once(
     Returns:
         all_records: 测试记录字典    
     """
-    
-    model.eval()
     test_timer = NamedTimer(unit='it', mode='pace')
     records_list = []
     for loader in test_loaders:
         map_data = loader.dataset.map_data
         map = torch.from_numpy(map_data.map).to(args.device).float()
         test_timer.add('prepare data')
-        records = dict(
-            loss=[], ade=[], fde=[], trajlen=[], 
-            ped_num=[], veh_num=[], rollout_time=[], 
-            collision_ped=[], collision_veh=[], collision_map=[], 
-            collision_ped_base=[], collision_veh_base=[], collision_map_base=[], 
-            apd=[], norm_err=[], tan_err=[]
-        )
+        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[], collision_ped=[], collision_veh=[], collision_map=[])
         for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
@@ -238,93 +239,119 @@ def test_once(
             future_veh = batch['future_veh'].to(args.device)  # (batch_size, #vehicle, pred_step*roll_step, 2)
             ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
             veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
-
-            S = args.sample_num  # 采样次数
-            N = args.denoise_step  # 采样步数
-            assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
-            assert 1 <= args.step_offset <= args.T // N, f"step_offset 应该取值于 {{1, ..., {args.T // N}}}!"
-            pos_now = pos.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
-            vel_now = vel.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
-            hst_now = hst.repeat(S, 1, 1, 1)  # (S*B, #pedestrian, hist_step, 2)
-            des_now = des.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
-            spd_now = spd.repeat(S, 1, 1)  # (S*B, #pedestrian, 1)
-            veh_now = veh.repeat(S, 1, 1, 1)  # (S*B, #vehicle, hist_step + 1, 2)
-            ped_length_repeat = ped_length.repeat(S)  # (S*B,)
-            veh_length_repeat = veh_length.repeat(S)  # (S*B,)
             test_timer.add('prepare data', n=0)
 
-            o_x, o_y = (map > 0).nonzero().T
-            o_x = o_x / map.shape[0] * (map_data.xmax - map_data.xmin) + map_data.xmin
-            o_y = o_y / map.shape[1] * (map_data.ymax - map_data.ymin) + map_data.ymin
-            obstacles = torch.stack((o_x, o_y), dim=-1)  # M, 2
-            obstacles = obstacles.unsqueeze(0).expand(pos_now.shape[0], -1, -1)
-            a_res = []
-
-            a_cur = (vel_now - (hst_now[:, :, -1, :] - hst_now[:, :, -2, :]) * args.fps) * args.fps  # *c, N, 2
-            v_cur = vel_now  # *c, N, 2
-            p_cur = pos_now  # *c, N, 2
-            curr = torch.cat((p_cur, v_cur, a_cur), dim=-1).nan_to_num(0.0) # *c, N, 6
-            hst_pos = hst_now
-            hst_vel = hst_pos.diff(axis=-2, prepend=hst_pos[:, :, :1, :]).mul(args.fps)
-            hst_acc = hst_vel.diff(axis=-2, prepend=hst_vel[:, :, :1, :]).mul(args.fps)
-            history_features = torch.cat((hst_pos, hst_vel, hst_acc), dim=-1).nan_to_num(0.0)
-
             start_time = time.time()
-            for t in range(args.roll_step * args.pred_step):
-                (
-                    ped_features,  # (batch, 1, ped, 6, 6)
-                    obs_features,  # (batch, 1, ped, 2, 6)
-                    dest_features, # (batch, 1, ped, 2)
-                    near_ped_idx, # (batch, 1, ped, 6)
-                    neigh_ped_mask,  # (batch, 1, ped, 6)
-                    near_obstacle_idx,  # (batch, 1, ped, 2)
-                    neigh_obs_mask  # (batch, 1, ped, 2)
-                ) = model.get_relative_features(
-                    p_cur.unsqueeze(-3).detach(), 
-                    v_cur.unsqueeze(-3).detach(), 
-                    a_cur.unsqueeze(-3).detach(),
-                    des_now.unsqueeze(-3).detach(), 
-                    obstacles, 
-                    args.topk_ped, 
-                    args.sight_angle_ped,
-                    args.dist_threshold_ped, 
-                    args.topk_obs,
-                    args.sight_angle_obs, 
-                    args.dist_threshold_obs
-                )  # c,1,n,k,2
-                self_features = torch.cat((dest_features.view(*v_cur.shape), v_cur, a_cur, spd_now), dim=-1).nan_to_num(0.0) # (batch, ped, 7)
-                near_ped_idx = near_ped_idx.squeeze(1)
-                neigh_ped_mask = neigh_ped_mask.squeeze(1)
-                near_obstacle_idx = near_obstacle_idx.squeeze(1)
-                neigh_obs_mask = neigh_obs_mask.squeeze(1)
 
-                a_next = model.diffusion.sample(
-                    context = (
-                        curr.detach().to(args.device),  # (Batch, Ped, 6)
-                        neigh_ped_mask.detach().to(args.device),   # (Batch, Ped, 6) of 0/1
-                        self_features.detach().to(args.device),  # (Batch, Ped, 7)
-                        near_ped_idx.detach().to(args.device),  # (Batch, Ped, 6)
-                        history_features.detach().to(args.device),  # (Batch, Ped, Hist-Step, 6)
-                        obstacles.detach().to(args.device),  # (Batch, M, 2)
-                        near_obstacle_idx.detach().to(args.device),  # (Batch, Ped, 5)
-                        neigh_obs_mask.detach().to(args.device)  # (Batch, Ped, 5)
-                    ),  
-                    curr = curr.detach().to(args.device)  # (Batch, Ped, 6)
-                ) # (Batch, Ped, 2)
-                a_next = a_next.nan_to_num(0.0)
-                a_res.append(a_next)
-                a_cur = a_next
-                v_cur = v_cur + a_cur * 1/args.fps
-                p_cur = p_cur + v_cur * 1/args.fps  # *c, n, 2
-                curr = torch.cat((p_cur, v_cur, a_cur), dim=-1).detach().nan_to_num(0.0)
-                history_features = torch.cat([ history_features[:, :, 1:, :], curr.clone().unsqueeze(-2) ], dim=-2).nan_to_num(0.0)
+            batch_size, ped_num, _ = pos.shape
+            mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
+            history = torch.zeros(hst.shape[0], hst.shape[1], hst.shape[2]+1, 6, device=args.device)
+            history[:, :, :-1, :2] = (hst_pos := hst)
+            history[:, :, 1:-1, 2:4] = (hst_vel := hst_pos.diff(axis=-2) * args.fps)
+            history[:, :, 2:-1, 4:6] = (hst_acc := hst_vel.diff(axis=-2) * args.fps)
+            history[:, :, -1, :2] = pos
+            history[:, :, -1, 2:4] = vel
+            history[:, :, -1, 4:6] = (vel - (hst[:, :, -1, :] - hst[:, :, -2, :]) * args.fps) * args.fps
+            history = history[:, :, 1:, :]
+            history = history.nan_to_num(0.0)
+            future = future_acc.nan_to_num(0.0)
+            x_t_list = []
+            x_st_t_list = []
+            y_t_list = []
+            y_st_t_list = []
+            neighbors_data_st_list = []
+            neighbors_edge_value_list = []
+            for batch_idx in range(pos.shape[0]):
+                history_t = history[batch_idx, mask[batch_idx], :, :]
+                future_t = future[batch_idx, mask[batch_idx], :, :]
+                dist_cube = np.stack([
+                    squareform(pdist(history_t[:, -3, :].cpu().numpy(), metric='euclidean')),
+                    squareform(pdist(history_t[:, -2, :].cpu().numpy(), metric='euclidean')),
+                    squareform(pdist(history_t[:, -1, :].cpu().numpy(), metric='euclidean'))
+                ], axis=0)
+                adj_cube = (dist_cube < 3.0).astype(int)
+                weight_cube = np.divide(1., dist_cube, out=np.zeros_like(dist_cube), where=(dist_cube>0))
+                edge_scaling = TemporalSceneGraph.calculate_edge_scaling(adj_cube, edge_addition_filter=[0.25, 0.5, 0.75, 1.0], edge_removal_filter=[1.0, 0.0])
+                connection_mask = edge_scaling > 1e-2
+                weight_cube = torch.from_numpy(weight_cube).float().to(args.device)
+                connection_mask = torch.from_numpy(connection_mask).float().to(args.device)
+                x_t = history_t  # (num_pedestrian, hist_step, 6)
+                x_st_t = x_t - x_t[:, (-1,), :]; x_st_t[:, :2] /= 3  # (num_pedestrian, hist_step, 6)
+                y_t = future_t  # (num_pedestrian, pred_step, 2)
+                y_st_t = y_t # - y_t[:, (0,), :2]; y_st_t[:, :2] /= 2  # (num_pedestrian, pred_step, 2)
+                neighbors_data_st = [[] for i in range(mask[batch_idx].sum())]
+                neighbors_edge_value = [[] for i in range(mask[batch_idx].sum())]
+                for i, j in connection_mask[0, :, :].nonzero():
+                    neighbors_data_st[i].append(x_st_t[j])
+                    neighbors_edge_value[i].append(weight_cube[-1, i, j])
+                x_t_list.extend(list(x_t))
+                x_st_t_list.extend(list(x_st_t))
+                y_t_list.extend(list(y_t))
+                y_st_t_list.extend(list(y_st_t))
+                neighbors_data_st_list.extend(neighbors_data_st)
+                neighbors_edge_value_list.extend([torch.stack(x) if len(x) else torch.tensor([]) for x in neighbors_edge_value])
+            x_t = torch.stack(x_t_list, dim=0)  # (batch_size * num_pedestrian, hist_step, 6)
+            x_st_t = torch.stack(x_st_t_list, dim=0)  # (batch_size * num_pedestrian, hist_step, 6)
+            y_t = torch.stack(y_t_list, dim=0)  # (batch_size * num_pedestrian, pred_step, 2)
+            y_st_t = torch.stack(y_st_t_list, dim=0)  # (batch_size * num_pedestrian, pred_step, 2)
+            node_type = NodeType('PEDESTRIAN', 1)
+            neighbors_data_st = {(node_type, node_type): neighbors_data_st_list}
+            neighbors_edge_value = {(node_type, node_type): neighbors_edge_value_list}
+            first_history_index = torch.zeros(x_t.shape[0], dtype=torch.long).to(args.device)
+            robot_traj_st_t = None
+            mid_map = None
+            batch = (
+                first_history_index,  # 0
+                x_t,  # (batch_size, hist-step, 6)
+                y_t,  # (batch_size, pred-step, 2)
+                x_st_t,  # (batch_size, hist-step, 6) 
+                y_st_t,  # (batch_size, pred-step, 2)
+                neighbors_data_st, # (batch_size, hist-step, 6)
+                neighbors_edge_value, #
+                robot_traj_st_t, # None
+                mid_map # None
+            )
 
-            rollout_time = (time.time() - start_time) / args.roll_step
+            # 1. 获取对应的底层模型 (MultimodalGenerativeCVAE)
+            node_type = NodeType('PEDESTRIAN', 1)
+            if node_type not in model.node_models_dict:
+                continue
+            cvae_model = model.node_models_dict[node_type]
 
-            acc_pred = torch.stack(a_res, dim=-2)  # (S*B, #pedestrian, roll_step*pred_step, 2)
+            # 解包 batch (Trajectron 的 predict 需要解包后的数据)
+            (first_history_index, x_t, y_t, x_st_t, y_st_t, neighbors_data_st, 
+            neighbors_edge_value, robot_traj_st_t, mid_map) = batch
 
+            # 2. 预测 (替换掉 Diffusion 的 sample)
+            # 注意：这里直接调用底层 CVAE 的 predict，因为我们已经手动构建好了图数据
+            with torch.no_grad():
+                predictions = cvae_model.predict(
+                    inputs=x_t,
+                    inputs_st=x_st_t,
+                    first_history_indices=first_history_index,
+                    neighbors=neighbors_data_st,
+                    neighbors_edge_value=neighbors_edge_value,
+                    robot=robot_traj_st_t,
+                    map=mid_map,
+                    prediction_horizon=args.pred_step * args.roll_step, # 预测未来总长度
+                    num_samples=args.sample_num,
+                    z_mode=False, # True 为取众数，False 为采样
+                    gmm_mode=False,
+                    full_dist=False # False 返回轨迹点，True 返回分布参数
+                )
+                # predictions shape: (batch_ped_num, num_samples, pred_len, 2)
+
+            # 3. 格式对齐 (适配回你的评估代码)
+            # 你的评估代码期望: (sample_num, batch_size, ped_num, pred_len, 2)
+            # predictions 是紧凑的 (total_pedestrians, ...)，需要填回 (B, N, ...)
+            pred_compact = predictions.cpu().numpy() # (Total_Peds, Samples, T, 2)
+            pred_compact = pred_compact.transpose(1, 0, 2, 3) # (Samples, Total_Peds, T, 2)
+            pos_pred = np.zeros((args.sample_num, batch_size, ped_num, args.roll_step*args.pred_step, 2))
+            pos_pred[:, mask, :, :] = pred_compact
+
+            rollout_time = (time.time() - start_time)
+          
             batch_size, ped_num, _, _ = future_acc.shape
-            acc_pred = acc_pred.view(S, batch_size, ped_num, args.roll_step*args.pred_step, 2)  # (S, B, #pedestrian, roll_step*pred_step, 2)
             # 获取有效的行人掩模
             mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
             # 计算 pos_true 和 vel_true
@@ -338,11 +365,8 @@ def test_once(
             )
             # pos_true = future_pos # (B, #pedestrian, roll_step*pred_step, 2)
             # 计算 loss
-            loss = criterion(acc_pred, acc_true.expand(acc_pred.shape)) # float
-            records['loss'].extend([loss.item()] * future_acc.shape[0]) # List[float]
+            records['loss'].extend([np.nan] * future_acc.shape[0]) # List[float]
             # 计算 distance error
-            vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, roll_step*pred_step, 2)
-            pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, roll_step*pred_step, 2)
             dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, roll_step*pred_step)
             # 移除 padding 的行人
             dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, roll_step*pred_step)
@@ -649,7 +673,7 @@ def main(args):
         eval_loaders.append(D.DataLoader(
             dataset,
             shuffle=False,
-            batch_size=args.batch_size // args.sample_num,
+            batch_size=args.batch_size // args.sample_num,  # 在实际测试时 batch_size 会乘上 sample_num，可能会很大导致 OOM
             num_workers=args.num_workers,
             collate_fn=dataset.collate_fn,
         ))
@@ -676,18 +700,30 @@ def main(args):
     config["exp_name"] = args.config.split("/")[-1].split(".")[0]
     # config["dataset"] = args.dataset
     config = Namespace(**config)
-    args.topk_ped = config.topk_ped
-    args.sight_angle_ped = config.sight_angle_ped
-    args.dist_threshold_ped = config.dist_threshold_ped
-    args.topk_obs = config.topk_obs
-    args.sight_angle_obs = config.sight_angle_obs
-    args.dist_threshold_obs = config.dist_threshold_obs
-    args.time_decay = config.time_decay
     config.device = args.device
-    model = AutoEncoder(config, encoder = None).to(args.device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.999)
-    criterion = torch.nn.MSELoss()
+
+    hyperparams['enc_rnn_dim_edge'] = args.model_dim // 2
+    hyperparams['batch_size'] = args.batch_size
+    registrar = ModelRegistrar(args.save_dir, args.device)
+    model = Trajectron(registrar, hyperparams, None, args.device)
+    node_type = NodeType('PEDESTRIAN', 1)
+    scene = Scene(0, dt=1/args.fps)
+    env = Environment(
+        ['PEDESTRIAN'], 
+        {'PEDESTRIAN': {'position': {'x': {'mean': 0, 'std': 1}, 'y': {'mean': 0, 'std': 1}}, 'velocity': {'x': {'mean': 0, 'std': 2}, 'y': {'mean': 0, 'std': 2}}, 'acceleration': {'x': {'mean': 0, 'std': 1}, 'y': {'mean': 0, 'std': 1}}}},
+        [scene],
+        attention_radius={(node_type, node_type): 3.0},
+        robot_type=None
+    )
+    model.set_environment(env) 
+    model.set_annealing_params() # 初始化退火参数
+    # 2. 优化器 (Trajectron 官方写法，对 map_encoder 使用不同 LR)
+    optimizer = torch.optim.Adam([
+        {'params': registrar.get_all_but_name_match('map_encoder').parameters()},
+        {'params': registrar.get_name_match('map_encoder').parameters(), 'lr': 0.0008}
+    ], lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
+    criterion = None
     diffusion = None
     _logger.note(
         "Model Parameters:\n"
@@ -735,6 +771,7 @@ def main(args):
             optimizer.load_state_dict(checkpoint["optimizer"])
         else:
             _logger.warning("Optimizer state not found in checkpoint, optimizer re-initialized.")
+        scheduler.load_state_dict(checkpoint["scheduler"])
     else:
         start_epoch = 0
 
@@ -748,7 +785,7 @@ def main(args):
         # 训练一个 epoch
         if epoch > 0:
             torch.set_grad_enabled(True)
-            model.train()
+            model.model_registrar.train()
             train_records = train_once(args, train_loaders, model, optimizer, scheduler, criterion, diffusion, epoch)
             timer.add('train')
         else:
@@ -757,7 +794,7 @@ def main(args):
         # 测试一个 epoch
         if (epoch > 0 and not epoch % args.test_per_epoch) or (epoch == 0 and args.test_before_train):
             torch.set_grad_enabled(False)
-            model.eval()
+            model.model_registrar.eval()
             with npu_attention_fallback_context(model, enable=USE_NPU):
                 test_records = test_once(args, eval_loaders, model, criterion, diffusion, epoch)
             timer.add('test')
@@ -781,6 +818,7 @@ def main(args):
                 "args": vars(args),
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
             }, save_path)
             _logger.info(tag2ansi(f"Checkpoint saved to [underline green]{save_path}[reset]."))
             timer.add('save_checkpoint')
@@ -795,6 +833,7 @@ def main(args):
                 "args": vars(args),
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
             }, save_path)
             _logger.note(tag2ansi(f"Model saved to [underline green]{save_path}[reset]"))
             timer.add('save_periodly')
@@ -813,6 +852,7 @@ def main(args):
                     "args": vars(args),
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
                 }, save_path)
                 _logger.note(tag2ansi(f"Best model saved to [underline green]{save_path}[reset]"))
             else:
@@ -939,7 +979,7 @@ def main(args):
 
     ## Test
     torch.set_grad_enabled(False)
-    model.eval()
+    model.model_registrar.eval()
     with npu_attention_fallback_context(model, enable=USE_NPU):
         test_records = test_once(args, test_loaders, model, criterion, diffusion, best_records['epoch'])
     with open(f"{args.save_path}/records.jsonl", "a") as f:
@@ -1012,29 +1052,29 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     # 基础配置
     parser.add_argument('--test', action='store_true', help="是否仅运行测试流程（跳过训练）")
-    parser.add_argument("--name", type=str, default="train_spdiff", help="实验任务名称，用于生成实验ID")
+    parser.add_argument("--name", type=str, default="train_mid", help="实验任务名称，用于生成实验ID")
     parser.add_argument("--exp_name", type=str, default=None, help="手动指定实验名称（若指定则覆盖自动生成的名称）")
     parser.add_argument("--device", type=str, default="auto", help="计算设备，可选 'cpu', 'cuda:0' 或 'auto'（自动选择显存充足的 GPU）")
     parser.add_argument("--seed", type=int, default=None, help="随机种子，固定以复现实验结果")
-    parser.add_argument("--save_dir", type=str, default="./logs/train_spdiff", help="日志和模型权重的保存根目录")
+    parser.add_argument("--save_dir", type=str, default="./logs/train_mid", help="日志和模型权重的保存根目录")
     parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出更多日志，不保存部分文件）")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader 的工作线程数（0 表示主线程）")
     parser.add_argument("--minimize_gpu", action="store_true", default=False, help="是否在每个 epoch 结束后尽可能释放显存以供其他进程使用")
     
     # 训练超参数
-    # parser.add_argument("--batch_size", type=int, default=128, help="训练批次大小")
-    # parser.add_argument("--lr", type=float, default=2e-4, help="学习率 (Learning Rate)")
+    parser.add_argument("--batch_size", type=int, default=256, help="训练批次大小")
+    parser.add_argument("--lr", type=float, default=1e-3, help="学习率 (Learning Rate)")
     parser.add_argument("--epochs", type=int, default=10000, help="最大训练轮数")
     parser.add_argument('--patience', type=int, default=20, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
     parser.add_argument('--force_new_experiment', action='store_true', help="是否强制不使用 checkpoint 继续训练，即使存在 checkpoint 文件")
-    parser.add_argument('--required_memory_MB', type=int, default=1000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
+    parser.add_argument('--required_memory_MB', type=int, default=6500, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
 
     # 扩散模型参数 (Diffusion)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'], help="采样/生成方法")
     parser.add_argument("--T", type=int, default=100, help="训练时的最大扩散步数 (Timesteps)")
-    parser.add_argument('--sample_num', type=int, default=20, help="测试推理时，为每个轨迹生成的样本数量（用于评估多样性和准确性）")
+    parser.add_argument('--sample_num', type=int, default=10, help="测试推理时，为每个轨迹生成的样本数量（用于评估多样性和准确性）")
     parser.add_argument('--denoise_step', type=int, default=2, help="DDIM 采样时的去噪步数（加速采样）")
     parser.add_argument('--step_offset', type=int, default=10, help="采样的起始时间步偏移量（从 T-offset 开始采样）")
     parser.add_argument('--antithetic_sampling', action='store_true', default=True, help="是否使用对偶采样以减少方差")
@@ -1099,10 +1139,8 @@ if __name__ == "__main__":
     parser.add_argument('--sfm_a_damp', type=float, default=0.5, help="社会力中速度阻尼系数（用于计算引导力时的速度衰减）")
     parser.add_argument('--use_sfm', action='store_true', default=False, help="使用社会力模型代替神经网络计算引导力")
 
-    # SPDiff 参数
-    parser.add_argument('--config', type=str, default='./baselines/spdiff/configs/gc.yaml', help="SPDiff 模型配置文件路径")
-    parser.add_argument('--lr', type=float, default=0.0005, help="优化器学习率")
-    parser.add_argument('--batch_size', type=int, default=32, help="训练批次大小")
+    # MID 参数
+    parser.add_argument('--config', type=str, default='./baselines/mid/configs/baseline.yaml', help="MID 模型配置文件路径")
 
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true

@@ -232,7 +232,13 @@ def test_once(
         map_data = loader.dataset.map_data
         map = torch.from_numpy(map_data.map).to(args.device).float()
         test_timer.add('prepare data')
-        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[], collision_ped=[], collision_veh=[], collision_map=[])
+        records = dict(
+            loss=[], ade=[], fde=[], trajlen=[], 
+            ped_num=[], veh_num=[], rollout_time=[], 
+            collision_ped=[], collision_veh=[], collision_map=[], 
+            collision_ped_base=[], collision_veh_base=[], collision_map_base=[], 
+            apd=[], norm_err=[], tan_err=[]
+        )
         for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
             pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
             vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)

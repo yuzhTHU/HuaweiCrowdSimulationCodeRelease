@@ -569,7 +569,13 @@ def test_once(
     step = 0
     for loader in test_loaders:
         map_data = loader.dataset.map_data
-        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[], collision_ped=[], collision_veh=[], collision_map=[])
+        records = dict(
+            loss=[], ade=[], fde=[], trajlen=[], 
+            ped_num=[], veh_num=[], rollout_time=[], 
+            collision_ped=[], collision_veh=[], collision_map=[], 
+            collision_ped_base=[], collision_veh_base=[], collision_map_base=[], 
+            apd=[], norm_err=[], tan_err=[]
+        )
         for batch in tqdm(loader, leave=False, disable=False, dynamic_ncols=True): 
             step+=1
 
