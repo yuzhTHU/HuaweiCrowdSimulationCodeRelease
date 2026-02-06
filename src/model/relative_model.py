@@ -83,11 +83,19 @@ class RelativeModel(Model):
         """
         # pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
         vel_embedding = self.vel_embedder(vel) # (batch_size, #pedestrian, model_dim)
-        hst_embedding = self.hst_embedder(hst-pos.unsqueeze(-2)) # (batch_size, #pedestrian, model_dim)
-        des_embedding = self.des_embedder(des-pos) # (batch_size, #pedestrian, model_dim)
+        if self.args.use_relative_features:
+            hst_embedding = self.hst_embedder(hst-pos.unsqueeze(-2)) # (batch_size, #pedestrian, model_dim)
+            des_embedding = self.des_embedder(des-pos) # (batch_size, #pedestrian, model_dim)
+        else:
+            hst_embedding = self.hst_embedder(hst) # (batch_size, #pedestrian, model_dim)
+            des_embedding = self.des_embedder(des) # (batch_size, #pedestrian, model_dim)
         spd_embedding = self.spd_embedder(spd) # (batch_size, #pedestrian, model_dim)
-        fourier_pe = self.positional_encoding(pos) # (batch_size, #pedestrian, model_dim)
-        ped_embedding = vel_embedding + hst_embedding + des_embedding + spd_embedding + fourier_pe
+        if self.args.use_frequency_encoding:
+            fourier_pe = self.positional_encoding(pos) # (batch_size, #pedestrian, model_dim)
+            ped_embedding = vel_embedding + hst_embedding + des_embedding + spd_embedding + fourier_pe
+        else:
+            pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
+            ped_embedding = pos_embedding + vel_embedding + hst_embedding + des_embedding + spd_embedding
         self.ped_embedding = ped_embedding
         self.pos = pos
 
@@ -113,9 +121,16 @@ class RelativeModel(Model):
             shape[1] = 2
             veh = torch.full(shape, float('nan'), device=veh.device)
         # 不使用 veh 中的绝对位置，而是使用 FourierPositionalEncoding 将 veh_pos 编码到 pe 中
-        rel_veh_embedding = self.veh_embedder(veh - veh[..., (-1,), :]) # (batch_size, #vehicle, model_dim)
-        fourier_pe = self.positional_encoding(veh[..., -1, :]) # (batch_size, #vehicle, model_dim)
-        veh_embedding = rel_veh_embedding + fourier_pe
+        if self.args.use_relative_features:
+            rel_veh_embedding = self.veh_embedder(veh - veh[..., (-1,), :]) # (batch_size, #vehicle, model_dim)
+        else:
+            rel_veh_embedding = self.veh_embedder(veh) # (batch_size, #vehicle, model_dim)
+        if self.args.use_frequency_encoding:
+            fourier_pe = self.positional_encoding(veh[..., -1, :]) # (batch_size, #vehicle, model_dim)
+            veh_embedding = rel_veh_embedding + fourier_pe
+        else:
+            veh_pos_embedding = self.veh_embedder(veh[..., (-1,), :])
+            veh_embedding = rel_veh_embedding + veh_pos_embedding
         self.veh_embedding = veh_embedding
 
     def forward(
