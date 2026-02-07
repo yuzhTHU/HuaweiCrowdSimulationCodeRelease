@@ -300,7 +300,7 @@ def main(args):
         model.eval()
         with npu_attention_fallback_context(model, enable=USE_NPU):
             _logger.info(f"Testing with cg_sfm_des={args.cg_sfm_des}, cg_sfm_obs={args.cg_sfm_obs}, cg_sfm_soc={args.cg_sfm_soc}...")
-            test_records = test_once(args, train_loaders, model, criterion, diffusion, trial.number)
+            test_records = test_once(args, eval_loaders if args.use_eval_loaders else train_loaders, model, criterion, diffusion, trial.number)
         
         w = np.array(test_records['sample_nums'], dtype=float)
         w /= w.sum()
@@ -405,6 +405,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出更多日志，不保存部分文件）")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader 的工作线程数（0 表示主线程）")
     parser.add_argument("--minimize_gpu", action="store_true", default=False, help="是否在每个 epoch 结束后尽可能释放显存以供其他进程使用")
+    parser.add_argument('--use_eval_loaders', action='store_true', default=True, help="使用 eval_loaders 计算目标函数")
     
     # 训练超参数
     parser.add_argument("--batch_size", type=int, default=128, help="训练批次大小")
