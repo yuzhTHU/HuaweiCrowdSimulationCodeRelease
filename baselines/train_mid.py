@@ -29,7 +29,7 @@ from src.utils.timer import NamedTimer
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
-from src.tasks.test_once import get_xy_error, get_collision_rate
+from src.tasks.test_once import get_xy_error, get_collision_rate, get_collision_rate2
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
 
 from baselines.mid.models.trajectron import Trajectron
@@ -237,6 +237,7 @@ def test_once(
             ped_num=[], veh_num=[], rollout_time=[], 
             collision_ped=[], collision_veh=[], collision_map=[], 
             collision_ped_base=[], collision_veh_base=[], collision_map_base=[], 
+            collision_ped2=[], collision_veh2=[], collision_map2=[],
             apd=[], norm_err=[], tan_err=[]
         )
         for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
@@ -399,6 +400,10 @@ def test_once(
             records['collision_ped_base'].append(collision_ped_base)
             records['collision_veh_base'].append(collision_veh_base)
             records['collision_map_base'].append(collision_map_base)
+            collision_ped2, collision_veh2, collision_map2 = get_collision_rate2(args, map_data, future_veh, veh_length, mask, pos_pred, pos_true)
+            records['collision_ped2'].append(collision_ped2)
+            records['collision_veh2'].append(collision_veh2)
+            records['collision_map2'].append(collision_map2)
             # 计算 APD 多样性指标
             tmp = pos_pred[:, mask, :, :] # (S, valid{B*#pedestrian}, roll_step*pred_step, 2)
             tmp = (tmp[None, :, ...] - tmp[:, None, ...]).norm(dim=-1).mean(dim=-1)  # (S, S, valid{B*#pedestrian})
@@ -425,6 +430,9 @@ def test_once(
             f"[#66CCFF]Collision-Ped={np.mean(records['collision_ped']):.2%}, "
             f"[#66CCFF]Collision-Veh={np.mean(records['collision_veh']):.2%}, "
             f"[#66CCFF]Collision-Map={np.mean(records['collision_map']):.2%}, "
+            f"[#66CCFF]Collision-Ped2={np.mean(records['collision_ped2']):.2%}, "
+            f"[#66CCFF]Collision-Veh2={np.mean(records['collision_veh2']):.2%}, "
+            f"[#66CCFF]Collision-Map2={np.mean(records['collision_map2']):.2%}, "
             f"[#66CCFF]APD={np.mean(records['apd']):.4f}, "
             f"[#66CCFF]AvgLen={np.mean(records['trajlen']):.4f}, "
             f"[#66CCFF]PedNum={np.mean(records['ped_num']):.1f}, "
@@ -458,6 +466,9 @@ def test_once(
         f"[#66CCFF]Collision-Ped={np.sum(w * all_records['collision_ped']):.2%}, "
         f"[#66CCFF]Collision-Veh={np.sum(w * all_records['collision_veh']):.2%}, "
         f"[#66CCFF]Collision-Map={np.sum(w * all_records['collision_map']):.2%}, "
+        f"[#66CCFF]Collision-Ped2={np.sum(w * all_records['collision_ped2']):.2%}, "
+        f"[#66CCFF]Collision-Veh2={np.sum(w * all_records['collision_veh2']):.2%}, "
+        f"[#66CCFF]Collision-Map2={np.sum(w * all_records['collision_map2']):.2%}, "
         f"[#66CCFF]APD={np.sum(w * all_records['apd']):.4f}, "
         f"[#66CCFF]AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
         f"[#66CCFF]PedNum={np.sum(w * all_records['ped_num']):.4f}, "
@@ -479,6 +490,9 @@ def test_once(
             collision_ped = np.array([all_records['collision_ped'][i] for i in idxs])
             collision_veh = np.array([all_records['collision_veh'][i] for i in idxs])
             collision_map = np.array([all_records['collision_map'][i] for i in idxs])
+            collision_ped2 = np.array([all_records['collision_ped2'][i] for i in idxs])
+            collision_veh2 = np.array([all_records['collision_veh2'][i] for i in idxs])
+            collision_map2 = np.array([all_records['collision_map2'][i] for i in idxs])
             rollout_time = np.array([all_records['rollout_time'][i] for i in idxs])
             apd = np.array([all_records['apd'][i] for i in idxs])
             w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
@@ -494,6 +508,9 @@ def test_once(
                 f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
                 f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
                 f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
+                f"[#66CCFF]Collision-Ped2={np.sum(w * collision_ped2):.2%}, "
+                f"[#66CCFF]Collision-Veh2={np.sum(w * collision_veh2):.2%}, "
+                f"[#66CCFF]Collision-Map2={np.sum(w * collision_map2):.2%}, "
                 f"[#66CCFF]APD={np.sum(w * apd):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
@@ -889,6 +906,9 @@ def main(args):
                     f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']):.2%}, "
                     f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']):.2%}, "
                     f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']):.2%}, "
+                    f"[#66CCFF]Collision-Ped2={np.mean(best_records['collision_ped2']):.2%}, "
+                    f"[#66CCFF]Collision-Veh2={np.mean(best_records['collision_veh2']):.2%}, "
+                    f"[#66CCFF]Collision-Map2={np.mean(best_records['collision_map2']):.2%}, "
                     f"[#66CCFF]APD={np.mean(best_records['apd']):.4f}, "
                     f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
                     f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
@@ -944,6 +964,9 @@ def main(args):
             f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']):.2%}, "
             f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']):.2%}, "
             f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']):.2%}, "
+            f"[#66CCFF]Collision-Ped2={np.mean(best_records['collision_ped2']):.2%}, "
+            f"[#66CCFF]Collision-Veh2={np.mean(best_records['collision_veh2']):.2%}, "
+            f"[#66CCFF]Collision-Map2={np.mean(best_records['collision_map2']):.2%}, "
             f"[#66CCFF]APD={np.mean(best_records['apd']):.4f}, "
             f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
             f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
@@ -965,6 +988,9 @@ def main(args):
                 collision_ped = np.array([best_records['collision_ped'][i] for i in idxs])
                 collision_veh = np.array([best_records['collision_veh'][i] for i in idxs])
                 collision_map = np.array([best_records['collision_map'][i] for i in idxs])
+                collision_ped2 = np.array([best_records['collision_ped2'][i] for i in idxs])
+                collision_veh2 = np.array([best_records['collision_veh2'][i] for i in idxs])
+                collision_map2 = np.array([best_records['collision_map2'][i] for i in idxs])
                 apd = np.array([best_records['apd'][i] for i in idxs])
                 rollout_time = np.array([best_records['rollout_time'][i] for i in idxs])
                 w = np.array([best_records['sample_nums'][i] for i in idxs], dtype=float)
@@ -980,6 +1006,9 @@ def main(args):
                     f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
                     f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
                     f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
+                    f"[#66CCFF]Collision-Ped2={np.sum(w * collision_ped2):.2%}, "
+                    f"[#66CCFF]Collision-Veh2={np.sum(w * collision_veh2):.2%}, "
+                    f"[#66CCFF]Collision-Map2={np.sum(w * collision_map2):.2%}, "
                     f"[#66CCFF]APD={np.sum(w * apd):.4f}, "
                     f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                     f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
@@ -1022,6 +1051,9 @@ def main(args):
         f"[#66CCFF]Collision-Ped={np.sum(w * test_records['collision_ped']):.2%}, "
         f"[#66CCFF]Collision-Veh={np.sum(w * test_records['collision_veh']):.2%}, "
         f"[#66CCFF]Collision-Map={np.sum(w * test_records['collision_map']):.2%}, "
+        f"[#66CCFF]Collision-Ped2={np.sum(w * test_records['collision_ped2']):.2%}, "
+        f"[#66CCFF]Collision-Veh2={np.sum(w * test_records['collision_veh2']):.2%}, "
+        f"[#66CCFF]Collision-Map2={np.sum(w * test_records['collision_map2']):.2%}, "
         f"[#66CCFF]APD={np.sum(w * test_records['apd']):.4f}, "
         f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
         f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
@@ -1043,6 +1075,9 @@ def main(args):
             collision_ped = np.array([test_records['collision_ped'][i] for i in idxs])
             collision_veh = np.array([test_records['collision_veh'][i] for i in idxs])
             collision_map = np.array([test_records['collision_map'][i] for i in idxs])
+            collision_ped2 = np.array([test_records['collision_ped2'][i] for i in idxs])
+            collision_veh2 = np.array([test_records['collision_veh2'][i] for i in idxs])
+            collision_map2 = np.array([test_records['collision_map2'][i] for i in idxs])
             apd = np.array([test_records['apd'][i] for i in idxs])
             rollout_time = np.array([test_records['rollout_time'][i] for i in idxs])
             w = np.array([test_records['sample_nums'][i] for i in idxs], dtype=float)
@@ -1058,6 +1093,9 @@ def main(args):
                 f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped):.2%}, "
                 f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh):.2%}, "
                 f"[#66CCFF]Collision-Map={np.sum(w * collision_map):.2%}, "
+                f"[#66CCFF]Collision-Ped2={np.sum(w * collision_ped2):.2%}, "
+                f"[#66CCFF]Collision-Veh2={np.sum(w * collision_veh2):.2%}, "
+                f"[#66CCFF]Collision-Map2={np.sum(w * collision_map2):.2%}, "
                 f"[#66CCFF]APD={np.sum(w * apd):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "

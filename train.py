@@ -373,6 +373,9 @@ def main(args):
                     f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']) - (base := np.mean(best_records['collision_ped_base'])):.2%} (+{base:.2%}), "
                     f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']) - (base := np.mean(best_records['collision_veh_base'])):.2%} (+{base:.2%}), "
                     f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']) - (base := np.mean(best_records['collision_map_base'])):.2%} (+{base:.2%}), "
+                    f"[#66CCFF]Collision-Ped2={np.mean(best_records['collision_ped2']):.2%}, "
+                    f"[#66CCFF]Collision-Veh2={np.mean(best_records['collision_veh2']):.2%}, "
+                    f"[#66CCFF]Collision-Map2={np.mean(best_records['collision_map2']):.2%}, "
                     f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
                     f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
                     f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
@@ -449,6 +452,9 @@ def main(args):
             collision_ped_base = np.array([best_records['collision_ped_base'][i] for i in idxs])
             collision_veh_base = np.array([best_records['collision_veh_base'][i] for i in idxs])
             collision_map_base = np.array([best_records['collision_map_base'][i] for i in idxs])
+            collision_ped2 = np.array([best_records['collision_ped2'][i] for i in idxs])
+            collision_veh2 = np.array([best_records['collision_veh2'][i] for i in idxs])
+            collision_map2 = np.array([best_records['collision_map2'][i] for i in idxs])
             rollout_time = np.array([best_records['rollout_time'][i] for i in idxs])
             w = np.array([best_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
@@ -463,6 +469,9 @@ def main(args):
                 f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped) - (base := np.sum(w * collision_ped)):.2%} (+{base:.2%}), "
                 f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh) - (base := np.sum(w * collision_veh)):.2%} (+{base:.2%}), "
                 f"[#66CCFF]Collision-Map={np.sum(w * collision_map) - (base := np.sum(w * collision_map)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Ped2={np.sum(w * collision_ped2):.2%}, "
+                f"[#66CCFF]Collision-Veh2={np.sum(w * collision_veh2):.2%}, "
+                f"[#66CCFF]Collision-Map2={np.sum(w * collision_map2):.2%}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
@@ -504,6 +513,9 @@ def main(args):
         f"[#66CCFF]Collision-Ped={np.sum(w * test_records['collision_ped']) - (base := np.sum(w * test_records['collision_ped_base'])):.2%} (+{base:.2%}), "
         f"[#66CCFF]Collision-Veh={np.sum(w * test_records['collision_veh']) - (base := np.sum(w * test_records['collision_veh_base'])):.2%} (+{base:.2%}), "
         f"[#66CCFF]Collision-Map={np.sum(w * test_records['collision_map']) - (base := np.sum(w * test_records['collision_map_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Ped2={np.sum(w * test_records['collision_ped2']):.2%}, "
+        f"[#66CCFF]Collision-Veh2={np.sum(w * test_records['collision_veh2']):.2%}, "
+        f"[#66CCFF]Collision-Map2={np.sum(w * test_records['collision_map2']):.2%}, "
         f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
         f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
         f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.1f}, "
@@ -527,6 +539,9 @@ def main(args):
             collision_ped_base = np.array([test_records['collision_ped_base'][i] for i in idxs])
             collision_veh_base = np.array([test_records['collision_veh_base'][i] for i in idxs])
             collision_map_base = np.array([test_records['collision_map_base'][i] for i in idxs])
+            collision_ped2 = np.array([test_records['collision_ped2'][i] for i in idxs])
+            collision_veh2 = np.array([test_records['collision_veh2'][i] for i in idxs])
+            collision_map2 = np.array([test_records['collision_map2'][i] for i in idxs])
             rollout_time = np.array([test_records['rollout_time'][i] for i in idxs])
             w = np.array([test_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
@@ -541,6 +556,9 @@ def main(args):
                 f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped) - (base := np.sum(w * collision_ped_base)):.2%} (+{base:.2%}), "
                 f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh) - (base := np.sum(w * collision_veh_base)):.2%} (+{base:.2%}), "
                 f"[#66CCFF]Collision-Map={np.sum(w * collision_map) - (base := np.sum(w * collision_map_base)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Ped2={np.sum(w * collision_ped2):.2%}, "
+                f"[#66CCFF]Collision-Veh2={np.sum(w * collision_veh2):.2%}, "
+                f"[#66CCFF]Collision-Map2={np.sum(w * collision_map2):.2%}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
