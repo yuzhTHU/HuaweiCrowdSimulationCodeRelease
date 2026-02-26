@@ -466,7 +466,7 @@ if __name__ == "__main__":
     parser.add_argument('--cache_dataset', action='store_true', default=True, help="是否缓存预处理后的数据集以加速加载")
     parser.add_argument('--test_before_train', action='store_true', help="是否在训练开始前先运行一次测试")
     parser.add_argument('--test_per_epoch', type=int, default=10, help="每隔多少个 epoch 运行一次测试")
-    parser.add_argument('--collision_threshold', type=float, default=0.6, help="碰撞检测的距离阈值（单位：米）")
+    parser.add_argument('--collision_threshold', type=float, default=0.3, help="碰撞检测的距离阈值（单位：米）")
 
     # 模型结构参数
     parser.add_argument('--model_dim', type=int, default=64, help="模型的隐藏层维度 (Hidden Dimension)")
