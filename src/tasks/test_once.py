@@ -240,6 +240,14 @@ def test_once(
             acc_pred = []
             start_time = time.time()
             for step in range(args.roll_step):
+                if not args.cache_latent_query:
+                    model.set_map_embedding(
+                        map=map,
+                        xmin=map_data.xmin,
+                        xmax=map_data.xmax,
+                        ymin=map_data.ymin,
+                        ymax=map_data.ymax,
+                    )
                 model.set_veh_embedding(veh=veh_now)
                 model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
                 model.set_sur_info()

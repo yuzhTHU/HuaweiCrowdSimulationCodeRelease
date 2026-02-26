@@ -45,6 +45,42 @@ def main(args):
                     datasets.append(UCYDataset.load_data(args, './data/UCY/data/data_zara/crowds_zara02.vsp'))
                 elif dataset == 'univ':
                     datasets.append(UCYDataset.load_data(args, './data/UCY/data/data_university_students/students003.vsp'))
+                elif dataset == 'ETH_train':
+                    _eth_dataset = ETHDataset.load_data_batch(args, "./data/ETH/") if '_eth_dataset' not in locals() else _eth_dataset
+                    for d in _eth_dataset:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{100-test_ratio*100:.0f}train"
+                        d.samples = d.samples[:train_num]
+                        datasets.append(d)
+                elif dataset == 'ETH_test':
+                    _eth_dataset = ETHDataset.load_data_batch(args, "./data/ETH/") if '_eth_dataset' not in locals() else _eth_dataset
+                    for d in _eth_dataset:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{100-test_ratio*100:.0f}test"
+                        d.samples = d.samples[train_num:]
+                        datasets.append(d)
+                elif dataset == 'UCY_train':
+                    _ucy_dataset = UCYDataset.load_data_batch(args, "./data/UCY/data/") if '_ucy_dataset' not in locals() else _ucy_dataset
+                    for d in _ucy_dataset:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{100-test_ratio*100:.0f}train"
+                        d.samples = d.samples[:train_num]
+                        datasets.append(d)
+                elif dataset == 'UCY_test':
+                    _ucy_dataset = UCYDataset.load_data_batch(args, "./data/UCY/data/") if '_ucy_dataset' not in locals() else _ucy_dataset
+                    for d in _ucy_dataset:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{100-test_ratio*100:.0f}test"
+                        d.samples = d.samples[train_num:]
+                        datasets.append(d)
                 elif dataset == 'GC_train':
                     _gc_dataset = GCDataset.load_data(args, "./data/GC/Annotation") if '_gc_dataset' not in locals() else _gc_dataset
                     d = deepcopy(_gc_dataset)
@@ -98,8 +134,8 @@ def main(args):
             train_num = int(len(d) * (1-args.eval_ratio))
             d1.name = d1.name + f"_{100-args.eval_ratio*100:.0f}train"
             d2.name = d2.name + f"_{args.eval_ratio*100:.0f}eval"
-            d1.samples = d1.samples[:train_num]
-            d2.samples = d2.samples[train_num:]
+            d1.samples = d1.samples[:train_num] if args.eval_ratio > 0 else d1.samples
+            d2.samples = d2.samples[train_num:] if args.eval_ratio > 0 else d2.samples # d2.samples == d1.samples == d.samples when --eval_ratio 0
             train_dataset.append(d1)
             eval_dataset.append(d2)
     else:
@@ -516,12 +552,13 @@ def main(args):
         f"[#66CCFF]Collision-Ped2={np.sum(w * test_records['collision_ped2']):.2%}, "
         f"[#66CCFF]Collision-Veh2={np.sum(w * test_records['collision_veh2']):.2%}, "
         f"[#66CCFF]Collision-Map2={np.sum(w * test_records['collision_map2']):.2%}, "
+        f"[#66CCFF]APD={np.sum(w * test_records['apd']):.4f}, "
         f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
         f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
         f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.1f}, "
         f"[#66CCFF]VehNum={np.sum(w * test_records['veh_num']):.1f}, "
         f"[#66CCFF]RolloutTime={np.mean(test_records['rollout_time'])*1000:.2f}ms "
-        f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz)[reset])"
+        f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz[reset])"
     ))
     if len(set(test_records['dataset_class'])) > 1:
         for klass in sorted(list(set(test_records['dataset_class']))):
@@ -542,6 +579,7 @@ def main(args):
             collision_ped2 = np.array([test_records['collision_ped2'][i] for i in idxs])
             collision_veh2 = np.array([test_records['collision_veh2'][i] for i in idxs])
             collision_map2 = np.array([test_records['collision_map2'][i] for i in idxs])
+            apd = np.array([test_records['apd'][i] for i in idxs])
             rollout_time = np.array([test_records['rollout_time'][i] for i in idxs])
             w = np.array([test_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
@@ -559,6 +597,7 @@ def main(args):
                 f"[#66CCFF]Collision-Ped2={np.sum(w * collision_ped2):.2%}, "
                 f"[#66CCFF]Collision-Veh2={np.sum(w * collision_veh2):.2%}, "
                 f"[#66CCFF]Collision-Map2={np.sum(w * collision_map2):.2%}, "
+                f"[#66CCFF]APD={np.sum(w * apd):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
@@ -611,8 +650,8 @@ if __name__ == "__main__":
     parser.add_argument('--dropout', type=float, default=0.5, help="模型中的 Dropout 比率")
 
     # 数据集配置
-    parser.add_argument('--train_datasets', type=str, default=[], nargs='*', choices=['eth', 'hotel', 'zara01', 'zara02', 'univ', 'GC_train', 'SDD_train', 'WayMo_train'], help="使用的训练数据集列表 (KDD)")
-    parser.add_argument('--test_datasets', type=str, default=[], nargs='*', choices=['eth', 'hotel', 'zara01', 'zara02', 'univ', 'GC_test', 'SDD_test', 'WayMo_test'], help="使用的训练数据集列表 (KDD)")
+    parser.add_argument('--train_datasets', type=str, default=[], nargs='*', choices=['eth', 'hotel', 'zara01', 'zara02', 'univ', 'ETH_train', 'UCY_train', 'GC_train', 'SDD_train', 'WayMo_train'], help="使用的训练数据集列表 (KDD)")
+    parser.add_argument('--test_datasets', type=str, default=[], nargs='*', choices=['eth', 'hotel', 'zara01', 'zara02', 'univ', 'ETH_test', 'UCY_test', 'GC_test', 'SDD_test', 'WayMo_test'], help="使用的训练数据集列表 (KDD)")
     parser.add_argument('--eval_ratio', type=float, default=0.2, help="训练集划分为训练/验证集的比例 (KDD)")
     parser.add_argument('--datasets', type=str, default=["ETH"], nargs='*', choices=['ETH', 'UCY', 'GC', 'SDD', 'WayMo', 'ORCA', 'All', 'debug'], help="使用的训练数据集列表")
     parser.add_argument("--hist_step", type=int, default=8, help="输入的历史轨迹长度（帧数）")
@@ -641,6 +680,7 @@ if __name__ == "__main__":
     parser.add_argument('--use_new_model', action='store_true', default=False, help="是否使用改进版的新模型结构")
     parser.add_argument('--use_nan_embedding', action='store_true', default=True, help="是否使用可学习的空值嵌入")
     parser.add_argument('--use_latent_query', action='store_true', default=True, help="是否使用 Latent Token 查询地图以缩减计算量")
+    parser.add_argument('--cache_latent_query', action='store_true', default=True, help="是否缓存 Latent Query 以加速推理")
     parser.add_argument('--use_relative_features', action='store_true', default=True, help="是否使用相对特征")
     parser.add_argument('--use_frequency_encoding', action='store_true', default=True, help="是否使用傅里叶频域位置编码")
 
