@@ -28,35 +28,36 @@ from src.utils.use_npu import USE_NPU, npu_attention_fallback
 _logger = logging.getLogger("src")
 init_logger('src')
 
+# 顺序即为前端参数编辑器的显示顺序
 DEFAULT_ARGS = Namespace(
-    # **json.load(open('logs/train/20251127_RelativeModel_添加ReLU_修改Freq_添加Anchor_153734_DL4/args.json', 'r')),
-    use_new_model=False,
-    use_relative_model=False,
-    use_spatial_anchor=False,
-    dest_importance=0.0,
-    des_cfg=0.0,
-    map_cfg=0.0,
-    use_sfm=False,
-    direction_cg=0.0,
-    energy_cg=0.0,
-    sfm_des_cg=0.0,
-    t_des_force=0.5,
-    sfm_map_cg=0.0,
-    r=10,
-    a_map_force=3.0,
-    d_map_force=0.6,
-    sfm_social_cg=0.0,
-    a_ped_force=2.0,
-    d_ped_force=0.3,
-    a_veh_force=5.0,
-    d_veh_force=0.5,
-    vel_damping=0.5,
+    # 引导参数
+    cg_sfm_des=None, cg_sfm_obs=None, cg_sfm_soc=None, 
+    cfg_des=None, cfg_map=None, cg_dir=None, cg_dis=None, 
+    sfm_t_des=0.5, sfm_a_ped=25, sfm_a_veh=30, sfm_a_map=30, 
+    sfm_b_ped=0.08, sfm_b_veh=0.10, sfm_b_map=0.10, 
+    sfm_r_map=10, sfm_a_damp=0.5,
+    # 消融参数
+    use_sfm=False, no_map=False, no_speed=False, no_destination=False,
+    # 模型架构参数
+    model_dim=512, map_feature_dim=128, lstm_layer_num=2, head_num=8,
+    attention_layer_num=4, latent_token_num=64, dropout=0.1, 
+    use_relative_model=True, use_spatial_anchor=True, use_new_model=False,
+    use_nan_embedding=True, use_latent_query=True, cache_latent_query=True,
+    use_relative_features=True, use_frequency_encoding=True,
+    # 扩散采样参数
+    T=100, scale_accelerate=1.0, predict_noise=True,
+    denoise_step=10, sample_num=10, step_offset=1,
+    sampling_method='DDIM', beta_schedule='linear',
+    # 数据集参数
+    hist_step=8, pred_step=1, skip_step=1, roll_step=12,
+    fps=2.5, dot_per_meter=1, cache_dataset=True, 
 )
 OVERWRITE_ARGS = Namespace(
     sampling_method='DDIM',
     beta_schedule='linear',
     denoise_step=10,
     cache_dataset=True,
+    sample_num=1,
 )
 DATASET_FILE = Path('./data/datasets.csv')
 DATASET_LIST = None # 所有可用的 Dataset
@@ -110,8 +111,8 @@ async def model_list():
     global MODEL_LIST
     if MODEL_LIST is None:
         MODEL_LIST = [p.name for p in sorted(MODEL_DIR.glob('*'), key=lambda x: x.stat().st_mtime, reverse=False) if (p / 'best.pth').exists()][::-1]
-        # if (DEFAULT_MODEL := '20251103_new-1-CFG_111635_DL4') in MODEL_LIST: # 将指定模型放在第一位
-        #     MODEL_LIST.insert(0, MODEL_LIST.pop(MODEL_LIST.index(DEFAULT_MODEL)))
+        if (DEFAULT_MODEL := 'All') in MODEL_LIST: # 将指定模型放在第一位
+            MODEL_LIST.insert(0, MODEL_LIST.pop(MODEL_LIST.index(DEFAULT_MODEL)))
     return JSONResponse(content=json_compatible({i: s for i, s in enumerate(MODEL_LIST)}))
 
 
@@ -161,7 +162,11 @@ async def load_model(idx: int):
     path = MODEL_DIR / MODEL_LIST[idx] / 'best.pth'
     checkpoint = torch.load(path, map_location='cpu', weights_only=True)
     global ARGS
-    ARGS = Namespace(**(vars(DEFAULT_ARGS) | checkpoint["args"] | vars(OVERWRITE_ARGS)))
+    # 只保留 KEEP_ARGS 中的参数
+    checkpoint_args = {k: v for k, v in checkpoint["args"].items() if k in vars(DEFAULT_ARGS)}
+    ARGS = Namespace(**(vars(DEFAULT_ARGS) | checkpoint_args | vars(OVERWRITE_ARGS)))
+    # 设置 device 参数（运行时动态设置）
+    ARGS.device = AutoGPU().choice_gpu(3000, force=False) if not USE_NPU else 'npu'
     global MODEL
     if ARGS.use_new_model:
         MODEL = NewModel(ARGS).to(ARGS.device)
@@ -174,7 +179,8 @@ async def load_model(idx: int):
     if USE_NPU: npu_attention_fallback(MODEL)
     torch.set_grad_enabled(False)
     return JSONResponse(content=json_compatible({
-        "status": "ok", "response": vars(ARGS), "msg": f"Model checkpoint loaded from {path}."
+        "status": "ok", "response": vars(ARGS), "msg": f"Model checkpoint loaded from {path}.",
+        "keep_args_order": list(vars(DEFAULT_ARGS).keys()),  # 返回参数顺序供前端使用
     }))
 
 
@@ -228,7 +234,7 @@ async def save_trajector(req: SaveTrajectoryReq):
         content.seek(0)
         media_type = "application/gzip" if req.compress else "text/csv"
         return Response(
-            content=content,
+            content=content.getvalue(),
             media_type=media_type,
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
@@ -256,6 +262,7 @@ async def websocket_endpoint(ws: WebSocket):
                 )
                 MANAGER_DICT[ws] = (sendclient_worker_task, simulation_worker_task)
                 _logger.info(f"Started simulation for dataset {dataset_name} from frame {frame_idx}, saving to {save_name}. Current #simulations: {len(MANAGER_DICT)}")
+                await ws.send_json({"status": "ok", "msg": "Simulation started"})
             elif action == "stop":
                 if ws in MANAGER_DICT:
                     sendclient_worker_task, simulation_worker_task = MANAGER_DICT.pop(ws)
@@ -310,10 +317,12 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
             # df_new_frame['f'] = df_new_frame['f'].astype(int)
             # df_new_frame['id'] = df_new_frame['id'].astype(int)
             DATASET_DICT[save_name].df_data = pd.concat([DATASET_DICT[save_name].df_data, df_new_frame], ignore_index=True)
+            # 只取 sample=0 的数据用于前端可视化（避免同一帧同一 id 有多个位置）
+            df_vis = df_new_frame[df_new_frame['sample'] == 0] if 'sample' in df_new_frame.columns else df_new_frame
             response = {
                 'name': save_name, 'map': None, 'frames': {
-                    f: group.set_index('id').sort_index()[['type', 'x', 'y']].to_dict(orient='index') 
-                    for f, group in df_new_frame.groupby('f', sort=True)
+                    f: group.set_index('id').sort_index()[['type', 'x', 'y']].to_dict(orient='index')
+                    for f, group in df_vis.groupby('f', sort=True)
                 },
             }
             await ws.send_json(json_compatible({
@@ -323,8 +332,8 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         _logger.info("Sendclient worker cancelled.")
         raise
     except Exception as e:
-        msg = f"Simulation worker encountered an error: [{type(e)}] {e}\n{traceback.format_exc()}"
-        ws.send_json({'status': 'error', 'msg': msg})
+        msg = f"Sendclient worker encountered an error: [{type(e)}] {e}\n{traceback.format_exc()}"
+        await ws.send_json({'status': 'error', 'msg': msg})
         _logger.error(msg)
         raise
 
@@ -342,7 +351,7 @@ async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         MODEL.to(ARGS.device)
         diffusion.to(ARGS.device)
         _logger.info(f"Simulation worker using device {ARGS.device}")
-        ws.send_json({'status': 'ok', 'msg': f'Simulation worker using device {ARGS.device}.'})
+        await ws.send_json({'status': 'ok', 'msg': f'Simulation worker using device {ARGS.device}.'})
         state = await asyncio.to_thread(init_simulation, ARGS, dataset, frame_idx, MODEL) # 运行 100~200ms
         _logger.info(f"Frame {frame_idx}: {len(state.ped_list)} pedestrians, {len(state.veh_list)} vehicles.")
         for _ in range(frame_num):
@@ -353,7 +362,7 @@ async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         raise
     except Exception as e:
         msg = f"Simulation worker encountered an error: [{type(e)}] {e}\n{traceback.format_exc()}"
-        ws.send_json({'status': 'error', 'msg': msg})
+        await ws.send_json({'status': 'error', 'msg': msg})
         _logger.error(msg)
         raise
 

@@ -60,7 +60,7 @@ def main(args):
                         d = deepcopy(d)
                         test_ratio = 0.2
                         train_num = int(len(d) * (1-test_ratio))
-                        d.name = d.name + f"_{100-test_ratio*100:.0f}test"
+                        d.name = d.name + f"_{test_ratio*100:.0f}test"
                         d.samples = d.samples[train_num:]
                         datasets.append(d)
                 elif dataset == 'UCY_train':
@@ -78,7 +78,7 @@ def main(args):
                         d = deepcopy(d)
                         test_ratio = 0.2
                         train_num = int(len(d) * (1-test_ratio))
-                        d.name = d.name + f"_{100-test_ratio*100:.0f}test"
+                        d.name = d.name + f"_{test_ratio*100:.0f}test"
                         d.samples = d.samples[train_num:]
                         datasets.append(d)
                 elif dataset == 'GC_train':

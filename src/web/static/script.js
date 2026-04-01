@@ -760,6 +760,9 @@
         }
     }
 
+    // 从后端获取的 KEEP_ARGS 顺序
+    let KEEP_ARGS_ORDER = null;
+
     // 加载 dataset
     loadDatasetBtn.addEventListener('click', async () => {
         const idx = datasetSelect.value;
@@ -799,6 +802,7 @@
                 log('Server:', msg.msg || 'Model loaded.');
                 MODEL_LOADED = name;
                 ARGS_LOADED = msg.response;
+                KEEP_ARGS_ORDER = msg.keep_args_order || null;  // 保存参数顺序
                 log('当前模型参数:', ARGS_LOADED);
                 editParamsBtn.classList.remove('d-none');
                 renderParamsEditor(ARGS_LOADED);
@@ -810,11 +814,36 @@
         }
     });
 
-    // 渲染参数列表函数
+    // 渲染参数列表函数（按 KEEP_ARGS_ORDER 顺序显示）
     function renderParamsEditor(args) {
         paramsList.innerHTML = '';
-        const keys = Object.keys(args).sort();
-        keys.forEach(key => {
+
+        // 使用 KEEP_ARGS_ORDER 定义的顺序，没有的 key 放在最后
+        const orderedKeys = [];
+        const remainingKeys = [];
+
+        if (KEEP_ARGS_ORDER && Array.isArray(KEEP_ARGS_ORDER)) {
+            // 按 KEEP_ARGS_ORDER 顺序收集存在的 key
+            for (const key of KEEP_ARGS_ORDER) {
+                if (key in args) {
+                    orderedKeys.push(key);
+                }
+            }
+            // 收集剩余的 key（不在 KEEP_ARGS_ORDER 中的）
+            for (const key of Object.keys(args)) {
+                if (!orderedKeys.includes(key)) {
+                    remainingKeys.push(key);
+                }
+            }
+            remainingKeys.sort();  // 剩余的按字母排序
+        } else {
+            // 没有顺序信息时按字母排序（向后兼容）
+            Object.keys(args).sort().forEach(k => orderedKeys.push(k));
+        }
+
+        const allKeys = [...orderedKeys, ...remainingKeys];
+
+        allKeys.forEach(key => {
             const val = args[key];
             // 跳过复杂对象，只允许编辑基础类型
             if (val !== null && typeof val === 'object') return;
@@ -920,7 +949,9 @@
             }
             
             // 只有修改过的才需要特别关注
-            if (String(val) !== originalStr) {
+            // 注意：null 被渲染为 input 时可能变成空字符串，这不算修改
+            const isNullToEmpty = (originalStr === 'null' && val === '');
+            if (String(val) !== originalStr && !isNullToEmpty) {
                 hasChanges = true;
                 newArgs[key] = val;
             }

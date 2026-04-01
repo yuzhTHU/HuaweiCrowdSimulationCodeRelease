@@ -1,4 +1,5 @@
 import torch
+import logging
 import numpy as np
 import pandas as pd
 import torch.nn.functional as F
@@ -11,6 +12,8 @@ from ..dataset import BaseDataset
 from ..utils.get_force_map import get_force_map
 from ..utils.extract_patches import extract_patches_torch
 from .guidance import guidance
+
+_logger = logging.getLogger('src.simulate')
 
 @dataclass
 class SimulateState:
@@ -267,7 +270,10 @@ def simulate_one_step(
         for s in range(pos_new.shape[0])
     ])
     # _logger.info(f"  Converted new positions to CPU numpy. {pos_new.shape}, {type(pos_new)}")
-    df_veh_new = state.df_veh.loc[state.frame+1:state.frame+args.pred_step].reset_index().assign(type='vehicle')
+    df_veh_orig = state.df_veh.loc[state.frame+1:state.frame+args.pred_step].reset_index().assign(type='vehicle')
+    df_veh_new = pd.concat([
+        df_veh_orig.assign(sample=s) for s in range(pos_new.shape[0])
+    ], ignore_index=True)
     df_new = pd.concat([df_ped_new, df_veh_new], ignore_index=True)
     df_new['sample'] = df_new['sample'].astype(int)
     state.frame = state.frame + args.pred_step
