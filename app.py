@@ -190,10 +190,58 @@ async def update_args(new_args: dict):
     global ARGS
     if ARGS is None:
         return JSONResponse(content={"status": "error", "msg": "Model not loaded yet."})
-    
+
+    # 获取原始参数的类型定义
+    default_args_dict = vars(DEFAULT_ARGS)
+
+    # 特定参数的类型映射（对于 DEFAULT_ARGS 中为 None 的参数）
+    TYPE_HINTS = {
+        'cg_sfm_des': float,
+        'cg_sfm_obs': float,
+        'cg_sfm_soc': float,
+        'cfg_des': float,
+        'cfg_map': float,
+        'cg_dir': float,
+        'cg_dis': float,
+    }
+
+    # 转换每个参数的类型
+    for key, val in new_args.items():
+        # 空字符串视为 None
+        if val == '':
+            new_args[key] = None
+            continue
+        elif (original_type := TYPE_HINTS.get(key, type(default_args_dict.get(key, None)))) is None:
+            _logger.warning(f"Cannot determine the type of `{key}`={val}, keep it as {type(val)}")
+        elif original_type == float:
+            try:
+                new_args[key] = float(val)
+            except (ValueError, TypeError):
+                new_args[key] = None
+                _logger.error(f"Failed to convert `{key}`={val} into float!")
+        elif original_type == int:
+            try:
+                new_args[key] = int(val)
+            except (ValueError, TypeError):
+                new_args[key] = None
+                _logger.error(f"Failed to convert `{key}`={val} into int!")
+        elif original_type == bool:
+            if isinstance(val, bool):
+                continue
+            elif isinstance(val, str) and val.lower() in ('true', '1', 'yes', 'y'):
+                new_args[key] = True
+            elif isinstance(val, str) and val.lower() in ('false', '0', 'no', 'n'):
+                new_args[key] = False
+            else:
+                new_args[key] = bool(val)
+                _logger.warning(f"Convert `{key}`={val} into {bool(val)}")
+        # 其他类型保持原样
+        else:
+            _logger.warning(f"Unsure how to convert `{key}`={val} into {original_type}")
+
     # 更新参数 (仅更新 ARGS 中已有的或新传入的)
     vars(ARGS).update(new_args)
-    
+
     _logger.info(f"Args updated via API: {new_args}")
     return JSONResponse(content={"status": "ok", "msg": "Parameters updated successfully."})
 
