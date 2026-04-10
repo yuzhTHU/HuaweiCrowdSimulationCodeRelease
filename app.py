@@ -32,10 +32,10 @@ init_logger('src')
 # 顺序即为前端参数编辑器的显示顺序
 DEFAULT_ARGS = Namespace(
     # 引导参数
-    cg_sfm_des=None, cg_sfm_obs=None, cg_sfm_soc=None, 
-    cfg_des=None, cfg_map=None, cg_dir=None, cg_dis=None, 
-    sfm_t_des=0.5, sfm_a_ped=25, sfm_a_veh=30, sfm_a_map=30, 
-    sfm_b_ped=0.08, sfm_b_veh=0.10, sfm_b_map=0.10, 
+    cg_sfm_des=None, cg_sfm_obs=None, cg_sfm_soc=None,
+    cfg_des=None, cfg_map=None, cg_dir=None, cg_dis=None,
+    sfm_t_des=0.5, sfm_a_ped=25, sfm_a_veh=30, sfm_a_map=30,
+    sfm_b_ped=0.08, sfm_b_veh=0.10, sfm_b_map=0.10,
     sfm_r_map=10, sfm_a_damp=0.5,
     # 消融参数
     use_sfm=False, no_map=False, no_speed=False, no_destination=False,
@@ -56,11 +56,11 @@ DEFAULT_ARGS = Namespace(
     threshold_of_arrive=3.0,
 )
 OVERWRITE_ARGS = Namespace(
-    cg_sfm_des=0.3, 
-    cg_sfm_obs=0.28454697422367176, 
+    cg_sfm_des=0.03,
+    cg_sfm_obs=0.28454697422367176,
     cg_sfm_soc=0.2460485410529767,
-    sfm_a_ped=24.474450660285036, 
-    sfm_a_veh=23.142641521977364, 
+    sfm_a_ped=24.474450660285036,
+    sfm_a_veh=23.142641521977364,
     sfm_a_map=25.71719034302977,
     sfm_b_ped=0.12717436926298342,
     sfm_b_veh=0.12878228054809737,
@@ -246,6 +246,7 @@ async def update_args(new_args: dict):
         'cfg_map': float,
         'cg_dir': float,
         'cg_dis': float,
+        'guidance_clip_scale': float,
     }
 
     # 转换每个参数的类型
@@ -354,11 +355,8 @@ async def update_destination(req: UpdateDestinationReq):
 
         dataset = DATASET_DICT[dataset_name]
 
-        # 确保 pedestrian_id 是正确类型（可能是 int 或 str）
-        try:
-            ped_id = int(pedestrian_id)
-        except (ValueError, TypeError):
-            ped_id = pedestrian_id
+        # 确保 pedestrian_id 统一使用字符串类型，与前端和 destinations 字典保持一致
+        ped_id = str(pedestrian_id)
 
         # 初始化或更新 user_destinations 字典
         if not hasattr(dataset, 'user_destinations') or dataset.user_destinations is None:
@@ -433,6 +431,15 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
             df_data = df_data[(df_data['f'] <= frame_idx) & (df_data['f'] >= frame_idx - ARGS.hist_step)]
             DATASET_DICT[save_name].df_data = df_data
             _, state = await result_queue.get()
+            # 将模拟状态中的目的地保存到 user_destinations，确保后续模拟能正确使用
+            # 因为 df_data 被截断后，默认目的地计算会出错（取最后一帧位置而非真实目的地）
+            if state.des_now is not None:
+                des_numpy = state.des_now[0].cpu().numpy()
+                DATASET_DICT[save_name].user_destinations = {
+                    str(ped_id): {'x': float(des_numpy[idx, 0]), 'y': float(des_numpy[idx, 1])}
+                    for idx, ped_id in enumerate(state.ped_list)
+                    if not np.isnan(des_numpy[idx]).any()
+                }
             response = {
                 "name": save_name,
                 "fps": ARGS.fps,

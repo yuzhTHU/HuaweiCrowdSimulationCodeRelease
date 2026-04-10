@@ -1191,7 +1191,7 @@
     });
 
     // 开始模拟 / 结束模拟
-    startSimBtn.addEventListener('click', () => {
+    startSimBtn.addEventListener('click', async () => {
         if (!wsConnected) {
             alert('WebSocket 未连接，无法开始模拟!');
             return;
@@ -1204,6 +1204,14 @@
             alert('请先加载模型后再开始模拟!');
             return;
         }
+
+        // 等待所有目的地更新请求完成
+        if (destinationUpdatePromises.length > 0) {
+            log('等待目的地更新请求完成...');
+            await Promise.all(destinationUpdatePromises);
+            log('所有目的地更新已完成');
+        }
+
         const datasetName = ACTIVE_NAME;
         const item = DATA_CACHE[datasetName];
         const startFrame = item.currentFrame != null ? Number(item.currentFrame) : Number(Object.keys(item.frames)[0] || 0);
@@ -1490,6 +1498,9 @@
         return closestPedId;
     }
 
+    // 目的地更新请求队列
+    let destinationUpdatePromises = [];
+
     // 发送目的地更新请求
     async function sendDestinationUpdate(pedestrianId, newCoords) {
         const item = DATA_CACHE[ACTIVE_NAME];
@@ -1504,28 +1515,34 @@
             }
         };
 
-        try {
-            const res = await fetch('/api/update_destination', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const msg = await res.json();
-
+        // 创建 Promise 并添加到队列
+        const updatePromise = fetch('/api/update_destination', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(msg => {
             if (msg.status === 'ok') {
                 log(`🎯 目的地更新成功: Pedestrian ${pedestrianId} -> (${newCoords.x.toFixed(2)}, ${newCoords.y.toFixed(2)})`);
             } else {
                 log('❌ 目的地更新失败:', msg.msg);
                 alert('更新失败: ' + msg.msg);
-                // 恢复原始位置
                 render(ACTIVE_NAME);
             }
-        } catch (e) {
+        })
+        .catch(e => {
             console.error(e);
             alert('更新请求发送失败: ' + e.message);
-            // 恢复原始位置
             render(ACTIVE_NAME);
-        }
+        });
+
+        // 添加到等待队列
+        destinationUpdatePromises.push(updatePromise);
+
+        // 等待当前请求完成，然后从队列中移除
+        await updatePromise;
+        destinationUpdatePromises = destinationUpdatePromises.filter(p => p !== updatePromise);
     }
 
     // ------- 初始化 -------

@@ -77,9 +77,7 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
     if args.cg_sfm_des is not None:
         desire_vel = F.normalize(state.des_now.unsqueeze(-2) - future_pos, dim=-1) * state.spd_now.unsqueeze(-2)  # (S*B, #pedestrian, pred_step, 2)
         des_force = (desire_vel - future_vel).nan_to_num(0.0) / args.sfm_t_des  # (S*B, #pedestrian, pred_step, 2)
-        # loss = F.mse_loss(future_acc, des_force.detach())
-        # grad = torch.autograd.grad(loss, x0)[0]
-        grad = 2 * (future_acc - des_force) / args.scale_accelerate  # 可以直接手算
+        grad = 2 * (future_acc - des_force) / args.scale_accelerate
         total_guidance = total_guidance - args.cg_sfm_des * grad
     # 基于社会力，引导 acc 方向远离障碍物
     if args.cg_sfm_obs is not None:
