@@ -102,19 +102,46 @@ def init_simulation(
         .values # (#pedestrian, 2)
     )
     assert des.shape == (len(ped_list), 2)
-    spd = (
-        df_ped
-        .reindex(pd.MultiIndex.from_product([
-            range(frame_idx, frame_idx+int(5*args.fps) + 1),
-            ped_list
-        ], names=['f', 'id']))
-        .unstack().ffill().bfill().diff().mul(args.fps).iloc[1:]
-        .stack(future_stack=True)
-        .pow(2).sum(axis='columns', min_count=2).pow(0.5)
-        .unstack().mean(axis='rows')
-        .values[:, np.newaxis] # (#pedestrian, 1)
-    )
-    assert spd.shape == (len(ped_list), 1), "您可能需要将这里上方的 future_stack=True 改成 dropna=False 再试一试，或者用我们推荐的 pandas 版本 2.3.3"
+
+    # 使用用户自定义的目的地覆盖（如果有）
+    # 注意：user_destinations 的键是字符串类型，需要将 ped_id 转换为字符串进行比较
+    if hasattr(dataset, 'user_destinations') and dataset.user_destinations:
+        for idx, ped_id in enumerate(ped_list):
+            ped_id_str = str(ped_id)
+            if ped_id_str in dataset.user_destinations:
+                user_des = dataset.user_destinations[ped_id_str]
+                des[idx, 0] = user_des['x']
+                des[idx, 1] = user_des['y']
+                _logger.info(f"Using user-defined destination for pedestrian {ped_id}: ({user_des['x']}, {user_des['y']})")
+    # 计算期望速度 spd
+    # 注意：模拟数据集可能被截断，没有足够的未来帧数据
+    # 此时使用当前速度作为期望速度的估计
+    spd_data_range = range(frame_idx, frame_idx + int(5 * args.fps) + 1)
+    available_frames = df_ped.index.get_level_values('f').unique()
+    has_future_data = any(f in available_frames for f in spd_data_range if f > frame_idx)
+
+    if has_future_data:
+        # 有足够的未来帧数据，正常计算
+        spd = (
+            df_ped
+            .reindex(pd.MultiIndex.from_product([
+                spd_data_range,
+                ped_list
+            ], names=['f', 'id']))
+            .unstack().ffill().bfill().diff().mul(args.fps).iloc[1:]
+            .stack(future_stack=True)
+            .pow(2).sum(axis='columns', min_count=2).pow(0.5)
+            .unstack().mean(axis='rows')
+            .values[:, np.newaxis]
+        )
+    else:
+        # 模拟数据集被截断，使用当前速度作为期望速度
+        _logger.info(f"No future data for spd calculation, using current velocity as estimated desired speed")
+        spd = np.linalg.norm(vel, axis=1, keepdims=True)
+        # 设置合理的默认期望速度（如果当前速度太小）
+        default_spd = 1.0
+        spd = np.where(spd < default_spd, default_spd, spd)
+    assert spd.shape == (len(ped_list), 1), "spd shape mismatch"
     map_data = dataset.map_data
     if args.no_destination: 
         des *= np.nan
@@ -229,6 +256,12 @@ def simulate_one_step(
         acc_new = des_force # + map_force + ped_force + veh_force + damp_force
 
     vel_new = state.vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+    # 将到达目的地的行人速度设置为 0
+    if args.threshold_of_arrive > 0:
+        _pos_new = state.pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+        arrived = (_pos_new - state.des_now[:, :, None, :]).norm(dim=-1) < args.threshold_of_arrive  # (S*B, #pedestrian, pred_step)
+        arrived = arrived.cumsum(dim=-1) > 0  # (S*B, #pedestrian, pred_step)
+        vel_new[arrived, :] = 0.0
     pos_new = state.pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
     if state.veh_list:
         veh_new = torch.from_numpy(

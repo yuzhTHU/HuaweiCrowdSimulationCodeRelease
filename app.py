@@ -6,6 +6,7 @@ import asyncio
 import tarfile
 import logging
 import traceback
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from copy import deepcopy
@@ -31,10 +32,10 @@ init_logger('src')
 # 顺序即为前端参数编辑器的显示顺序
 DEFAULT_ARGS = Namespace(
     # 引导参数
-    cg_sfm_des=None, cg_sfm_obs=None, cg_sfm_soc=None, 
-    cfg_des=None, cfg_map=None, cg_dir=None, cg_dis=None, 
-    sfm_t_des=0.5, sfm_a_ped=25, sfm_a_veh=30, sfm_a_map=30, 
-    sfm_b_ped=0.08, sfm_b_veh=0.10, sfm_b_map=0.10, 
+    cg_sfm_des=None, cg_sfm_obs=None, cg_sfm_soc=None,
+    cfg_des=None, cfg_map=None, cg_dir=None, cg_dis=None,
+    sfm_t_des=0.5, sfm_a_ped=25, sfm_a_veh=30, sfm_a_map=30,
+    sfm_b_ped=0.08, sfm_b_veh=0.10, sfm_b_map=0.10,
     sfm_r_map=10, sfm_a_damp=0.5,
     # 消融参数
     use_sfm=False, no_map=False, no_speed=False, no_destination=False,
@@ -51,8 +52,20 @@ DEFAULT_ARGS = Namespace(
     # 数据集参数
     hist_step=8, pred_step=1, skip_step=1, roll_step=12,
     fps=2.5, dot_per_meter=1, cache_dataset=True, 
+    # 其他参数
+    threshold_of_arrive=3.0,
 )
 OVERWRITE_ARGS = Namespace(
+    cg_sfm_des=0.03,
+    cg_sfm_obs=0.28454697422367176,
+    cg_sfm_soc=0.2460485410529767,
+    sfm_a_ped=24.474450660285036,
+    sfm_a_veh=23.142641521977364,
+    sfm_a_map=25.71719034302977,
+    sfm_b_ped=0.12717436926298342,
+    sfm_b_veh=0.12878228054809737,
+    sfm_b_map=0.03217431363919982,
+    sfm_a_damp=0.7445477250185598,
     sampling_method='DDIM',
     beta_schedule='linear',
     denoise_step=10,
@@ -116,6 +129,15 @@ async def model_list():
     return JSONResponse(content=json_compatible({i: s for i, s in enumerate(MODEL_LIST)}))
 
 
+@app.get("/api/get_high_res_map")
+async def get_high_res_map(dataset_name: str):
+    """ 获取数据集的高分辨率原图 map.png """
+    high_res_map_path = getattr(DATASET_DICT.get(dataset_name), 'high_res_map_path', None)
+    if high_res_map_path and Path(high_res_map_path).exists():
+        return FileResponse(high_res_map_path, media_type="image/png")
+    return JSONResponse(content={"status": "error", "msg": "High-res map not found"}, status_code=404)
+
+
 @app.get("/api/load_dataset")
 async def load_dataset(idx: int, name: str):
     """ 加载 DATASET_LIST[idx] 对应的数据集，并保存到 DATASET_DICT[name] 中 """
@@ -152,8 +174,29 @@ async def load_dataset(idx: int, name: str):
             "xmax": dataset.map_data.xmax,
             "ymin": dataset.map_data.ymin,
             "ymax": dataset.map_data.ymax,
-        }
+        },
+        "has_high_res_map": False,
     }
+    # 获取所有行人的目的地（取每个行人轨迹最后一帧的位置作为目的地）
+    all_ped_ids = dataset.df_data.loc[dataset.df_data['type'] == 'pedestrian', 'id'].unique()
+    df_ped_coords = dataset.df_data.loc[dataset.df_data['type'] == 'pedestrian'].set_index('id')
+    destinations = {}
+    for ped_id in all_ped_ids:
+        if ped_id in df_ped_coords.index:
+            ped_traj = df_ped_coords.loc[ped_id][['x', 'y', 'f']].sort_values('f')
+            if len(ped_traj) > 0:
+                last_pos = ped_traj.iloc[-1]
+                destinations[str(ped_id)] = {'x': float(last_pos['x']), 'y': float(last_pos['y'])}
+    response['destinations'] = destinations
+    # 如果有用户自定义的目的地，覆盖默认值
+    if hasattr(dataset, 'user_destinations') and dataset.user_destinations:
+        for ped_id, des in dataset.user_destinations.items():
+            destinations[str(ped_id)] = des
+    # 初始化仿真状态（用于后续模拟）
+    state = init_simulation(ARGS, dataset, 0, MODEL)
+    if (map_png_path := Path(row['path']).parent / "map.png").exists():
+        DATASET_DICT[name].high_res_map_path = str(map_png_path)
+        response['has_high_res_map'] = True
     return JSONResponse(content={"status": "ok", "response": json_compatible(response), "msg": f"Dataset {name} loaded."})
 
 
@@ -203,6 +246,7 @@ async def update_args(new_args: dict):
         'cfg_map': float,
         'cg_dir': float,
         'cg_dis': float,
+        'guidance_clip_scale': float,
     }
 
     # 转换每个参数的类型
@@ -254,6 +298,12 @@ class SaveTrajectoryReq(BaseModel):
     compress: bool = True
 
 
+class UpdateDestinationReq(BaseModel):
+    dataset_name: str
+    pedestrian_id: str
+    destination: dict  # {x: float, y: float}
+
+
 @app.post("/api/save_trajectory")
 async def save_trajector(req: SaveTrajectoryReq):
     if req.name not in DATASET_DICT:
@@ -287,6 +337,47 @@ async def save_trajector(req: SaveTrajectoryReq):
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
 
+
+@app.post("/api/update_destination")
+async def update_destination(req: UpdateDestinationReq):
+    """更新指定行人的目的地坐标，存储在 dataset.user_destinations 中"""
+    dataset_name = req.dataset_name
+    pedestrian_id = req.pedestrian_id
+    new_x = req.destination.get('x')
+    new_y = req.destination.get('y')
+
+    if dataset_name not in DATASET_DICT:
+        return JSONResponse(content={"status": "error", "msg": f"Dataset {dataset_name} not found."})
+
+    try:
+        if new_x is None or new_y is None:
+            return JSONResponse(content={"status": "error", "msg": "Destination coordinates are required."})
+
+        dataset = DATASET_DICT[dataset_name]
+
+        # 确保 pedestrian_id 统一使用字符串类型，与前端和 destinations 字典保持一致
+        ped_id = str(pedestrian_id)
+
+        # 初始化或更新 user_destinations 字典
+        if not hasattr(dataset, 'user_destinations') or dataset.user_destinations is None:
+            dataset.user_destinations = {}
+
+        dataset.user_destinations[ped_id] = {'x': float(new_x), 'y': float(new_y)}
+
+        _logger.info(f"Updated user destination for pedestrian {ped_id} in {dataset_name} to ({new_x}, {new_y})")
+
+        return JSONResponse(content={
+            "status": "ok",
+            "msg": f"Updated destination for pedestrian {ped_id} to ({new_x}, {new_y})"
+        })
+
+    except Exception as e:
+        import traceback
+        error_msg = f"Failed to update destination: {str(e)}\n{traceback.format_exc()}"
+        _logger.error(error_msg)
+        return JSONResponse(content={"status": "error", "msg": error_msg})
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
@@ -300,7 +391,8 @@ async def websocket_endpoint(ws: WebSocket):
                 dataset_name = data["dataset_name"]
                 frame_idx = data["frame_idx"]
                 frame_num = data['frame_num']
-                save_name = f'sim-{dataset_name}-from-{frame_idx}'
+                now_str = datetime.now().strftime('%Y%m%d-%H%M%S')
+                save_name = f'sim-{dataset_name}-from-{frame_idx}-{now_str}'
                 result_queue = asyncio.Queue() # maxsize=10
                 sendclient_worker_task = asyncio.create_task(
                     sendclient_worker(ws, dataset_name, frame_idx, save_name, result_queue)
@@ -338,6 +430,16 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
             df_data = DATASET_DICT[save_name].df_data
             df_data = df_data[(df_data['f'] <= frame_idx) & (df_data['f'] >= frame_idx - ARGS.hist_step)]
             DATASET_DICT[save_name].df_data = df_data
+            _, state = await result_queue.get()
+            # 将模拟状态中的目的地保存到 user_destinations，确保后续模拟能正确使用
+            # 因为 df_data 被截断后，默认目的地计算会出错（取最后一帧位置而非真实目的地）
+            if state.des_now is not None:
+                des_numpy = state.des_now[0].cpu().numpy()
+                DATASET_DICT[save_name].user_destinations = {
+                    str(ped_id): {'x': float(des_numpy[idx, 0]), 'y': float(des_numpy[idx, 1])}
+                    for idx, ped_id in enumerate(state.ped_list)
+                    if not np.isnan(des_numpy[idx]).any()
+                }
             response = {
                 "name": save_name,
                 "fps": ARGS.fps,
@@ -349,18 +451,27 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
                     ) for f, group in df_data.groupby("f", sort=True)
                 },
                 "map": {
-                    "grid": map_data.map, 
-                    "xmin": map_data.xmin, 
+                    "grid": map_data.map,
+                    "xmin": map_data.xmin,
                     "xmax": map_data.xmax,
-                    "ymin": map_data.ymin, 
+                    "ymin": map_data.ymin,
                     "ymax": map_data.ymax,
                 },
+                "has_high_res_map": getattr(DATASET_DICT[save_name], 'high_res_map_path', None),
+                "destinations": {}
             }
+            if state.des_now is not None:
+                des = state.des_now[0].cpu().numpy()  # (ped_num, 2)
+                response['destinations'] = {
+                    str(ped_id): { 'x': float(des[idx, 0]), 'y': float(des[idx, 1]) }
+                    for idx, ped_id in enumerate(state.ped_list)
+                    if not np.isnan(des[idx]).any()
+                }
             await ws.send_json(json_compatible({
                 'status': 'ok', 'data': response, 'msg': f'Initialized simulation dataset {save_name} from {dataset_name} up to frame {frame_idx}.'
             }))
         while True:
-            df_new_frame = await result_queue.get()
+            df_new_frame, state = await result_queue.get()
             # _logger.info(str(df_new_frame))
             # df_new_frame['f'] = df_new_frame['f'].astype(int)
             # df_new_frame['id'] = df_new_frame['id'].astype(int)
@@ -372,7 +483,15 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
                     f: group.set_index('id').sort_index()[['type', 'x', 'y']].to_dict(orient='index')
                     for f, group in df_vis.groupby('f', sort=True)
                 },
+                'destinations': {}
             }
+            if state.des_now is not None:
+                des = state.des_now[0].cpu().numpy()  # (ped_num, 2)
+                response['destinations'] = {
+                    str(ped_id): { 'x': float(des[idx, 0]), 'y': float(des[idx, 1]) }
+                    for idx, ped_id in enumerate(state.ped_list)
+                    if not np.isnan(des[idx]).any()
+                }
             await ws.send_json(json_compatible({
                 'status': 'ok', 'data': response, 'msg': f'Sent simulated frame {df_new_frame["f"].min()}~{df_new_frame["f"].max()} to client.'
             }))
@@ -401,10 +520,11 @@ async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         _logger.info(f"Simulation worker using device {ARGS.device}")
         await ws.send_json({'status': 'ok', 'msg': f'Simulation worker using device {ARGS.device}.'})
         state = await asyncio.to_thread(init_simulation, ARGS, dataset, frame_idx, MODEL) # 运行 100~200ms
+        await result_queue.put((None, state))
         _logger.info(f"Frame {frame_idx}: {len(state.ped_list)} pedestrians, {len(state.veh_list)} vehicles.")
         for _ in range(frame_num):
             df_new, state = await asyncio.to_thread(simulate_one_step, ARGS, MODEL, diffusion, state) # 运行 100~200ms
-            await result_queue.put(df_new)
+            await result_queue.put((df_new, state))
     except asyncio.CancelledError:
         _logger.info("Simulation worker cancelled.")
         raise

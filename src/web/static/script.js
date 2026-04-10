@@ -18,8 +18,13 @@
     const autoViewCheckbox = document.getElementById('autoViewCheckbox');
     const playPauseBtn = document.getElementById('playPauseBtn');
     const loopCheckbox = document.getElementById('loopCheckbox');
+    const showDestinationsCheckbox = document.getElementById('showDestinationsCheckbox');
     const playbackSpeedSlider = document.getElementById('playbackSpeedSlider');
     const playbackSpeedValue = document.getElementById('playbackSpeedValue');
+    const showHighResMapCheckbox = document.getElementById('showHighResMapCheckbox');
+    const highResMapOpacitySlider = document.getElementById('highResMapOpacitySlider');
+    const highResMapOpacityValue = document.getElementById('highResMapOpacityValue');
+    const highResMapOpacityRow = document.getElementById('highResMapOpacityRow');
 
     // Context Menu & Modal Elements
     const contextMenu = document.getElementById('contextMenu');
@@ -44,9 +49,9 @@
     let playTimer = null;
     let isPlaying = false;
     let playbackSpeed = parseFloat(playbackSpeedValue.textContent);
-    
+
     // 数据缓存与运行状态
-    const DATA_CACHE = {};  // { name: { name, fps, map, frames: { frameNumber: { id: {type, x, y}, ... } }, currentFrame, sliderId } }
+    const DATA_CACHE = {};  // { name: { name, fps, map, frames: { frameNumber: { id: {type, x, y}, ... } }, destinations, currentFrame, sliderId } }
     let ACTIVE_NAME = null; // 当前选中的 name
     let ARGS_LOADED = null; // 当前加载的模型参数
     let MODEL_LOADED = null; // 当前加载的模型
@@ -54,6 +59,14 @@
 
     // Plotly 图表实例
     let myPlot;
+
+    // 目的地拖动状态
+    let dragData = {
+        isDragging: false,
+        targetPedId: null,
+        startX: 0,
+        startY: 0
+    };
 
     // Trail Control
     trailSlider.addEventListener('input', (e) => {
@@ -69,6 +82,28 @@
     playbackSpeedSlider.addEventListener('input', (e) => {
         playbackSpeedValue.textContent = e.target.value;
         playbackSpeed = parseFloat(e.target.value);
+    });
+
+    // Show Destinations Control
+    showDestinationsCheckbox.addEventListener('change', () => {
+        if (ACTIVE_NAME) render(ACTIVE_NAME);
+    });
+
+    // High-res Map Control
+    showHighResMapCheckbox.addEventListener('change', () => {
+        if (showHighResMapCheckbox.checked) {
+            highResMapOpacitySlider.value = 1.0;
+            highResMapOpacityValue.textContent = '1.0';
+        } else {
+            highResMapOpacitySlider.value = 0.0;
+            highResMapOpacityValue.textContent = '0.0';
+        }
+        if (ACTIVE_NAME) render(ACTIVE_NAME);
+    });
+
+    highResMapOpacitySlider.addEventListener('input', (e) => {
+        highResMapOpacityValue.textContent = e.target.value;
+        if (ACTIVE_NAME) render(ACTIVE_NAME);
     });
 
     // Auto View Control: 状态改变时立即重绘以应用设置（例如取消勾选时立即复位视图）
@@ -162,9 +197,11 @@
                 name: response.name,
                 map: null,
                 frames: {},
+                destinations: {},  // 存储目的地数据
                 currentFrame: null,
                 sliderId: null,
-                fps: response.fps || 10, 
+                fps: response.fps || 10,
+                has_high_res_map: false,  // 是否有高分辨率原图
             };
         }
         // 更新 map
@@ -174,6 +211,14 @@
         if (response.fps) {
             DATA_CACHE[name].fps = response.fps;
         }
+        // 更新 high_res_map_path
+        if (response.has_high_res_map !== undefined) {
+            DATA_CACHE[name].has_high_res_map = response.has_high_res_map;
+        }
+        // 更新 destinations (如果后端提供)
+        if (response.destinations) {
+            DATA_CACHE[name].destinations = response.destinations;
+        }
         // 更新 frames 和 currentFrame
         const frames = response.frames || {};
         for (const fkey of Object.keys(frames)) {
@@ -181,14 +226,37 @@
             DATA_CACHE[name].frames[fnum] = frames[fkey];
             DATA_CACHE[name].currentFrame = fnum; // 更新当前帧到最新传来的帧
         }
+        // 缓存高分辨率地图 URL
+        const item = DATA_CACHE[name];
+        if (item.has_high_res_map) {
+            item.high_res_map_url = `/api/get_high_res_map?dataset_name=${encodeURIComponent(name)}`;
+        }
         // 创建 / 更新滑块
         if (!DATA_CACHE[name].sliderId) { // 如果没有 slider，则创建
             createSliderForResponse(name);
+            // 检查是否有原图，启用 checkbox
+            updateHighResMapCheckbox(name);
         } else { // 更新 slider 的 max (如果需要) 并把滑块值设置到最新 currentFrame
             updateSliderRangeAndValue(name);
         }
         // 重新渲染地图
         render(name);
+    }
+
+    // Update high-res map checkbox state based on current dataset
+    function updateHighResMapCheckbox(name) {
+        const item = DATA_CACHE[name];
+        if (item && item.has_high_res_map) {
+            showHighResMapCheckbox.disabled = false;
+            showHighResMapCheckbox.title = '可用高分辨率原图';
+            highResMapOpacityRow.style.display = 'flex';
+            highResMapOpacityRow.style.alignItems = 'center';
+        } else {
+            showHighResMapCheckbox.disabled = true;
+            showHighResMapCheckbox.checked = false;
+            showHighResMapCheckbox.title = '该数据集没有原图';
+            highResMapOpacityRow.style.display = 'none';
+        }
     }
 
     // UI: 创建滑块、管理滑块事件
@@ -501,7 +569,7 @@
             highlightSlider();
         }
         renderTrace();
-        }
+    }
 
     // 渲染实体轨迹 (Plotly)
     function renderTrace() {
@@ -555,14 +623,14 @@
             plotData.push({
                 z: z,
                 type: 'heatmap',
-                colorscale: 'Greys', 
+                colorscale: 'Greys',
                 reversescale: true, // 0(Low)=White, 1(High)=Black
                 showscale: false,
                 zsmooth: false, // Sharp pixels
                 x: xcoords,
                 y: ycoords,
                 hoverinfo: 'none',
-                opacity: 1.0
+                opacity: 1.0 - parseFloat(highResMapOpacitySlider.value),
             });
         }
         
@@ -690,28 +758,130 @@
             });
         }
 
-        // Pedestrian Dots
+        // 计算行人点在当前缩放下的像素大小（固定 0.3m 直径）
+        const PEDESTRIAN_DIAMETER_METERS = 0.3;
+        let pedMarkerSize = 6;  // 默认最小像素大小
+        if (myPlot) {
+            const xaxis = myPlot._fullLayout?.xaxis;
+            const yaxis = myPlot._fullLayout?.yaxis;
+            const gs = myPlot._fullLayout?._size;
+            if (xaxis?.range && yaxis?.range && gs) {
+                const xSpan = Math.abs(xaxis.range[1] - xaxis.range[0]);
+                const plotWidth = gs.w || 1;
+                const metersPerPixel = xSpan / plotWidth;
+                pedMarkerSize = Math.max(4, PEDESTRIAN_DIAMETER_METERS / metersPerPixel);
+            }
+        }
+
+        // Pedestrian Dots (固定 0.3m 直径，随缩放变化)
         if (pedX.length > 0) {
             plotData.push({
                 x: pedX,
                 y: pedY,
                 ids: pedIds,
                 mode: 'markers',
-                marker: { size: 6, color: 'rgb(0, 100, 255)' },
+                marker: {
+                    size: pedMarkerSize,
+                    sizemode: 'diameter',
+                    color: 'rgb(0, 100, 255)'
+                },
                 text: pedText,
                 hoverinfo: 'text',
                 name: 'Pedestrian',
                 showlegend: true,
             });
         }
-        if (autoViewCheckbox.checked) { 
-            layout.uirevision = undefined; 
+
+        // 4. Destinations and Connection Lines (if enabled)
+        if (showDestinationsCheckbox.checked && item.destinations) {
+            const desX = [], desY = [], desText = [];
+            const lineX = [], lineY = [], lineIds = [];
+
+            for (const pedId in currentEntities) {
+                if (currentEntities[pedId].type === 'pedestrian' && pedId in item.destinations) {
+                    const ped = currentEntities[pedId];
+                    const des = item.destinations[pedId];
+
+                    // Add connection line (gray dashed)
+                    lineX.push(ped.x, des.x, null);  // null to separate lines
+                    lineY.push(ped.y, des.y, null);
+                    lineIds.push(pedId);
+
+                    // Add destination marker (red cross)
+                    desX.push(des.x);
+                    desY.push(des.y);
+                    desText.push(`Destination ID: ${pedId}`);
+                }
+            }
+
+            // Add connection lines
+            if (lineX.length > 0) {
+                plotData.push({
+                    x: lineX,
+                    y: lineY,
+                    ids: lineIds,
+                    mode: 'lines',
+                    line: {
+                        color: 'rgba(128, 128, 128, 0.6)',
+                        width: 1.5,
+                        dash: 'solid'  // 灰色实线
+                    },
+                    hoverinfo: 'none',
+                    name: 'To Destination',
+                    showlegend: false,
+                });
+            }
+
+            // Add destination markers (red crosses)
+            if (desX.length > 0) {
+                plotData.push({
+                    x: desX,
+                    y: desY,
+                    ids: Object.keys(item.destinations),  // 使用目的地的 ID
+                    mode: 'markers',
+                    marker: {
+                        size: 12,
+                        color: 'rgb(255, 0, 0)',
+                        symbol: 'x'  // 红色叉号
+                    },
+                    text: desText,
+                    hoverinfo: 'text',
+                    name: 'Destination',
+                    showlegend: true,
+                });
+            }
+        }
+
+        if (autoViewCheckbox.checked) {
+            layout.uirevision = undefined;
             layout.xaxis.range = undefined;
             layout.yaxis.range = undefined;
-        } else { 
+        } else {
             layout.uirevision = 'constant';
             layout.xaxis.range = myPlot ? myPlot.layout.xaxis.range : undefined;
             layout.yaxis.range = myPlot ? myPlot.layout.yaxis.range : undefined;
+        }
+
+        // Add high-resolution map image overlay if enabled
+        if (showHighResMapCheckbox.checked && !showHighResMapCheckbox.disabled && item.has_high_res_map && item.high_res_map_url) {
+            const opacity = parseFloat(highResMapOpacitySlider.value);
+            const mapInfo = item.map;
+            layout.images = [{
+                source: item.high_res_map_url,
+                xref: 'x',
+                yref: 'y',
+                x: mapInfo.xmin,          // 图像左边界
+                y: mapInfo.ymax,          // 图像上边界（使用 yanchor: 'top'）
+                sizex: mapInfo.xmax - mapInfo.xmin,
+                sizey: mapInfo.ymax - mapInfo.ymin,
+                xanchor: 'left',          // 锚点在左边缘
+                yanchor: 'top',           // 锚点在上边缘（关键：使 y 坐标对应图像顶部）
+                sizing: 'stretch',
+                opacity: opacity,
+                layer: 'below'            // 显示在轨迹下方
+            }];
+        } else {
+            layout.images = [];  // 未勾选时清除图片
         }
         
         // const smooth = true;
@@ -726,9 +896,26 @@
 
         if (myPlot) {
             Plotly.react(myPlot, plotData, layout);
+            // 永远禁用 Plotly 的拖动缩放，使用自定义的鼠标事件
+            Plotly.relayout(myPlot, { 'dragmode': false });
         } else {
-            Plotly.newPlot(mapDiv, plotData, layout, { responsive: true })
-                .then((plotElement) => {myPlot = plotElement;});
+            Plotly.newPlot(mapDiv, plotData, layout, {
+                responsive: true,
+                scrollZoom: true,
+                dragmode: false  // 禁用拖动缩放
+            })
+            .then((plotElement) => {
+                myPlot = plotElement;
+                // 监听缩放事件，重新渲染以更新行人点大小
+                myPlot.on('plotly_relayout', (eventData) => {
+                    // 只在 xaxis.range 或 yaxis.range 变化时重新渲染（表示缩放/平移）
+                    if (eventData['xaxis.range'] || eventData['yaxis.range'] ||
+                        eventData['xaxis.range[0]'] || eventData['xaxis.range[1]'] ||
+                        eventData['yaxis.range[0]'] || eventData['yaxis.range[1]']) {
+                        renderTrace();
+                    }
+                });
+            });
         }
     }
 
@@ -1004,7 +1191,7 @@
     });
 
     // 开始模拟 / 结束模拟
-    startSimBtn.addEventListener('click', () => {
+    startSimBtn.addEventListener('click', async () => {
         if (!wsConnected) {
             alert('WebSocket 未连接，无法开始模拟!');
             return;
@@ -1017,6 +1204,14 @@
             alert('请先加载模型后再开始模拟!');
             return;
         }
+
+        // 等待所有目的地更新请求完成
+        if (destinationUpdatePromises.length > 0) {
+            log('等待目的地更新请求完成...');
+            await Promise.all(destinationUpdatePromises);
+            log('所有目的地更新已完成');
+        }
+
         const datasetName = ACTIVE_NAME;
         const item = DATA_CACHE[datasetName];
         const startFrame = item.currentFrame != null ? Number(item.currentFrame) : Number(Object.keys(item.frames)[0] || 0);
@@ -1138,10 +1333,217 @@
 
     // 事件监听
     playPauseBtn.addEventListener('click', togglePlay);
-    
+
     // 当用户手动拖动滑块时，如果正在播放，建议暂时停止或保持播放？
     // 这里保持播放逻辑：用户拖到哪，就从哪继续播。
     // 但我们需要确保 item.currentFrame 与 slider.value 同步，这在 createSliderForResponse 的 input 事件中已经处理了。
+
+    // ======== 目的地拖动功能 ========
+
+    // 添加地图容器的鼠标事件监听（使用 capture 阶段确保不被 Plotly 拦截）
+    mapDiv.addEventListener('mousedown', (e) => handleMapMouseDown(e), true);
+    mapDiv.addEventListener('mousemove', (e) => handleMapMouseMove(e), true);
+    mapDiv.addEventListener('mouseup', (e) => handleMapMouseUp(e), true);
+    mapDiv.addEventListener('mouseleave', (e) => handleMapMouseUp(e), true);
+
+    // 处理地图鼠标按下事件
+    function handleMapMouseDown(e) {
+        // 只有在显示目的地且没有正在播放时才允许拖动
+        if (!showDestinationsCheckbox.checked || isPlaying) return;
+
+        // 检测是否点击了目的地标记
+        const rect = mapDiv.getBoundingClientRect();
+        const pixelX = e.clientX - rect.left;
+        const pixelY = e.clientY - rect.top;
+
+        const pedId = findPedestrianAtPosition(pixelX, pixelY);
+        if (pedId) {
+            dragData = {
+                isDragging: true,
+                targetPedId: pedId,
+                startX: pixelX,
+                startY: pixelY
+            };
+            e.preventDefault();
+            e.stopPropagation();
+            mapDiv.style.cursor = 'grabbing';
+            log(`👆 点击了行人 ${pedId} 的目的地，开始拖动`);
+        }
+    }
+
+    // 处理地图鼠标移动事件
+    function handleMapMouseMove(e) {
+        if (!dragData.isDragging) return;
+
+        // 阻止 Plotly 的默认行为
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rect = mapDiv.getBoundingClientRect();
+        const pixelX = e.clientX - rect.left;
+        const pixelY = e.clientY - rect.top;
+
+        // 计算新位置（需要将像素坐标转换为数据坐标）
+        const coords = pixelToDataCoords(pixelX, pixelY);
+        if (coords) {
+            // 更新本地目的地数据并重绘
+            const item = DATA_CACHE[ACTIVE_NAME];
+            if (item && item.destinations && item.destinations[dragData.targetPedId]) {
+                item.destinations[dragData.targetPedId] = coords;
+                render(ACTIVE_NAME);
+            }
+        }
+    }
+
+    // 处理地图鼠标释放事件
+    function handleMapMouseUp(e) {
+        if (dragData.isDragging) {
+            const rect = mapDiv.getBoundingClientRect();
+            const pixelX = e.clientX - rect.left;
+            const pixelY = e.clientY - rect.top;
+
+            const coords = pixelToDataCoords(pixelX, pixelY);
+            if (coords) {
+                sendDestinationUpdate(dragData.targetPedId, coords);
+            }
+            log(`👇 释放鼠标，目的地已更新`);
+            dragData = { isDragging: false, targetPedId: null };
+            // 恢复 cursor 样式
+            mapDiv.style.cursor = '';
+        }
+    }
+
+    // 坐标转换：像素坐标 -> 数据坐标
+    function pixelToDataCoords(pixelX, pixelY) {
+        if (!myPlot) return null;
+
+        const xaxis = myPlot._fullLayout.xaxis;
+        const yaxis = myPlot._fullLayout.yaxis;
+
+        if (!xaxis || !yaxis || !xaxis.range || !yaxis.range) return null;
+
+        // 使用 Plotly 内部计算的绘图区域尺寸
+        const gs = myPlot._fullLayout._size;
+        if (!gs) {
+            // 尝试从 SVG 中查找绘图区域 rect
+            const plotRect = myPlot.querySelector('.nsewdrag.drag[data-subplot="xy"]');
+            if (!plotRect) return null;
+
+            const marginLeft = parseFloat(plotRect.getAttribute('x'));
+            const marginTop = parseFloat(plotRect.getAttribute('y'));
+            const plotWidth = parseFloat(plotRect.getAttribute('width'));
+            const plotHeight = parseFloat(plotRect.getAttribute('height'));
+
+            const plotX = pixelX - marginLeft;
+            const plotY = pixelY - marginTop;
+
+            const xRange = xaxis.range;
+            const yRange = yaxis.range;
+
+            const dataX = xRange[0] + (plotX / plotWidth) * (xRange[1] - xRange[0]);
+            const dataY = yRange[1] - (plotY / plotHeight) * (yRange[1] - yRange[0]);
+
+            return { x: dataX, y: dataY };
+        }
+
+        const marginLeft = gs.l || 0;
+        const marginTop = gs.t || 0;
+        const plotWidth = gs.w || 1;
+        const plotHeight = gs.h || 1;
+
+        if (plotWidth <= 0 || plotHeight <= 0) return null;
+
+        const plotX = pixelX - marginLeft;
+        const plotY = pixelY - marginTop;
+
+        const xRange = xaxis.range;
+        const yRange = yaxis.range;
+        const dataX = xRange[0] + (plotX / plotWidth) * (xRange[1] - xRange[0]);
+        const dataY = yRange[1] - (plotY / plotHeight) * (yRange[1] - yRange[0]);
+
+        return { x: dataX, y: dataY };
+    }
+
+    // 查找鼠标位置附近的行人目的地
+    function findPedestrianAtPosition(pixelX, pixelY) {
+        const coords = pixelToDataCoords(pixelX, pixelY);
+        if (!coords) return null;
+
+        const item = DATA_CACHE[ACTIVE_NAME];
+        if (!item || !item.destinations) return null;
+
+        const xaxis = myPlot?._fullLayout?.xaxis;
+        const yaxis = myPlot?._fullLayout?.yaxis;
+        const xRange = xaxis?.range || [0, 100];
+        const yRange = yaxis?.range || [0, 100];
+        const xSpan = xRange[1] - xRange[0];
+        const ySpan = yRange[1] - yRange[0];
+        const threshold = Math.min(xSpan, ySpan) * 0.08;
+
+        let closestPedId = null;
+        let minDist = Infinity;
+
+        for (const pedId in item.destinations) {
+            const des = item.destinations[pedId];
+            const dist = Math.sqrt(
+                Math.pow(des.x - coords.x, 2) +
+                Math.pow(des.y - coords.y, 2)
+            );
+            if (dist < threshold && dist < minDist) {
+                minDist = dist;
+                closestPedId = pedId;
+            }
+        }
+
+        return closestPedId;
+    }
+
+    // 目的地更新请求队列
+    let destinationUpdatePromises = [];
+
+    // 发送目的地更新请求
+    async function sendDestinationUpdate(pedestrianId, newCoords) {
+        const item = DATA_CACHE[ACTIVE_NAME];
+        if (!item) return;
+
+        const payload = {
+            dataset_name: ACTIVE_NAME,
+            pedestrian_id: pedestrianId,
+            destination: {
+                x: newCoords.x,
+                y: newCoords.y
+            }
+        };
+
+        // 创建 Promise 并添加到队列
+        const updatePromise = fetch('/api/update_destination', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(msg => {
+            if (msg.status === 'ok') {
+                log(`🎯 目的地更新成功: Pedestrian ${pedestrianId} -> (${newCoords.x.toFixed(2)}, ${newCoords.y.toFixed(2)})`);
+            } else {
+                log('❌ 目的地更新失败:', msg.msg);
+                alert('更新失败: ' + msg.msg);
+                render(ACTIVE_NAME);
+            }
+        })
+        .catch(e => {
+            console.error(e);
+            alert('更新请求发送失败: ' + e.message);
+            render(ACTIVE_NAME);
+        });
+
+        // 添加到等待队列
+        destinationUpdatePromises.push(updatePromise);
+
+        // 等待当前请求完成，然后从队列中移除
+        await updatePromise;
+        destinationUpdatePromises = destinationUpdatePromises.filter(p => p !== updatePromise);
+    }
 
     // ------- 初始化 -------
     async function init() {

@@ -328,10 +328,20 @@ def main(args):
 
     ## 定义目标函数
     def objective(trial):
-        args.cg_sfm_des = trial.suggest_float("cg_sfm_des", 0.0, 0.1)
-        args.cg_sfm_obs = trial.suggest_float("cg_sfm_obs", 0.0, 0.1)
-        # args.cg_sfm_obs = trial.suggest_categorical("cg_sfm_obs", [0.0])
-        args.cg_sfm_soc = trial.suggest_float("cg_sfm_soc", 0.0, 0.1)
+        args.cg_sfm_des = trial.suggest_float("cg_sfm_des", 0.0, 0.3)
+        args.cg_sfm_obs = trial.suggest_float("cg_sfm_obs", 0.0, 0.3)
+        args.cg_sfm_soc = trial.suggest_float("cg_sfm_soc", 0.0, 0.3)
+        args.cg_sfm_des = trial.suggest_float("cg_sfm_des", 0.0, 0.3)
+        args.cg_sfm_obs = trial.suggest_float("cg_sfm_obs", 0.0, 0.3)
+        args.cg_sfm_soc = trial.suggest_float("cg_sfm_soc", 0.0, 0.3)
+        #args.sfm_t_des = trial.suggest_float("sfm_t_des", 0.5, 0.5)
+        args.sfm_a_ped = trial.suggest_float("sfm_a_ped", 0, 25)
+        args.sfm_a_veh = trial.suggest_float("sfm_a_veh", 0, 30)
+        args.sfm_a_map = trial.suggest_float("sfm_a_map", 0, 30)
+        args.sfm_b_ped = trial.suggest_float("sfm_b_ped", 0.0, 0.16)
+        args.sfm_b_veh = trial.suggest_float("sfm_b_veh", 0.0, 0.2)
+        args.sfm_b_map = trial.suggest_float("sfm_b_map", 0.0, 0.2)
+        args.sfm_a_damp = trial.suggest_float("sfm_a_damp", 0.0, 1.0)
         
         torch.set_grad_enabled(False)
         model.eval()
