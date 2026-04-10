@@ -242,7 +242,8 @@ def simulate_one_step(
             .values.reshape(args.pred_step, len(state.veh_list), 2) # (pred_step, #vehicle, 2)
             .transpose(1, 0, 2) # (#vehicle, pred_step, 2)
         ).to(device=args.device, dtype=torch.float32)
-    des_new = state.des_now  # (S*B, #pedestrian, 2)
+    arrived = (pos_new[:, :, -1, :] - state.des_now).norm(dim=-1) < args.threshold_of_arrive
+    des_new = torch.where(arrived.unsqueeze(-1), torch.tensor(float('nan'), device=args.device), state.des_now)  # (S*B, #pedestrian, 2)
     spd_new = state.spd_now  # (S*B, #pedestrian, 1)
     # _logger.info(f"  Computed new positions and velocities.")
 

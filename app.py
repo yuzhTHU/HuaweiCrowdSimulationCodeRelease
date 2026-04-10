@@ -51,8 +51,20 @@ DEFAULT_ARGS = Namespace(
     # 数据集参数
     hist_step=8, pred_step=1, skip_step=1, roll_step=12,
     fps=2.5, dot_per_meter=1, cache_dataset=True, 
+    # 其他参数
+    threshold_of_arrive=3.0,
 )
 OVERWRITE_ARGS = Namespace(
+    cg_sfm_des=9.489596984165773e-05, 
+    cg_sfm_obs=0.28454697422367176, 
+    cg_sfm_soc=0.2460485410529767,
+    sfm_a_ped=24.474450660285036, 
+    sfm_a_veh=23.142641521977364, 
+    sfm_a_map=25.71719034302977,
+    sfm_b_ped=0.12717436926298342,
+    sfm_b_veh=0.12878228054809737,
+    sfm_b_map=0.03217431363919982,
+    sfm_a_damp=0.7445477250185598,
     sampling_method='DDIM',
     beta_schedule='linear',
     denoise_step=10,
