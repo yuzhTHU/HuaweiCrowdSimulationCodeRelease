@@ -229,6 +229,12 @@ def simulate_one_step(
         acc_new = des_force # + map_force + ped_force + veh_force + damp_force
 
     vel_new = state.vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+    # 将到达目的地的行人速度设置为 0
+    if args.threshold_of_arrive > 0:
+        _pos_new = state.pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
+        arrived = (_pos_new - state.des_now[:, :, None, :]).norm(dim=-1) < args.threshold_of_arrive  # (S*B, #pedestrian, pred_step)
+        arrived = arrived.cumsum(dim=-1) > 0  # (S*B, #pedestrian, pred_step)
+        vel_new[arrived, :] = 0.0
     pos_new = state.pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
     if state.veh_list:
         veh_new = torch.from_numpy(
@@ -242,8 +248,7 @@ def simulate_one_step(
             .values.reshape(args.pred_step, len(state.veh_list), 2) # (pred_step, #vehicle, 2)
             .transpose(1, 0, 2) # (#vehicle, pred_step, 2)
         ).to(device=args.device, dtype=torch.float32)
-    arrived = (pos_new[:, :, -1, :] - state.des_now).norm(dim=-1) < args.threshold_of_arrive
-    des_new = torch.where(arrived.unsqueeze(-1), torch.tensor(float('nan'), device=args.device), state.des_now)  # (S*B, #pedestrian, 2)
+    des_new = state.des_now  # (S*B, #pedestrian, 2)
     spd_new = state.spd_now  # (S*B, #pedestrian, 1)
     # _logger.info(f"  Computed new positions and velocities.")
 

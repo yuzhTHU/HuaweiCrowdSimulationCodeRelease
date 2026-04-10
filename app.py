@@ -334,7 +334,8 @@ async def websocket_endpoint(ws: WebSocket):
                 dataset_name = data["dataset_name"]
                 frame_idx = data["frame_idx"]
                 frame_num = data['frame_num']
-                save_name = f'sim-{dataset_name}-from-{frame_idx}'
+                now_str = datetime.now().strftime('%Y%m%d-%H%M%S')
+                save_name = f'sim-{dataset_name}-from-{frame_idx}-{now_str}'
                 result_queue = asyncio.Queue() # maxsize=10
                 sendclient_worker_task = asyncio.create_task(
                     sendclient_worker(ws, dataset_name, frame_idx, save_name, result_queue)
