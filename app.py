@@ -56,7 +56,7 @@ DEFAULT_ARGS = Namespace(
     threshold_of_arrive=3.0,
 )
 OVERWRITE_ARGS = Namespace(
-    cg_sfm_des=9.489596984165773e-05, 
+    cg_sfm_des=0.3, 
     cg_sfm_obs=0.28454697422367176, 
     cg_sfm_soc=0.2460485410529767,
     sfm_a_ped=24.474450660285036, 
@@ -177,14 +177,23 @@ async def load_dataset(idx: int, name: str):
         },
         "has_high_res_map": False,
     }
+    # 获取所有行人的目的地（取每个行人轨迹最后一帧的位置作为目的地）
+    all_ped_ids = dataset.df_data.loc[dataset.df_data['type'] == 'pedestrian', 'id'].unique()
+    df_ped_coords = dataset.df_data.loc[dataset.df_data['type'] == 'pedestrian'].set_index('id')
+    destinations = {}
+    for ped_id in all_ped_ids:
+        if ped_id in df_ped_coords.index:
+            ped_traj = df_ped_coords.loc[ped_id][['x', 'y', 'f']].sort_values('f')
+            if len(ped_traj) > 0:
+                last_pos = ped_traj.iloc[-1]
+                destinations[str(ped_id)] = {'x': float(last_pos['x']), 'y': float(last_pos['y'])}
+    response['destinations'] = destinations
+    # 如果有用户自定义的目的地，覆盖默认值
+    if hasattr(dataset, 'user_destinations') and dataset.user_destinations:
+        for ped_id, des in dataset.user_destinations.items():
+            destinations[str(ped_id)] = des
+    # 初始化仿真状态（用于后续模拟）
     state = init_simulation(ARGS, dataset, 0, MODEL)
-    if state.des_now is not None:
-        des = state.des_now[0].cpu().numpy()  # (ped_num, 2)
-        response['destinations'] = {
-            str(ped_id): { 'x': float(des[idx, 0]), 'y': float(des[idx, 1]) }
-            for idx, ped_id in enumerate(state.ped_list)
-            if not np.isnan(des[idx]).any()
-        }
     if (map_png_path := Path(row['path']).parent / "map.png").exists():
         DATASET_DICT[name].high_res_map_path = str(map_png_path)
         response['has_high_res_map'] = True
