@@ -758,14 +758,33 @@
             });
         }
 
-        // Pedestrian Dots
+        // 计算行人点在当前缩放下的像素大小（固定 0.3m 直径）
+        const PEDESTRIAN_DIAMETER_METERS = 0.3;
+        let pedMarkerSize = 6;  // 默认最小像素大小
+        if (myPlot) {
+            const xaxis = myPlot._fullLayout?.xaxis;
+            const yaxis = myPlot._fullLayout?.yaxis;
+            const gs = myPlot._fullLayout?._size;
+            if (xaxis?.range && yaxis?.range && gs) {
+                const xSpan = Math.abs(xaxis.range[1] - xaxis.range[0]);
+                const plotWidth = gs.w || 1;
+                const metersPerPixel = xSpan / plotWidth;
+                pedMarkerSize = Math.max(4, PEDESTRIAN_DIAMETER_METERS / metersPerPixel);
+            }
+        }
+
+        // Pedestrian Dots (固定 0.3m 直径，随缩放变化)
         if (pedX.length > 0) {
             plotData.push({
                 x: pedX,
                 y: pedY,
                 ids: pedIds,
                 mode: 'markers',
-                marker: { size: 6, color: 'rgb(0, 100, 255)' },
+                marker: {
+                    size: pedMarkerSize,
+                    sizemode: 'diameter',
+                    color: 'rgb(0, 100, 255)'
+                },
                 text: pedText,
                 hoverinfo: 'text',
                 name: 'Pedestrian',
@@ -885,7 +904,18 @@
                 scrollZoom: true,
                 dragmode: false  // 禁用拖动缩放
             })
-            .then((plotElement) => {myPlot = plotElement;});
+            .then((plotElement) => {
+                myPlot = plotElement;
+                // 监听缩放事件，重新渲染以更新行人点大小
+                myPlot.on('plotly_relayout', (eventData) => {
+                    // 只在 xaxis.range 或 yaxis.range 变化时重新渲染（表示缩放/平移）
+                    if (eventData['xaxis.range'] || eventData['yaxis.range'] ||
+                        eventData['xaxis.range[0]'] || eventData['xaxis.range[1]'] ||
+                        eventData['yaxis.range[0]'] || eventData['yaxis.range[1]']) {
+                        renderTrace();
+                    }
+                });
+            });
         }
     }
 
