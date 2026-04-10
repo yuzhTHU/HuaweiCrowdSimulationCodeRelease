@@ -60,6 +60,14 @@
     // Plotly 图表实例
     let myPlot;
 
+    // 目的地拖动状态
+    let dragData = {
+        isDragging: false,
+        targetPedId: null,
+        startX: 0,
+        startY: 0
+    };
+
     // Trail Control
     trailSlider.addEventListener('input', (e) => {
         trailValue.textContent = e.target.value;
@@ -813,7 +821,7 @@
                     ids: Object.keys(item.destinations),  // 使用目的地的 ID
                     mode: 'markers',
                     marker: {
-                        size: 10,
+                        size: 12,
                         color: 'rgb(255, 0, 0)',
                         symbol: 'x'  // 红色叉号
                     },
@@ -869,9 +877,15 @@
 
         if (myPlot) {
             Plotly.react(myPlot, plotData, layout);
+            // 永远禁用 Plotly 的拖动缩放，使用自定义的鼠标事件
+            Plotly.relayout(myPlot, { 'dragmode': false });
         } else {
-            Plotly.newPlot(mapDiv, plotData, layout, { responsive: true })
-                .then((plotElement) => {myPlot = plotElement;});
+            Plotly.newPlot(mapDiv, plotData, layout, {
+                responsive: true,
+                scrollZoom: true,
+                dragmode: false  // 禁用拖动缩放
+            })
+            .then((plotElement) => {myPlot = plotElement;});
         }
     }
 
@@ -1281,10 +1295,208 @@
 
     // 事件监听
     playPauseBtn.addEventListener('click', togglePlay);
-    
+
     // 当用户手动拖动滑块时，如果正在播放，建议暂时停止或保持播放？
     // 这里保持播放逻辑：用户拖到哪，就从哪继续播。
     // 但我们需要确保 item.currentFrame 与 slider.value 同步，这在 createSliderForResponse 的 input 事件中已经处理了。
+
+    // ======== 目的地拖动功能 ========
+
+    // 添加地图容器的鼠标事件监听（使用 capture 阶段确保不被 Plotly 拦截）
+    mapDiv.addEventListener('mousedown', (e) => handleMapMouseDown(e), true);
+    mapDiv.addEventListener('mousemove', (e) => handleMapMouseMove(e), true);
+    mapDiv.addEventListener('mouseup', (e) => handleMapMouseUp(e), true);
+    mapDiv.addEventListener('mouseleave', (e) => handleMapMouseUp(e), true);
+
+    // 处理地图鼠标按下事件
+    function handleMapMouseDown(e) {
+        // 只有在显示目的地且没有正在播放时才允许拖动
+        if (!showDestinationsCheckbox.checked || isPlaying) return;
+
+        // 检测是否点击了目的地标记
+        const rect = mapDiv.getBoundingClientRect();
+        const pixelX = e.clientX - rect.left;
+        const pixelY = e.clientY - rect.top;
+
+        const pedId = findPedestrianAtPosition(pixelX, pixelY);
+        if (pedId) {
+            dragData = {
+                isDragging: true,
+                targetPedId: pedId,
+                startX: pixelX,
+                startY: pixelY
+            };
+            e.preventDefault();
+            e.stopPropagation();
+            mapDiv.style.cursor = 'grabbing';
+            log(`👆 点击了行人 ${pedId} 的目的地，开始拖动`);
+        }
+    }
+
+    // 处理地图鼠标移动事件
+    function handleMapMouseMove(e) {
+        if (!dragData.isDragging) return;
+
+        // 阻止 Plotly 的默认行为
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rect = mapDiv.getBoundingClientRect();
+        const pixelX = e.clientX - rect.left;
+        const pixelY = e.clientY - rect.top;
+
+        // 计算新位置（需要将像素坐标转换为数据坐标）
+        const coords = pixelToDataCoords(pixelX, pixelY);
+        if (coords) {
+            // 更新本地目的地数据并重绘
+            const item = DATA_CACHE[ACTIVE_NAME];
+            if (item && item.destinations && item.destinations[dragData.targetPedId]) {
+                item.destinations[dragData.targetPedId] = coords;
+                render(ACTIVE_NAME);
+            }
+        }
+    }
+
+    // 处理地图鼠标释放事件
+    function handleMapMouseUp(e) {
+        if (dragData.isDragging) {
+            const rect = mapDiv.getBoundingClientRect();
+            const pixelX = e.clientX - rect.left;
+            const pixelY = e.clientY - rect.top;
+
+            const coords = pixelToDataCoords(pixelX, pixelY);
+            if (coords) {
+                sendDestinationUpdate(dragData.targetPedId, coords);
+            }
+            log(`👇 释放鼠标，目的地已更新`);
+            dragData = { isDragging: false, targetPedId: null };
+            // 恢复 cursor 样式
+            mapDiv.style.cursor = '';
+        }
+    }
+
+    // 坐标转换：像素坐标 -> 数据坐标
+    function pixelToDataCoords(pixelX, pixelY) {
+        if (!myPlot) return null;
+
+        const xaxis = myPlot._fullLayout.xaxis;
+        const yaxis = myPlot._fullLayout.yaxis;
+
+        if (!xaxis || !yaxis || !xaxis.range || !yaxis.range) return null;
+
+        // 使用 Plotly 内部计算的绘图区域尺寸
+        const gs = myPlot._fullLayout._size;
+        if (!gs) {
+            // 尝试从 SVG 中查找绘图区域 rect
+            const plotRect = myPlot.querySelector('.nsewdrag.drag[data-subplot="xy"]');
+            if (!plotRect) return null;
+
+            const marginLeft = parseFloat(plotRect.getAttribute('x'));
+            const marginTop = parseFloat(plotRect.getAttribute('y'));
+            const plotWidth = parseFloat(plotRect.getAttribute('width'));
+            const plotHeight = parseFloat(plotRect.getAttribute('height'));
+
+            const plotX = pixelX - marginLeft;
+            const plotY = pixelY - marginTop;
+
+            const xRange = xaxis.range;
+            const yRange = yaxis.range;
+
+            const dataX = xRange[0] + (plotX / plotWidth) * (xRange[1] - xRange[0]);
+            const dataY = yRange[1] - (plotY / plotHeight) * (yRange[1] - yRange[0]);
+
+            return { x: dataX, y: dataY };
+        }
+
+        const marginLeft = gs.l || 0;
+        const marginTop = gs.t || 0;
+        const plotWidth = gs.w || 1;
+        const plotHeight = gs.h || 1;
+
+        if (plotWidth <= 0 || plotHeight <= 0) return null;
+
+        const plotX = pixelX - marginLeft;
+        const plotY = pixelY - marginTop;
+
+        const xRange = xaxis.range;
+        const yRange = yaxis.range;
+        const dataX = xRange[0] + (plotX / plotWidth) * (xRange[1] - xRange[0]);
+        const dataY = yRange[1] - (plotY / plotHeight) * (yRange[1] - yRange[0]);
+
+        return { x: dataX, y: dataY };
+    }
+
+    // 查找鼠标位置附近的行人目的地
+    function findPedestrianAtPosition(pixelX, pixelY) {
+        const coords = pixelToDataCoords(pixelX, pixelY);
+        if (!coords) return null;
+
+        const item = DATA_CACHE[ACTIVE_NAME];
+        if (!item || !item.destinations) return null;
+
+        const xaxis = myPlot?._fullLayout?.xaxis;
+        const yaxis = myPlot?._fullLayout?.yaxis;
+        const xRange = xaxis?.range || [0, 100];
+        const yRange = yaxis?.range || [0, 100];
+        const xSpan = xRange[1] - xRange[0];
+        const ySpan = yRange[1] - yRange[0];
+        const threshold = Math.min(xSpan, ySpan) * 0.08;
+
+        let closestPedId = null;
+        let minDist = Infinity;
+
+        for (const pedId in item.destinations) {
+            const des = item.destinations[pedId];
+            const dist = Math.sqrt(
+                Math.pow(des.x - coords.x, 2) +
+                Math.pow(des.y - coords.y, 2)
+            );
+            if (dist < threshold && dist < minDist) {
+                minDist = dist;
+                closestPedId = pedId;
+            }
+        }
+
+        return closestPedId;
+    }
+
+    // 发送目的地更新请求
+    async function sendDestinationUpdate(pedestrianId, newCoords) {
+        const item = DATA_CACHE[ACTIVE_NAME];
+        if (!item) return;
+
+        const payload = {
+            dataset_name: ACTIVE_NAME,
+            pedestrian_id: pedestrianId,
+            destination: {
+                x: newCoords.x,
+                y: newCoords.y
+            }
+        };
+
+        try {
+            const res = await fetch('/api/update_destination', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const msg = await res.json();
+
+            if (msg.status === 'ok') {
+                log(`🎯 目的地更新成功: Pedestrian ${pedestrianId} -> (${newCoords.x.toFixed(2)}, ${newCoords.y.toFixed(2)})`);
+            } else {
+                log('❌ 目的地更新失败:', msg.msg);
+                alert('更新失败: ' + msg.msg);
+                // 恢复原始位置
+                render(ACTIVE_NAME);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('更新请求发送失败: ' + e.message);
+            // 恢复原始位置
+            render(ACTIVE_NAME);
+        }
+    }
 
     // ------- 初始化 -------
     async function init() {

@@ -102,6 +102,15 @@ def init_simulation(
         .values # (#pedestrian, 2)
     )
     assert des.shape == (len(ped_list), 2)
+
+    # 使用用户自定义的目的地覆盖（如果有）
+    if hasattr(dataset, 'user_destinations') and dataset.user_destinations:
+        for idx, ped_id in enumerate(ped_list):
+            if ped_id in dataset.user_destinations:
+                user_des = dataset.user_destinations[ped_id]
+                des[idx, 0] = user_des['x']
+                des[idx, 1] = user_des['y']
+                _logger.info(f"Using user-defined destination for pedestrian {ped_id}: ({user_des['x']}, {user_des['y']})")
     spd = (
         df_ped
         .reindex(pd.MultiIndex.from_product([

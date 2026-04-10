@@ -288,6 +288,12 @@ class SaveTrajectoryReq(BaseModel):
     compress: bool = True
 
 
+class UpdateDestinationReq(BaseModel):
+    dataset_name: str
+    pedestrian_id: str
+    destination: dict  # {x: float, y: float}
+
+
 @app.post("/api/save_trajectory")
 async def save_trajector(req: SaveTrajectoryReq):
     if req.name not in DATASET_DICT:
@@ -320,6 +326,50 @@ async def save_trajector(req: SaveTrajectoryReq):
             media_type=media_type,
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
+
+
+@app.post("/api/update_destination")
+async def update_destination(req: UpdateDestinationReq):
+    """更新指定行人的目的地坐标，存储在 dataset.user_destinations 中"""
+    dataset_name = req.dataset_name
+    pedestrian_id = req.pedestrian_id
+    new_x = req.destination.get('x')
+    new_y = req.destination.get('y')
+
+    if dataset_name not in DATASET_DICT:
+        return JSONResponse(content={"status": "error", "msg": f"Dataset {dataset_name} not found."})
+
+    try:
+        if new_x is None or new_y is None:
+            return JSONResponse(content={"status": "error", "msg": "Destination coordinates are required."})
+
+        dataset = DATASET_DICT[dataset_name]
+
+        # 确保 pedestrian_id 是正确类型（可能是 int 或 str）
+        try:
+            ped_id = int(pedestrian_id)
+        except (ValueError, TypeError):
+            ped_id = pedestrian_id
+
+        # 初始化或更新 user_destinations 字典
+        if not hasattr(dataset, 'user_destinations') or dataset.user_destinations is None:
+            dataset.user_destinations = {}
+
+        dataset.user_destinations[ped_id] = {'x': float(new_x), 'y': float(new_y)}
+
+        _logger.info(f"Updated user destination for pedestrian {ped_id} in {dataset_name} to ({new_x}, {new_y})")
+
+        return JSONResponse(content={
+            "status": "ok",
+            "msg": f"Updated destination for pedestrian {ped_id} to ({new_x}, {new_y})"
+        })
+
+    except Exception as e:
+        import traceback
+        error_msg = f"Failed to update destination: {str(e)}\n{traceback.format_exc()}"
+        _logger.error(error_msg)
+        return JSONResponse(content={"status": "error", "msg": error_msg})
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
@@ -391,7 +441,7 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
                     "ymin": map_data.ymin,
                     "ymax": map_data.ymax,
                 },
-                "has_high_res_map": getattr(DATASET_DICT[save_name], 'high_res_map_path'),
+                "has_high_res_map": getattr(DATASET_DICT[save_name], 'high_res_map_path', None),
                 "destinations": {}
             }
             if state.des_now is not None:
