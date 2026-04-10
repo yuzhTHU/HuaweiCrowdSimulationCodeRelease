@@ -6,6 +6,7 @@ import asyncio
 import tarfile
 import logging
 import traceback
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from copy import deepcopy
@@ -164,8 +165,17 @@ async def load_dataset(idx: int, name: str):
             "xmax": dataset.map_data.xmax,
             "ymin": dataset.map_data.ymin,
             "ymax": dataset.map_data.ymax,
-        }
+        },
+        "high_res_map_path": high_res_map_path,
     }
+    state = init_simulation(ARGS, dataset, 0, MODEL)
+    if state.des_now is not None:
+        des = state.des_now[0].cpu().numpy()  # (ped_num, 2)
+        response['destinations'] = {
+            str(ped_id): { 'x': float(des[idx, 0]), 'y': float(des[idx, 1]) }
+            for idx, ped_id in enumerate(state.ped_list)
+            if not np.isnan(des[idx]).any()
+        }
     return JSONResponse(content={"status": "ok", "response": json_compatible(response), "msg": f"Dataset {name} loaded."})
 
 
@@ -350,6 +360,7 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
             df_data = DATASET_DICT[save_name].df_data
             df_data = df_data[(df_data['f'] <= frame_idx) & (df_data['f'] >= frame_idx - ARGS.hist_step)]
             DATASET_DICT[save_name].df_data = df_data
+            _, state = await result_queue.get()
             response = {
                 "name": save_name,
                 "fps": ARGS.fps,
@@ -367,12 +378,20 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
                     "ymin": map_data.ymin, 
                     "ymax": map_data.ymax,
                 },
+                "destinations": {}
             }
+            if state.des_now is not None:
+                des = state.des_now[0].cpu().numpy()  # (ped_num, 2)
+                response['destinations'] = {
+                    str(ped_id): { 'x': float(des[idx, 0]), 'y': float(des[idx, 1]) }
+                    for idx, ped_id in enumerate(state.ped_list)
+                    if not np.isnan(des[idx]).any()
+                }
             await ws.send_json(json_compatible({
                 'status': 'ok', 'data': response, 'msg': f'Initialized simulation dataset {save_name} from {dataset_name} up to frame {frame_idx}.'
             }))
         while True:
-            df_new_frame = await result_queue.get()
+            df_new_frame, state = await result_queue.get()
             # _logger.info(str(df_new_frame))
             # df_new_frame['f'] = df_new_frame['f'].astype(int)
             # df_new_frame['id'] = df_new_frame['id'].astype(int)
@@ -384,7 +403,15 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
                     f: group.set_index('id').sort_index()[['type', 'x', 'y']].to_dict(orient='index')
                     for f, group in df_vis.groupby('f', sort=True)
                 },
+                'destinations': {}
             }
+            if state.des_now is not None:
+                des = state.des_now[0].cpu().numpy()  # (ped_num, 2)
+                response['destinations'] = {
+                    str(ped_id): { 'x': float(des[idx, 0]), 'y': float(des[idx, 1]) }
+                    for idx, ped_id in enumerate(state.ped_list)
+                    if not np.isnan(des[idx]).any()
+                }
             await ws.send_json(json_compatible({
                 'status': 'ok', 'data': response, 'msg': f'Sent simulated frame {df_new_frame["f"].min()}~{df_new_frame["f"].max()} to client.'
             }))
@@ -413,10 +440,11 @@ async def simulation_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
         _logger.info(f"Simulation worker using device {ARGS.device}")
         await ws.send_json({'status': 'ok', 'msg': f'Simulation worker using device {ARGS.device}.'})
         state = await asyncio.to_thread(init_simulation, ARGS, dataset, frame_idx, MODEL) # 运行 100~200ms
+        await result_queue.put((None, state))
         _logger.info(f"Frame {frame_idx}: {len(state.ped_list)} pedestrians, {len(state.veh_list)} vehicles.")
         for _ in range(frame_num):
             df_new, state = await asyncio.to_thread(simulate_one_step, ARGS, MODEL, diffusion, state) # 运行 100~200ms
-            await result_queue.put(df_new)
+            await result_queue.put((df_new, state))
     except asyncio.CancelledError:
         _logger.info("Simulation worker cancelled.")
         raise

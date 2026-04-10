@@ -18,6 +18,7 @@
     const autoViewCheckbox = document.getElementById('autoViewCheckbox');
     const playPauseBtn = document.getElementById('playPauseBtn');
     const loopCheckbox = document.getElementById('loopCheckbox');
+    const showDestinationsCheckbox = document.getElementById('showDestinationsCheckbox');
     const playbackSpeedSlider = document.getElementById('playbackSpeedSlider');
     const playbackSpeedValue = document.getElementById('playbackSpeedValue');
 
@@ -44,9 +45,9 @@
     let playTimer = null;
     let isPlaying = false;
     let playbackSpeed = parseFloat(playbackSpeedValue.textContent);
-    
+
     // 数据缓存与运行状态
-    const DATA_CACHE = {};  // { name: { name, fps, map, frames: { frameNumber: { id: {type, x, y}, ... } }, currentFrame, sliderId } }
+    const DATA_CACHE = {};  // { name: { name, fps, map, frames: { frameNumber: { id: {type, x, y}, ... } }, destinations, currentFrame, sliderId } }
     let ACTIVE_NAME = null; // 当前选中的 name
     let ARGS_LOADED = null; // 当前加载的模型参数
     let MODEL_LOADED = null; // 当前加载的模型
@@ -69,6 +70,11 @@
     playbackSpeedSlider.addEventListener('input', (e) => {
         playbackSpeedValue.textContent = e.target.value;
         playbackSpeed = parseFloat(e.target.value);
+    });
+
+    // Show Destinations Control
+    showDestinationsCheckbox.addEventListener('change', () => {
+        if (ACTIVE_NAME) render(ACTIVE_NAME);
     });
 
     // Auto View Control: 状态改变时立即重绘以应用设置（例如取消勾选时立即复位视图）
@@ -162,9 +168,10 @@
                 name: response.name,
                 map: null,
                 frames: {},
+                destinations: {},  // 存储目的地数据
                 currentFrame: null,
                 sliderId: null,
-                fps: response.fps || 10, 
+                fps: response.fps || 10,
             };
         }
         // 更新 map
@@ -173,6 +180,10 @@
         }
         if (response.fps) {
             DATA_CACHE[name].fps = response.fps;
+        }
+        // 更新 destinations (如果后端提供)
+        if (response.destinations) {
+            DATA_CACHE[name].destinations = response.destinations;
         }
         // 更新 frames 和 currentFrame
         const frames = response.frames || {};
@@ -501,7 +512,7 @@
             highlightSlider();
         }
         renderTrace();
-        }
+    }
 
     // 渲染实体轨迹 (Plotly)
     function renderTrace() {
@@ -704,11 +715,72 @@
                 showlegend: true,
             });
         }
-        if (autoViewCheckbox.checked) { 
-            layout.uirevision = undefined; 
+
+        // 4. Destinations and Connection Lines (if enabled)
+        if (showDestinationsCheckbox.checked && item.destinations) {
+            const desX = [], desY = [], desText = [];
+            const lineX = [], lineY = [], lineIds = [];
+
+            for (const pedId in currentEntities) {
+                if (currentEntities[pedId].type === 'pedestrian' && pedId in item.destinations) {
+                    const ped = currentEntities[pedId];
+                    const des = item.destinations[pedId];
+
+                    // Add connection line (gray dashed)
+                    lineX.push(ped.x, des.x, null);  // null to separate lines
+                    lineY.push(ped.y, des.y, null);
+                    lineIds.push(pedId);
+
+                    // Add destination marker (red cross)
+                    desX.push(des.x);
+                    desY.push(des.y);
+                    desText.push(`Destination ID: ${pedId}`);
+                }
+            }
+
+            // Add connection lines
+            if (lineX.length > 0) {
+                plotData.push({
+                    x: lineX,
+                    y: lineY,
+                    ids: lineIds,
+                    mode: 'lines',
+                    line: {
+                        color: 'rgba(128, 128, 128, 0.6)',
+                        width: 1.5,
+                        dash: 'solid'  // 灰色实线
+                    },
+                    hoverinfo: 'none',
+                    name: 'To Destination',
+                    showlegend: false,
+                });
+            }
+
+            // Add destination markers (red crosses)
+            if (desX.length > 0) {
+                plotData.push({
+                    x: desX,
+                    y: desY,
+                    ids: Object.keys(item.destinations),  // 使用目的地的 ID
+                    mode: 'markers',
+                    marker: {
+                        size: 10,
+                        color: 'rgb(255, 0, 0)',
+                        symbol: 'x'  // 红色叉号
+                    },
+                    text: desText,
+                    hoverinfo: 'text',
+                    name: 'Destination',
+                    showlegend: true,
+                });
+            }
+        }
+
+        if (autoViewCheckbox.checked) {
+            layout.uirevision = undefined;
             layout.xaxis.range = undefined;
             layout.yaxis.range = undefined;
-        } else { 
+        } else {
             layout.uirevision = 'constant';
             layout.xaxis.range = myPlot ? myPlot.layout.xaxis.range : undefined;
             layout.yaxis.range = myPlot ? myPlot.layout.yaxis.range : undefined;
