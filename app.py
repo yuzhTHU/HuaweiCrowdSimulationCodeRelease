@@ -129,6 +129,15 @@ async def model_list():
     return JSONResponse(content=json_compatible({i: s for i, s in enumerate(MODEL_LIST)}))
 
 
+@app.get("/api/get_high_res_map")
+async def get_high_res_map(dataset_name: str):
+    """ 获取数据集的高分辨率原图 map.png """
+    high_res_map_path = getattr(DATASET_DICT.get(dataset_name), 'high_res_map_path', None)
+    if high_res_map_path and Path(high_res_map_path).exists():
+        return FileResponse(high_res_map_path, media_type="image/png")
+    return JSONResponse(content={"status": "error", "msg": "High-res map not found"}, status_code=404)
+
+
 @app.get("/api/load_dataset")
 async def load_dataset(idx: int, name: str):
     """ 加载 DATASET_LIST[idx] 对应的数据集，并保存到 DATASET_DICT[name] 中 """
@@ -166,7 +175,7 @@ async def load_dataset(idx: int, name: str):
             "ymin": dataset.map_data.ymin,
             "ymax": dataset.map_data.ymax,
         },
-        "high_res_map_path": high_res_map_path,
+        "has_high_res_map": False,
     }
     state = init_simulation(ARGS, dataset, 0, MODEL)
     if state.des_now is not None:
@@ -176,6 +185,9 @@ async def load_dataset(idx: int, name: str):
             for idx, ped_id in enumerate(state.ped_list)
             if not np.isnan(des[idx]).any()
         }
+    if (map_png_path := Path(row['path']).parent / "map.png").exists():
+        DATASET_DICT[name].high_res_map_path = str(map_png_path)
+        response['has_high_res_map'] = True
     return JSONResponse(content={"status": "ok", "response": json_compatible(response), "msg": f"Dataset {name} loaded."})
 
 
@@ -372,12 +384,13 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
                     ) for f, group in df_data.groupby("f", sort=True)
                 },
                 "map": {
-                    "grid": map_data.map, 
-                    "xmin": map_data.xmin, 
+                    "grid": map_data.map,
+                    "xmin": map_data.xmin,
                     "xmax": map_data.xmax,
-                    "ymin": map_data.ymin, 
+                    "ymin": map_data.ymin,
                     "ymax": map_data.ymax,
                 },
+                "has_high_res_map": getattr(DATASET_DICT[save_name], 'high_res_map_path'),
                 "destinations": {}
             }
             if state.des_now is not None:

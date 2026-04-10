@@ -21,6 +21,10 @@
     const showDestinationsCheckbox = document.getElementById('showDestinationsCheckbox');
     const playbackSpeedSlider = document.getElementById('playbackSpeedSlider');
     const playbackSpeedValue = document.getElementById('playbackSpeedValue');
+    const showHighResMapCheckbox = document.getElementById('showHighResMapCheckbox');
+    const highResMapOpacitySlider = document.getElementById('highResMapOpacitySlider');
+    const highResMapOpacityValue = document.getElementById('highResMapOpacityValue');
+    const highResMapOpacityRow = document.getElementById('highResMapOpacityRow');
 
     // Context Menu & Modal Elements
     const contextMenu = document.getElementById('contextMenu');
@@ -74,6 +78,23 @@
 
     // Show Destinations Control
     showDestinationsCheckbox.addEventListener('change', () => {
+        if (ACTIVE_NAME) render(ACTIVE_NAME);
+    });
+
+    // High-res Map Control
+    showHighResMapCheckbox.addEventListener('change', () => {
+        if (showHighResMapCheckbox.checked) {
+            highResMapOpacitySlider.value = 1.0;
+            highResMapOpacityValue.textContent = '1.0';
+        } else {
+            highResMapOpacitySlider.value = 0.0;
+            highResMapOpacityValue.textContent = '0.0';
+        }
+        if (ACTIVE_NAME) render(ACTIVE_NAME);
+    });
+
+    highResMapOpacitySlider.addEventListener('input', (e) => {
+        highResMapOpacityValue.textContent = e.target.value;
         if (ACTIVE_NAME) render(ACTIVE_NAME);
     });
 
@@ -172,6 +193,7 @@
                 currentFrame: null,
                 sliderId: null,
                 fps: response.fps || 10,
+                has_high_res_map: false,  // 是否有高分辨率原图
             };
         }
         // 更新 map
@@ -180,6 +202,10 @@
         }
         if (response.fps) {
             DATA_CACHE[name].fps = response.fps;
+        }
+        // 更新 high_res_map_path
+        if (response.has_high_res_map !== undefined) {
+            DATA_CACHE[name].has_high_res_map = response.has_high_res_map;
         }
         // 更新 destinations (如果后端提供)
         if (response.destinations) {
@@ -192,14 +218,37 @@
             DATA_CACHE[name].frames[fnum] = frames[fkey];
             DATA_CACHE[name].currentFrame = fnum; // 更新当前帧到最新传来的帧
         }
+        // 缓存高分辨率地图 URL
+        const item = DATA_CACHE[name];
+        if (item.has_high_res_map) {
+            item.high_res_map_url = `/api/get_high_res_map?dataset_name=${encodeURIComponent(name)}`;
+        }
         // 创建 / 更新滑块
         if (!DATA_CACHE[name].sliderId) { // 如果没有 slider，则创建
             createSliderForResponse(name);
+            // 检查是否有原图，启用 checkbox
+            updateHighResMapCheckbox(name);
         } else { // 更新 slider 的 max (如果需要) 并把滑块值设置到最新 currentFrame
             updateSliderRangeAndValue(name);
         }
         // 重新渲染地图
         render(name);
+    }
+
+    // Update high-res map checkbox state based on current dataset
+    function updateHighResMapCheckbox(name) {
+        const item = DATA_CACHE[name];
+        if (item && item.has_high_res_map) {
+            showHighResMapCheckbox.disabled = false;
+            showHighResMapCheckbox.title = '可用高分辨率原图';
+            highResMapOpacityRow.style.display = 'flex';
+            highResMapOpacityRow.style.alignItems = 'center';
+        } else {
+            showHighResMapCheckbox.disabled = true;
+            showHighResMapCheckbox.checked = false;
+            showHighResMapCheckbox.title = '该数据集没有原图';
+            highResMapOpacityRow.style.display = 'none';
+        }
     }
 
     // UI: 创建滑块、管理滑块事件
@@ -566,14 +615,14 @@
             plotData.push({
                 z: z,
                 type: 'heatmap',
-                colorscale: 'Greys', 
+                colorscale: 'Greys',
                 reversescale: true, // 0(Low)=White, 1(High)=Black
                 showscale: false,
                 zsmooth: false, // Sharp pixels
                 x: xcoords,
                 y: ycoords,
                 hoverinfo: 'none',
-                opacity: 1.0
+                opacity: 1.0 - parseFloat(highResMapOpacitySlider.value),
             });
         }
         
@@ -784,6 +833,28 @@
             layout.uirevision = 'constant';
             layout.xaxis.range = myPlot ? myPlot.layout.xaxis.range : undefined;
             layout.yaxis.range = myPlot ? myPlot.layout.yaxis.range : undefined;
+        }
+
+        // Add high-resolution map image overlay if enabled
+        if (showHighResMapCheckbox.checked && !showHighResMapCheckbox.disabled && item.has_high_res_map && item.high_res_map_url) {
+            const opacity = parseFloat(highResMapOpacitySlider.value);
+            const mapInfo = item.map;
+            layout.images = [{
+                source: item.high_res_map_url,
+                xref: 'x',
+                yref: 'y',
+                x: mapInfo.xmin,          // 图像左边界
+                y: mapInfo.ymax,          // 图像上边界（使用 yanchor: 'top'）
+                sizex: mapInfo.xmax - mapInfo.xmin,
+                sizey: mapInfo.ymax - mapInfo.ymin,
+                xanchor: 'left',          // 锚点在左边缘
+                yanchor: 'top',           // 锚点在上边缘（关键：使 y 坐标对应图像顶部）
+                sizing: 'stretch',
+                opacity: opacity,
+                layer: 'below'            // 显示在轨迹下方
+            }];
+        } else {
+            layout.images = [];  // 未勾选时清除图片
         }
         
         // const smooth = true;
