@@ -85,7 +85,7 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
         F_map = get_force_map(r=args.sfm_r_map, A=args.sfm_a_map, B=args.sfm_b_map, device=args.device)  # (2r+1, 2r+1, 2)
         idx = future_pos[..., 0].sub(model.xmin).div(model.xmax - model.xmin).mul(model.map.shape[0]).round().long().clamp(0, model.map.shape[0] - 1)  # (S*B, #pedestrian, pred_step)
         jdx = future_pos[..., 1].sub(model.ymin).div(model.ymax - model.ymin).mul(model.map.shape[1]).round().long().clamp(0, model.map.shape[1] - 1)  # (S*B, #pedestrian, pred_step)
-        patches = extract_patches_torch(model.map, idx.reshape(-1), jdx.reshape(-1), r=10).reshape(*idx.shape, 2*args.sfm_r_map+1, 2*args.sfm_r_map+1) # (S*B, #pedestrian, pred_step, 2r+1, 2r+1)
+        patches = extract_patches_torch(model.map, idx.reshape(-1), jdx.reshape(-1), r=args.sfm_r_map).reshape(*idx.shape, 2*args.sfm_r_map+1, 2*args.sfm_r_map+1) # (S*B, #pedestrian, pred_step, 2r+1, 2r+1)
         map_force = (patches[..., None] * F_map).nan_to_num(0.0).flatten(-3, -2).sum(-2) # (S*B, #pedestrian, pred_step, 2)
         # loss = F.mse_loss(future_acc, map_force.detach())
         # grad = torch.autograd.grad(loss, x0)[0]
@@ -98,7 +98,7 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
         d = torch.norm(p, dim=-1, keepdim=True)
         n = -p / d.clamp(min=1e-6)
         F_ped = args.sfm_a_ped * torch.exp(-d / args.sfm_b_ped) * n
-        ped_force = F_ped.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
+        ped_force = F_ped.nan_to_num(0.0).sum(dim=2) # (S*B, #pedestrian, pred_step, 2)
         # 其它车辆排斥力 (车辆用最后一帧位置)
         p = state.veh_now[:, :, None, -1:, :] - future_pos[:, None, :, :, :] # (S*B, #vehicle, #pedestrian, pred_step, 2)
         d = torch.norm(p, dim=-1, keepdim=True)

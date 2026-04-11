@@ -243,7 +243,7 @@ def simulate_one_step(
         d = torch.norm(p, dim=-1, keepdim=True)
         n = -p / d.clamp(min=1e-6)
         F_ped = args.sfm_a_ped * torch.exp(-d / args.sfm_b_ped) * n
-        ped_force = F_ped.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
+        ped_force = F_ped.nan_to_num(0.0).sum(dim=2) # (S*B, #pedestrian, pred_step, 2)
         # 其它车辆排斥力 (车辆用最后一帧位置)
         p = state.veh_now[:, :, None, -1:, :] - future_pos[:, None, :, :, :] # (S*B, #vehicle, #pedestrian, pred_step, 2)
         d = torch.norm(p, dim=-1, keepdim=True)
@@ -253,7 +253,7 @@ def simulate_one_step(
         # 阻尼力
         damp_force = -args.sfm_a_damp * future_vel  # (S*B, #pedestrian, pred_step, 2)
         # 合力
-        acc_new = des_force # + map_force + ped_force + veh_force + damp_force
+        acc_new = des_force + map_force + ped_force + veh_force + damp_force
 
     vel_new = state.vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
     # 将到达目的地的行人速度设置为 0
