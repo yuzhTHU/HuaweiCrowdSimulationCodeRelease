@@ -111,5 +111,6 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
         # grad = torch.autograd.grad(loss, x_in)[0]
         grad = 2 * (future_acc - social_force) / args.scale_accelerate  # 可以直接手算
         total_guidance = total_guidance - args.cg_sfm_soc * grad
-    total_guidance = total_guidance.clip(-1, 1)
+    if not isinstance(total_guidance, float):
+        total_guidance = total_guidance.clip(-1, 1)
     return total_guidance
