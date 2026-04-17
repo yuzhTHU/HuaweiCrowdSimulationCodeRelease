@@ -184,7 +184,7 @@ async def load_dataset(idx: int, name: str):
     destinations = {}
     for ped_id in all_ped_ids:
         if ped_id in df_ped_coords.index:
-            ped_traj = df_ped_coords.loc[ped_id][['x', 'y', 'f']].sort_values('f')
+            ped_traj = df_ped_coords.loc[[ped_id]][['x', 'y', 'f']].sort_values('f')
             if len(ped_traj) > 0:
                 last_pos = ped_traj.iloc[-1]
                 destinations[str(ped_id)] = {'x': float(last_pos['x']), 'y': float(last_pos['y'])}
