@@ -2,7 +2,8 @@ import numpy as np
 
 def json_compatible(obj):
     """
-    递归将 numpy 数组 / 标量 / Pandas 类型转换为 JSON 可序列化的 Python 类型。
+    Recursively convert NumPy arrays, scalars, and related objects into
+    JSON-serializable Python types.
     """
     if isinstance(obj, dict):
         return {json_compatible(k): json_compatible(v) for k, v in obj.items()}

@@ -3,17 +3,18 @@ import torch.nn as nn
 
 class MeanPoolingLSTM(nn.Module):
     """
-    基于 LSTM 的时序特征提取器。
-    
-    处理序列数据，取 LSTM 所有时间步输出的平均值作为该序列的最终表示。
-    常用于编码行人的历史轨迹或车辆轨迹。
+    LSTM-based temporal feature extractor.
+
+    Processes sequence data and uses the mean of the LSTM outputs across all
+    time steps as the final sequence representation. Commonly used to encode
+    pedestrian or vehicle trajectories.
     """
     def __init__(self, input_dim, embed_dim, layer_num):
         """
         Args:
-            input_dim (int): LSTM 输入特征维度。
-            embed_dim (int): LSTM 隐藏层维度（输出维度）。
-            layer_num (int): LSTM 的层数。
+            input_dim (int): LSTM input feature dimension.
+            embed_dim (int): LSTM hidden size, also the output dimension.
+            layer_num (int): Number of LSTM layers.
         """
         super().__init__()
         self.lstm = nn.LSTM(
@@ -26,14 +27,15 @@ class MeanPoolingLSTM(nn.Module):
     def forward(self, x):
         """
         Args:
-            x (torch.Tensor): 输入序列张量。
+            x (torch.Tensor): Input sequence tensor.
                 Shape: (batch_size, num_agents, seq_len, input_dim)
-                或者任意前导维度，只要最后两维是 (seq_len, input_dim)。
+                or any leading dimensions as long as the last two are
+                `(seq_len, input_dim)`.
         
         Returns:
-            torch.Tensor: 池化后的特征向量。
-                Shape: (batch_size, num_agents, embed_dim) 
-                保持除倒数第二维（seq_len）外的所有维度结构。
+            torch.Tensor: Pooled feature tensor.
+                Shape: (batch_size, num_agents, embed_dim), preserving all
+                dimensions except the second-to-last `seq_len` dimension.
         """
         shape = x.shape
         x = x.view(-1, *shape[-2:])  # (batch_size * N, seq_len, input_dim)

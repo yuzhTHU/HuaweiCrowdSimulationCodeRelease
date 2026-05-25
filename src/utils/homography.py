@@ -3,23 +3,23 @@ from scipy.interpolate import griddata
 
 def calc_homography_mat(src, dst):
     """
-    计算透视变换矩阵 H，使得 dst ~ H * src。
-    
-    使用直接线性变换 (DLT) 算法和 SVD 分解求解。通常用于将图像像素坐标
-    映射到真实世界的物理坐标。
+    Compute the homography matrix `H` such that `dst ~ H * src`.
+
+    Solved with the Direct Linear Transform (DLT) algorithm and SVD. Commonly
+    used to map image pixel coordinates into real-world coordinates.
 
     Args:
-        src (np.ndarray): 源平面上的四个点坐标。
+        src (np.ndarray): Four source-plane points.
             Shape: (4, 2)
-        dst (np.ndarray): 目标平面上对应的四个点坐标。
+        dst (np.ndarray): Four corresponding target-plane points.
             Shape: (4, 2)
 
     Returns:
-        np.ndarray: 计算得到的 3x3 单应性矩阵 (Homography Matrix)。
+        np.ndarray: The computed `3x3` homography matrix.
             Shape: (3, 3)
     
     Raises:
-        ValueError: 如果输入点的形状不符合 (4, 2)。
+        ValueError: If the input points are not shaped `(4, 2)`.
     """
     if src.shape != (4, 2) or dst.shape != (4, 2):
         raise ValueError("src and dst must be (4, 2) arrays")
@@ -30,55 +30,57 @@ def calc_homography_mat(src, dst):
         A.append([ 0,  0,  0, -x, -y, -1, x*Y, y*Y, Y])
     A = np.array(A, dtype=np.float64)
 
-    # 求解最小特征值对应的特征向量 (SVD)
+    # Solve with SVD using the singular vector associated with the smallest singular value.
     _, _, Vt = np.linalg.svd(A)
-    h = Vt[-1, :] / Vt[-1, -1]  # 归一化最后一个参数为 1
+    h = Vt[-1, :] / Vt[-1, -1]  # Normalize the last coefficient to 1.
     H = h.reshape(3, 3)
     return H
 
 def affine_transformation(src, H):
     """
-    使用透视变换矩阵 H 对点集 src 进行坐标变换。
-    
-    将二维点集转换为齐次坐标，应用矩阵乘法，再转换回二维直角坐标。
+    Transform point set `src` with homography matrix `H`.
+
+    Converts 2D points to homogeneous coordinates, applies the matrix
+    multiplication, then converts back to Cartesian coordinates.
 
     Args:
-        src (np.ndarray): 待变换的源点集。
-            Shape: (..., 2) 最后一维为 (x, y)。
-        H (np.ndarray): 透视变换矩阵。
+        src (np.ndarray): Source points to transform.
+            Shape: `(..., 2)` where the last dimension is `(x, y)`.
+        H (np.ndarray): Homography matrix.
             Shape: (3, 3)
 
     Returns:
-        np.ndarray: 变换后的目标点集。
-            Shape: (..., 2) 与输入形状一致。
+        np.ndarray: Transformed target points with the same shape as input.
     """
     ones = np.ones((*src.shape[:-1], 1), dtype=np.float32) # (..., 1)
     xy1 = np.concatenate([src, ones], axis=-1)  # (..., 3)
     tgt = xy1 @ H.T  # (..., 3)
-    tgt = tgt[..., :2] / tgt[..., (2,)]  # 除以最后一维以归一化 (..., 2)
+    tgt = tgt[..., :2] / tgt[..., (2,)]  # Divide by the last coordinate for normalization.
     return tgt
 
 def image_to_world(src, H, dot_per_meter=5):
     """
-    将图像数据变换到世界坐标系，并重新栅格化为规则网格。
-    
-    该函数首先将图像像素坐标映射到世界坐标，然后使用双线性插值
-    (griddata) 将不规则的散点数据重采样到物理尺寸均匀的网格上。
+    Transform image data into world coordinates and resample it onto a regular grid.
+
+    The function first maps image pixel coordinates into world coordinates, then
+    uses bilinear interpolation via `griddata` to resample irregular points
+    onto a grid with uniform physical spacing.
     
     Args:
-        src (np.ndarray): 输入图像数据（如地图语义掩码）。
-            Shape: (W, H, ...) 第一维对应 x 轴，第二维对应 y 轴。
-        H (np.ndarray): 从图像坐标到世界坐标的变换矩阵。
+        src (np.ndarray): Input image data, e.g. a semantic map mask.
+            Shape: `(W, H, ...)`, where the first dimension is `x` and the
+            second is `y`.
+        H (np.ndarray): Transformation matrix from image coordinates to world coordinates.
             Shape: (3, 3)
-        dot_per_meter (int, optional): 输出网格的分辨率（每米采样点数）。默认为 5。
+        dot_per_meter (int, optional): Output grid resolution in samples per meter.
 
     Returns:
-        tuple: 包含以下元素的元组:
-            - map (np.ndarray): 重采样后的栅格化地图。
-            - xmin (float): 地图在世界坐标系下的 X 轴下界。
-            - xmax (float): 地图在世界坐标系下的 X 轴上界。
-            - ymin (float): 地图在世界坐标系下的 Y 轴下界。
-            - ymax (float): 地图在世界坐标系下的 Y 轴上界。
+        tuple: A tuple containing:
+            - map (np.ndarray): Resampled rasterized map.
+            - xmin (float): Lower x bound in world coordinates.
+            - xmax (float): Upper x bound in world coordinates.
+            - ymin (float): Lower y bound in world coordinates.
+            - ymax (float): Upper y bound in world coordinates.
     """
     w, h = src.shape[:2]
     value = src.reshape(w*h, *src.shape[2:])  # (w*h, ...)
@@ -99,6 +101,6 @@ def image_to_world(src, H, dot_per_meter=5):
         points=np.stack([x, y], axis=-1),
         values=value,
         xi=(xx, yy),
-        method="linear",  # 'linear' 对应双线性插值
+        method="linear",  # `linear` corresponds to bilinear interpolation here.
     )
     return map, xmin, xmax, ymin, ymax

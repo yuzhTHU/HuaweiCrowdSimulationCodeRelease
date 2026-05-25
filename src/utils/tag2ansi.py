@@ -32,7 +32,7 @@ COLOR_TABLE = {
     "brightmagenta": "95",
     "brightcyan": "96",
     "brightwhite": "97",
-    # --- 扩展常用颜色 (256色或TrueColor) ---
+    # --- Extended common colors (256-color or true-color) ---
     "orange": "38;5;208",
     "pink": "38;5;213",
     "hotpink": "38;5;205",
@@ -57,7 +57,7 @@ COLOR_TABLE = {
 
 def parse_tag(tag: str) -> str:
     """
-    支持 [bold+red], [italic+#FFAA00], [color123]
+    Supports forms such as `[bold red]`, `[italic #FFAA00]`, and `[color123]`.
     """
     parts = tag.split(" ")
     seq = ""
@@ -126,8 +126,8 @@ def auto_insert_reset(segment: str) -> str:
 
 def tag2ansi(text: str) -> str:
     """
-    将 [tag1 tag2] 转换为 ANSI 码并智能插入 reset。
-    支持多种颜色定义方式、样式组合、自动闭合。
+    Convert `[tag1 tag2]` markup into ANSI escape sequences with automatic
+    reset insertion.
     """
     pattern = re.compile(r"\[(?!reset)([a-zA-Z0-9+#]+(?: [a-zA-Z0-9+#]+)*)\]")
 
@@ -139,7 +139,7 @@ def tag2ansi(text: str) -> str:
         tag = match.group(1)
         start, end = match.span()
 
-        # 先加前一段
+        # Append the preceding segment first.
         if last_end < start:
             seg = text[last_end:start]
             if active_tag:
@@ -147,7 +147,7 @@ def tag2ansi(text: str) -> str:
             result.append(seg)
         last_end = end
 
-        # 当前标签
+        # Current tag.
         if tag.lower() == "reset":
             result.append(RESET_CODE)
             active_tag = None
@@ -159,7 +159,7 @@ def tag2ansi(text: str) -> str:
             else:
                 result.append(match.group(0))
 
-    # 收尾
+    # Final tail segment.
     if last_end < len(text):
         seg = text[last_end:]
         if active_tag:

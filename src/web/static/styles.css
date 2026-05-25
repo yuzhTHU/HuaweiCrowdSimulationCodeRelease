@@ -8,7 +8,7 @@
       flex-direction: column;
     }
 
-    /* 顶部标题 */
+    /* Top header */
     header {
       background-color: #fff;
       box-shadow: 0 1px 4px rgba(0,0,0,0.1);
@@ -16,7 +16,7 @@
       text-align: center;
     }
 
-    /* 主体区域左右分栏 */
+    /* Main two-column layout */
     .main-container {
       flex: 1;
       display: flex;
@@ -24,7 +24,7 @@
       overflow: hidden;
     }
 
-    /* 左侧控制区 */
+    /* Left control panel */
     #sidebar {
       width: 320px;
       min-width: 280px;
@@ -37,13 +37,13 @@
       overflow-y: auto;
     }
 
-    /* 控件样式 */
+    /* Control styles */
     .control-row {
       display: flex;
       gap: 8px;
       align-items: center;
       margin-bottom: 10px;
-      flex-wrap: nowrap; /* 防止换行 */
+      flex-wrap: nowrap; /* Prevent wrapping. */
     }
 
     select.form-select {
@@ -78,7 +78,7 @@
       user-select: none;
     }
 
-    /* 右侧显示区 */
+    /* Right display area */
     #display {
       flex: 1;
       display: flex;
@@ -104,7 +104,7 @@
       font-family: monospace;
     }
 
-    /* 自定义右键菜单 */
+    /* Custom context menu */
     .custom-context-menu {
       position: absolute;
       z-index: 1050;
@@ -125,7 +125,7 @@
       background-color: #f0f0f0;
     }
 
-    /* 双柄滑动条样式 */
+    /* Dual-handle range slider */
     .range-slider-container {
       position: relative;
       height: 40px;
@@ -174,7 +174,7 @@
       box-shadow: 0 0 2px rgba(0,0,0,0.3);
     }
 
-    /* 响应式：小屏幕下上下布局 */
+    /* Responsive stacked layout for small screens */
     @media (max-width: 992px) {
       .main-container {
         flex-direction: column;

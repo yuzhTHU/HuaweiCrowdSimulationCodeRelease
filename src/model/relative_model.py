@@ -9,30 +9,31 @@ from ..utils.timer import NamedTimer
 
 class RelativeModel(Model):
     """
-    相对坐标模型 (RelativeModel)。
-    
-    继承自 Model 类。主要区别在于：
-    1. 不直接使用绝对位置坐标进行 Embedding，而是更加依赖相对位置和速度。
-    2. 使用傅里叶位置编码 (Fourier Positional Encoding) 显式编码位置信息。
-    3. 车辆特征提取时也采用相对坐标处理。
-    这通常能提高模型在不同场景坐标系下的泛化能力。
+    Relative-coordinate model.
+
+    Inherits from `Model`. The main differences are:
+    1. It relies more on relative position and velocity instead of embedding
+       absolute position directly.
+    2. It uses Fourier positional encoding to encode location explicitly.
+    3. Vehicle features are also processed in relative coordinates.
+    This often improves generalization across scenes with different coordinate systems.
     """
 
     def __init__(self, args):
         """
-        初始化模型层和各个嵌入模块。
+        Initialize model layers and embedding modules.
 
         Args:
-            args (Namespace): 配置参数对象，需包含以下关键参数：
-                - model_dim (int): 模型内部特征维度 (Hidden Size)。
-                - map_feature_dim (int): 地图特征提取的中间维度。
-                - lstm_layer_num (int): 用于处理时序数据的 LSTM 层数。
-                - head_num (int): 多头注意力机制的头数。
-                - attention_layer_num (int): Transformer 解码器的层数。
-                - latent_token_num (int): 用于压缩地图特征的 Latent Token 数量。
-                - dropout (float): Dropout 比率。
-                - pred_step (int): 预测步长。
-                - use_spatial_anchor (bool): 是否使用空间锚点增强地图位置编码。
+            args (Namespace): Configuration object containing:
+                - model_dim (int): Internal model feature dimension.
+                - map_feature_dim (int): Intermediate map feature dimension.
+                - lstm_layer_num (int): Number of LSTM layers for temporal data.
+                - head_num (int): Number of attention heads.
+                - attention_layer_num (int): Number of Transformer decoder layers.
+                - latent_token_num (int): Number of latent tokens used to compress map features.
+                - dropout (float): Dropout ratio.
+                - pred_step (int): Prediction horizon.
+                - use_spatial_anchor (bool): Whether to enhance map positional encoding with spatial anchors.
         """
         super().__init__(args)
         self.map_embedder = nn.Sequential(
@@ -43,7 +44,7 @@ class RelativeModel(Model):
             nn.ReLU(),
             nn.Conv2d(args.map_feature_dim//2, args.map_feature_dim, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(args.map_feature_dim, args.model_dim, kernel_size=1),  # 1x1 卷积，相当于每个 (h,w) 位置的 Linear(C->Df)
+            nn.Conv2d(args.map_feature_dim, args.model_dim, kernel_size=1),  # 1x1 convolution, equivalent to a per-location Linear(C->Df).
             Permuted(1, 2, 0),  # (C, H, W) -> (H, W, C)
             nn.LayerNorm(args.model_dim),
         )
@@ -57,29 +58,31 @@ class RelativeModel(Model):
         spd: torch.FloatTensor,
     ):
         """
-        计算并设置行人的综合特征嵌入 (Embedding)。
-        
-        该方法将行人的位置、速度、历史轨迹、目的地和期望速度分别映射到高维空间，
-        并相加得到初始的行人特征向量。同时计算位置编码 (Positional Encoding)。
+        Compute and store the joint pedestrian embedding.
 
-        相比于 Model，Relative Model 不使用 pos 中的绝对位置，而是使用 FourierPositionalEncoding 将 pos 编码到 pe 中
+        This method maps pedestrian position, velocity, history, destination,
+        and desired speed into a high-dimensional space and sums them to form
+        the initial pedestrian feature vector. It also computes positional encoding.
+
+        Unlike `Model`, `RelativeModel` does not use the absolute coordinates in
+        `pos` directly. Instead, it encodes `pos` with `FourierPositionalEncoding`.
 
         Args:
-            pos (torch.FloatTensor): 行人当前时刻的位置坐标 (x, y)。
+            pos (torch.FloatTensor): Current pedestrian coordinates `(x, y)`.
                 Shape: (batch_size, num_peds, 2)
-            vel (torch.FloatTensor): 行人当前时刻的速度向量 (vx, vy)。
+            vel (torch.FloatTensor): Current pedestrian velocity `(vx, vy)`.
                 Shape: (batch_size, num_peds, 2)
-            hst (torch.FloatTensor): 行人的历史轨迹序列。
+            hst (torch.FloatTensor): Pedestrian history trajectory sequence.
                 Shape: (batch_size, num_peds, hist_step, 2)
-            des (torch.FloatTensor): 行人的潜在目的地坐标。
+            des (torch.FloatTensor): Pedestrian destination coordinates.
                 Shape: (batch_size, num_peds, 2)
-            spd (torch.FloatTensor): 行人的期望速率标量。
+            spd (torch.FloatTensor): Pedestrian desired speed scalar.
                 Shape: (batch_size, num_peds, 1)
         
         Side Effects:
-            设置 self.ped_embedding: 融合后的行人特征 (batch_size, num_peds, model_dim)
-            设置 self.pos: 缓存当前位置用于后续地图索引
-            设置 self.pe: 位置编码特征
+            Sets `self.ped_embedding`: fused pedestrian features.
+            Sets `self.pos`: cached current positions for later map indexing.
+            Sets `self.pe`: positional encoding features.
         """
         # pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
         vel_embedding = self.vel_embedder(vel) # (batch_size, #pedestrian, model_dim)
@@ -104,23 +107,23 @@ class RelativeModel(Model):
         veh: torch.FloatTensor,
     ):
         """
-        计算并设置车辆的特征嵌入。
-        
-        处理场景中存在的车辆历史轨迹信息，通过 LSTM 提取时序特征。
-        如果当前场景无车辆，会自动处理 NaN 填充。
+        Compute and store vehicle feature embeddings.
+
+        Processes vehicle trajectory history with an LSTM. If the current scene
+        contains no vehicles, NaN padding is inserted automatically.
 
         Args:
-            veh (torch.FloatTensor): 车辆的历史轨迹序列。
+            veh (torch.FloatTensor): Vehicle history trajectory sequence.
                 Shape: (batch_size, num_vehs, hist_step + 1, 2)
         
         Side Effects:
-            设置 self.veh_embedding: 车辆特征向量 (batch_size, num_vehs, model_dim)
+            Sets `self.veh_embedding`: vehicle feature vectors.
         """
         shape = list(veh.shape)
         if shape[1] == 0:
             shape[1] = 2
             veh = torch.full(shape, float('nan'), device=veh.device)
-        # 不使用 veh 中的绝对位置，而是使用 FourierPositionalEncoding 将 veh_pos 编码到 pe 中
+        # Do not use absolute vehicle positions directly; encode the last vehicle position with Fourier positional encoding.
         if self.args.use_relative_features:
             rel_veh_embedding = self.veh_embedder(veh - veh[..., (-1,), :]) # (batch_size, #vehicle, model_dim)
         else:
@@ -142,31 +145,32 @@ class RelativeModel(Model):
         timer: NamedTimer = None,
     ):
         """
-        模型前向传播：根据上下文信息对带噪轨迹进行去噪预测。
-        
-        该方法必须在调用了 set_*_embedding 系列方法之后执行。
-        它通过一系列 Transformer Decoder 层融合以下信息：
-        1. 扩散时间步 embedding (t)
-        2. 当前带噪的加速度 embedding (x_t)
-        3. 社交交互 (Ped-Ped Attention)
-        4. 人车交互 (Ped-Veh Attention)
-        5. 环境交互 (Ped-Map Attention)
+        Forward pass: predict denoised trajectories from noisy inputs.
+
+        This method must be called after the `set_*_embedding` methods. It
+        fuses the following information through Transformer decoder layers:
+        1. Diffusion timestep embedding (`t`)
+        2. Current noisy acceleration embedding (`x_t`)
+        3. Social interaction (`Ped-Ped Attention`)
+        4. Pedestrian-vehicle interaction (`Ped-Veh Attention`)
+        5. Environment interaction (`Ped-Map Attention`)
         
         Args:
-            denoise_t (torch.LongTensor): 当前扩散过程的时间步 t。
+            denoise_t (torch.LongTensor): Current diffusion timestep `t`.
                 Shape: (batch_size,)
-            noisy_acc (torch.FloatTensor): 加了噪声的未来加速度序列（扩散模型的输入 x_t）。
+            noisy_acc (torch.FloatTensor): Noisy future acceleration sequence, the diffusion input `x_t`.
                 Shape: (batch_size, num_peds, pred_step, 2)
-            ped_length (torch.LongTensor): 一个 batch 中每个样本实际有效的行人数（用于 Mask）。
+            ped_length (torch.LongTensor): Number of valid pedestrians per sample in the batch, used for masking.
                 Shape: (batch_size,)
-            veh_length (torch.LongTensor): 一个 batch 中每个样本实际有效的车辆数（用于 Mask）。
+            veh_length (torch.LongTensor): Number of valid vehicles per sample in the batch, used for masking.
                 Shape: (batch_size,)
-            timer (NamedTimer, optional): 用于性能分析的计时器对象。默认为 None。
+            timer (NamedTimer, optional): Timer object for performance profiling.
 
         Returns:
-            torch.FloatTensor: 模型预测的输出。
-                如果 args.predict_noise 为 True，则输出预测的噪声 epsilon；
-                否则输出预测的原始信号 x_0 (加速度)。
+            torch.FloatTensor: Model prediction.
+                If `args.predict_noise` is `True`, this is the predicted noise
+                `epsilon`; otherwise it is the predicted original signal `x_0`
+                in acceleration space.
                 Shape: (batch_size, num_peds, pred_step, 2)
         """
 

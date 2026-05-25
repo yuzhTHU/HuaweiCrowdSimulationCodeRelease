@@ -5,17 +5,18 @@ import torch.nn as nn
 
 class FourierPositionalEncoding(nn.Module):
     """
-    傅里叶位置编码 (Fourier Feature Mapping)。
-    
-    通过正弦和余弦函数将低维连续坐标（如 x, y）映射到高维频率空间。
-    这有助于神经网络更好地学习数据中的高频细节（参见 NeRF 等相关工作）。
+    Fourier positional encoding (Fourier feature mapping).
+
+    Maps low-dimensional continuous coordinates such as `(x, y)` into a
+    high-dimensional frequency space with sine and cosine functions. This helps
+    neural networks learn high-frequency details more effectively, as in NeRF.
     """
     def __init__(self, out_dim: int = 256, num_bands: int = 64, min_freq: float = 1e-3):
         """
         Args:
-            out_dim (int): 最终输出的编码维度。
-            num_bands (int): 使用的频率频带数量。
-            min_freq (float): 最小频率基数。
+            out_dim (int): Final output embedding dimension.
+            num_bands (int): Number of frequency bands used.
+            min_freq (float): Minimum base frequency.
         """
         super().__init__()
         self.freqs = torch.linspace(min_freq, 0.5, num_bands)
@@ -24,12 +25,12 @@ class FourierPositionalEncoding(nn.Module):
     def forward(self, x: torch.Tensor):
         """
         Args:
-            x (torch.Tensor): 输入坐标。
-                Shape: (..., 2) 假设最后一维是 (x, y)
+            x (torch.Tensor): Input coordinates.
+                Shape: `(..., 2)`, assuming the last dimension is `(x, y)`.
         
         Returns:
-            torch.Tensor: 位置编码特征。
-                Shape: (..., out_dim)
+            torch.Tensor: Positional encoding features.
+                Shape: `(..., out_dim)`.
         """
         freqs = self.freqs.to(x.device) * math.pi * 2
         x_proj = x[..., (0,)] * freqs  # (..., num_bands)

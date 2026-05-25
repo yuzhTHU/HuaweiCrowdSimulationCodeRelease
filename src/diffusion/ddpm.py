@@ -11,24 +11,26 @@ _logger = logging.getLogger(__name__)
 
 class DDPM:
     """
-    去噪扩散概率模型 (Denoising Diffusion Probabilistic Models, DDPM)。
-    
-    实现了 DDPM 的正向加噪过程 (Forward Process) 和反向去噪过程 (Reverse Process)。
-    支持线性 (Linear) 和余弦 (Cosine) 两种 Beta 调度策略。
+    Denoising Diffusion Probabilistic Model (DDPM).
+
+    Implements the DDPM forward noising process and reverse denoising process.
+    Supports both linear and cosine beta schedules.
     """
 
     def __init__(self, args: Namespace, flexibility=0.0):
         """
-        初始化 DDPM 模型的噪声调度表。
+        Initialize the DDPM noise schedule.
 
         Args:
-            args (Namespace): 配置参数对象，需包含：
-                - beta_schedule (str): 'linear' 或 'cosine'。
-                - T (int): 扩散的总步数。
-                - device (str): 计算设备。
-                - antithetic_sampling (bool): 是否在 add_noise 中使用对偶采样以减少方差。
-            flexibility (float, optional): 方差插值系数，用于控制生成过程的随机性。
-                0.0 对应固定方差 (通常用于 DDIM)，1.0 对应完整方差 (标准 DDPM)。默认为 0.0。
+            args (Namespace): Configuration object containing:
+                - beta_schedule (str): `'linear'` or `'cosine'`.
+                - T (int): Total number of diffusion steps.
+                - device (str): Compute device.
+                - antithetic_sampling (bool): Whether to use antithetic
+                  sampling in `add_noise` to reduce variance.
+            flexibility (float, optional): Variance interpolation coefficient
+                controlling stochasticity during generation. `0.0` corresponds
+                to fixed variance and `1.0` to full DDPM variance.
         """
         self.args = args
         if args.beta_schedule == "cosine":
@@ -41,16 +43,16 @@ class DDPM:
         self.alpha = 1 - self.beta
         self.alpha_bar = self.alpha.cumprod(dim=0)
         self.flexibility = flexibility
-    
+
     def to(self, device):
         """
-        将噪声调度表（alpha, beta 等）移动到指定设备。
+        Move the noise schedule tensors to the target device.
 
         Args:
-            device (torch.device or str): 目标设备。
+            device (torch.device or str): Target device.
 
         Returns:
-            self: 返回自身实例以支持链式调用。
+            self: Returns the instance itself for chaining.
         """
         self.beta = self.beta.to(device)
         self.alpha = self.alpha.to(device)
@@ -59,8 +61,8 @@ class DDPM:
 
     def add_noise(self, x0, denoise_t=None):
         """
-        DDPM 前向过程：给原始数据 x0 添加噪声，生成 t 时刻的带噪数据 xt。
-        
+        DDPM forward process: add noise to clean data `x0` to produce `x_t`.
+
         q(x_t | x_0) = N(x_t; sqrt(alpha_bar_t) * x_0, (1 - alpha_bar_t) * I)
 
         Args:
@@ -77,9 +79,9 @@ class DDPM:
                 - denoise_t (torch.LongTensor): 实际使用的时间步 t。Shape: (batch_size, )。
         """
         if denoise_t is not None:
-            raise NotImplementedError("指定 denoise_t 的功能尚未实现")
+            raise NotImplementedError("Specifying `denoise_t` explicitly is not implemented yet.")
             if (denoise_t == 0).any():
-                raise ValueError("denoise_t 不能为 0")
+                raise ValueError("`denoise_t` cannot be 0.")
         batch_size = x0.shape[0]
         if self.args.antithetic_sampling:
             denoise_t_half = torch.randint(1, self.args.T+1, (batch_size // 2,), device=self.args.device)
@@ -117,11 +119,11 @@ class DDPM:
                 Shape 与 xt 相同。
         """
         if not ((x0 is None) ^ (noise is None)):
-            raise ValueError("x0 和 noise 只能传入一个")
+            raise ValueError("Exactly one of `x0` and `noise` must be provided.")
         if denoise_t == 0:
-            raise ValueError("denoise_t 不能为 0")
+            raise ValueError("`denoise_t` cannot be 0.")
         if denoise_t - stride < 0:
-            raise ValueError("denoise_t - stride 不能小于 0")
+            raise ValueError("`denoise_t - stride` cannot be negative.")
         at = self.alpha_bar[denoise_t]
         at_next = self.alpha_bar[denoise_t - stride]
         if x0 is None:
@@ -157,7 +159,7 @@ class DDPM:
             (isinstance(denoise_t, int) and (denoise_t == 0)) or
             (isinstance(denoise_t, torch.Tensor) and (denoise_t == 0).any())
         ):
-            raise ValueError("denoise_t 不能为 0")
+            raise ValueError("`denoise_t` cannot be 0.")
         at = self.alpha_bar[denoise_t]
         if isinstance(denoise_t, torch.Tensor) and denoise_t.numel() > 1:
             at = at.view(xt.shape[0], *[1] * (xt.ndim - 1))
@@ -182,7 +184,7 @@ class DDPM:
             (isinstance(denoise_t, int) and (denoise_t == 0)) or
             (isinstance(denoise_t, torch.Tensor) and (denoise_t == 0).any())
         ):
-            raise ValueError("denoise_t 不能为 0")
+            raise ValueError("`denoise_t` cannot be 0.")
         at = self.alpha_bar[denoise_t]
         if isinstance(denoise_t, torch.Tensor) and denoise_t.numel() > 1:
             at = at.view(xt.shape[0], *[1] * (xt.ndim - 1))

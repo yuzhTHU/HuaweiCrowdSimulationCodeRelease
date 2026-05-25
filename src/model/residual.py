@@ -4,17 +4,17 @@ import torch.nn as nn
 
 class Residual(nn.Module):
     """
-    残差连接模块 (Skip Connection)。
-    
-    实现 y = f(x) + x 的结构。如果输入输出维度不一致，
-    会自动应用一个线性投影层将 x 映射到输出维度。
+    Residual block with an optional projection shortcut.
+
+    Implements `y = f(x) + x`. When the input and output dimensions differ, a
+    linear projection is applied to map `x` to the output dimension.
     """
     def __init__(self, *layers, input_dim=None, output_dim=None):
         """
         Args:
-            *layers (nn.Module): 主路径上的网络层序列。
-            input_dim (int, optional): 输入维度。仅当输入输出维度不同时需要。
-            output_dim (int, optional): 输出维度。
+            *layers (nn.Module): Sequence of layers on the main path.
+            input_dim (int, optional): Input dimension. Needed only when the input and output dimensions differ.
+            output_dim (int, optional): Output dimension.
         """
         super().__init__()
         self.net = nn.Sequential(*layers)

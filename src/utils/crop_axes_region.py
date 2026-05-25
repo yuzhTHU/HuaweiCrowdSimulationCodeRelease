@@ -4,41 +4,42 @@ from PIL import Image
 
 def crop_axes_region(ax, xmin, xmax, ymin, ymax, pad_pixels=0, dpi=500):
     """
-    从一个 matplotlib Axes 中裁剪指定数据区域，返回 PIL.Image。
-    
-    参数:
-        ax: matplotlib.axes.Axes 对象
-        xmin, xmax, ymin, ymax: 数据坐标范围
-        pad_pixels: 裁剪时向内缩进像素，避免边线干扰
-    
-    返回:
-        PIL.Image 对象
+    Crop a specified data region from a matplotlib `Axes` and return it as a
+    `PIL.Image`.
+
+    Args:
+        ax: `matplotlib.axes.Axes` object.
+        xmin, xmax, ymin, ymax: Data-coordinate bounds.
+        pad_pixels: Inward pixel padding to avoid border artifacts.
+
+    Returns:
+        `PIL.Image` object.
     """
     fig = ax.figure
     canvas = fig.canvas
     raw_dpi = ax.figure.dpi
-    fig.set_dpi(dpi)   # 改变 Figure 的 DPI
+    fig.set_dpi(dpi)   # Change the figure DPI.
 
-    canvas.draw()  # 渲染 Figure
+    canvas.draw()  # Render the figure.
     argb = canvas.tostring_argb()
     w, h = canvas.get_width_height()
 
-    # 坐标 -> 像素转换
+    # Coordinate -> pixel conversion.
     def data_to_pixel(xdata, ydata):
         px, py = ax.transData.transform(np.array([[xdata, ydata]]))[0]
-        return int(round(px)), int(round(h - py))  # y 翻转
+        return int(round(px)), int(round(h - py))  # Flip y.
     
     pxmin, pymin = data_to_pixel(xmin, ymin)
     pxmax, pymax = data_to_pixel(xmax, ymax)
 
-    fig.set_dpi(raw_dpi)  # 恢复原始 DPI
+    fig.set_dpi(raw_dpi)  # Restore the original DPI.
 
-    # Figure 渲染成 RGBA 数组
+    # Render the figure into an RGBA array.
     buf = np.frombuffer(argb, dtype=np.uint8)
     buf = buf.reshape(h, w, 4)
     buf = buf[:, :, [1, 2, 3, 0]]  # ARGB -> RGBA
     
-    # 裁剪区域，加入 pad
+    # Crop the region and apply padding.
     x0, x1 = sorted([pxmin, pxmax])
     y0, y1 = sorted([pymin, pymax])
     
@@ -52,7 +53,7 @@ def crop_axes_region(ax, xmin, xmax, ymin, ymax, pad_pixels=0, dpi=500):
 
 if __name__ == "__main__":
     # ----------------------------
-    # 示例用法
+    # Example usage.
     x = np.linspace(0, 10, 100)
     y = np.sin(x)
 
@@ -60,7 +61,7 @@ if __name__ == "__main__":
     ax.axis('equal')
     ax.plot(x, y, lw=1)
 
-    # 红框仅作参考
+    # Red box for reference only.
     xmin, xmax, ymin, ymax = 2, 5, -0.5, 0.5
     ax.plot([xmin, xmax, xmax, xmin, xmin],
             [ymin, ymin, ymax, ymax, ymin],

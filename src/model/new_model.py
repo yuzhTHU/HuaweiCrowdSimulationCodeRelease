@@ -8,29 +8,20 @@ from ..utils.timer import NamedTimer
 
 class NewModel(RelativeModel):
     """
-    改进版模型 (NewModel)。
-    
-    继承自 RelativeModel。
-    主要的改进点在于行人特征编码器 (ped_encoder) 引入了残差连接 (Residual Connection)，
-    并且在特征融合阶段直接将局部环境特征 (sur_info) 注入到初始 Embedding 中，
-    而不再通过后续的 Fusion 层处理。
+    Revised model variant.
+
+    Inherits from `RelativeModel`. The main changes are:
+    - the pedestrian feature encoder (`ped_encoder`) uses a residual connection
+    - local environment features (`sur_info`) are injected directly into the
+      initial embedding instead of being fused later
     """
 
     def __init__(self, args):
         """
-        初始化模型层和各个嵌入模块。
+        Initialize model layers and embedding modules.
 
         Args:
-            args (Namespace): 配置参数对象，需包含以下关键参数：
-                - model_dim (int): 模型内部特征维度 (Hidden Size)。
-                - map_feature_dim (int): 地图特征提取的中间维度。
-                - lstm_layer_num (int): 用于处理时序数据的 LSTM 层数。
-                - head_num (int): 多头注意力机制的头数。
-                - attention_layer_num (int): Transformer 解码器的层数。
-                - latent_token_num (int): 用于压缩地图特征的 Latent Token 数量。
-                - dropout (float): Dropout 比率。
-                - pred_step (int): 预测步长。
-                - use_spatial_anchor (bool): 是否使用空间锚点增强地图位置编码。
+            args (Namespace): Configuration object containing the standard model hyperparameters.
         """
         super().__init__(args)
         self.ped_encoder = Residual(
@@ -49,29 +40,31 @@ class NewModel(RelativeModel):
         spd: torch.FloatTensor,
     ):
         """
-        计算并设置行人的综合特征嵌入 (Embedding)。
-        
-        该方法将行人的位置、速度、历史轨迹、目的地和期望速度分别映射到高维空间，
-        并相加得到初始的行人特征向量。同时计算位置编码 (Positional Encoding)。
+        Compute and store the joint pedestrian embedding.
 
-        不使用 pos 中的绝对位置，而是使用 FourierPositionalEncoding 将 pos 编码到 pe 中
+        Position, velocity, history, destination, and desired speed are mapped
+        into a shared feature space and summed into the initial pedestrian
+        representation.
+
+        Absolute position is not used directly. Instead, `pos` is encoded with
+        `FourierPositionalEncoding`.
 
         Args:
-            pos (torch.FloatTensor): 行人当前时刻的位置坐标 (x, y)。
+            pos (torch.FloatTensor): Current pedestrian coordinates `(x, y)`.
                 Shape: (batch_size, num_peds, 2)
-            vel (torch.FloatTensor): 行人当前时刻的速度向量 (vx, vy)。
+            vel (torch.FloatTensor): Current pedestrian velocity `(vx, vy)`.
                 Shape: (batch_size, num_peds, 2)
-            hst (torch.FloatTensor): 行人的历史轨迹序列。
+            hst (torch.FloatTensor): Pedestrian history trajectory sequence.
                 Shape: (batch_size, num_peds, hist_step, 2)
-            des (torch.FloatTensor): 行人的潜在目的地坐标。
+            des (torch.FloatTensor): Pedestrian destination coordinates.
                 Shape: (batch_size, num_peds, 2)
-            spd (torch.FloatTensor): 行人的期望速率标量。
+            spd (torch.FloatTensor): Pedestrian desired speed scalar.
                 Shape: (batch_size, num_peds, 1)
         
         Side Effects:
-            设置 self.ped_embedding: 融合后的行人特征 (batch_size, num_peds, model_dim)
-            设置 self.pos: 缓存当前位置用于后续地图索引
-            设置 self.pe: 位置编码特征
+            Sets `self.ped_embedding`: fused pedestrian features.
+            Sets `self.pos`: cached current positions for later map indexing.
+            Sets `self.pe`: positional encoding features.
         """
         # pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
         vel_embedding = self.vel_embedder(vel) # (batch_size, #pedestrian, model_dim)
@@ -105,31 +98,28 @@ class NewModel(RelativeModel):
         timer: NamedTimer = None,
     ):
         """
-        模型前向传播：根据上下文信息对带噪轨迹进行去噪预测。
-        
-        该方法必须在调用了 set_*_embedding 系列方法之后执行。
-        它通过一系列 Transformer Decoder 层融合以下信息：
-        1. 扩散时间步 embedding (t)
-        2. 当前带噪的加速度 embedding (x_t)
-        3. 社交交互 (Ped-Ped Attention)
-        4. 人车交互 (Ped-Veh Attention)
-        5. 环境交互 (Ped-Map Attention)
+        Forward pass: predict denoised trajectories from noisy inputs.
+
+        This method must be called after the `set_*_embedding` methods. It
+        fuses diffusion timestep, noisy acceleration, social interaction,
+        pedestrian-vehicle interaction, and environment interaction.
         
         Args:
-            denoise_t (torch.LongTensor): 当前扩散过程的时间步 t。
+            denoise_t (torch.LongTensor): Current diffusion timestep `t`.
                 Shape: (batch_size,)
-            noisy_acc (torch.FloatTensor): 加了噪声的未来加速度序列（扩散模型的输入 x_t）。
+            noisy_acc (torch.FloatTensor): Noisy future acceleration sequence, the diffusion input `x_t`.
                 Shape: (batch_size, num_peds, pred_step, 2)
-            ped_length (torch.LongTensor): 一个 batch 中每个样本实际有效的行人数（用于 Mask）。
+            ped_length (torch.LongTensor): Number of valid pedestrians per sample, used for masking.
                 Shape: (batch_size,)
-            veh_length (torch.LongTensor): 一个 batch 中每个样本实际有效的车辆数（用于 Mask）。
+            veh_length (torch.LongTensor): Number of valid vehicles per sample, used for masking.
                 Shape: (batch_size,)
-            timer (NamedTimer, optional): 用于性能分析的计时器对象。默认为 None。
+            timer (NamedTimer, optional): Timer object for performance profiling.
 
         Returns:
-            torch.FloatTensor: 模型预测的输出。
-                如果 args.predict_noise 为 True，则输出预测的噪声 epsilon；
-                否则输出预测的原始信号 x_0 (加速度)。
+            torch.FloatTensor: Model prediction.
+                If `args.predict_noise` is `True`, this is the predicted noise
+                `epsilon`; otherwise it is the predicted original signal `x_0`
+                in acceleration space.
                 Shape: (batch_size, num_peds, pred_step, 2)
         """
 

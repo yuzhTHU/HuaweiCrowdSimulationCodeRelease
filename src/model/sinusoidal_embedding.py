@@ -5,15 +5,16 @@ import torch.nn as nn
 
 class SinusoidalEmbedding(nn.Module):
     """
-    正弦位置编码生成器。
-    
-    通常用于扩散模型（Diffusion Models）中，将离散的时间步（timesteps）
-    映射为高维连续特征向量。包含一个正弦编码层和一个 MLP 投影层。
+    Sinusoidal embedding generator.
+
+    Commonly used in diffusion models to map discrete timesteps into
+    high-dimensional continuous feature vectors. Includes a sinusoidal encoding
+    stage followed by an MLP projection.
     """
     def __init__(self, embed_dim):
         """
         Args:
-            embed_dim (int): 输出的嵌入维度。
+            embed_dim (int): Output embedding dimension.
         """
         super().__init__()
         self.embed_dim = embed_dim
@@ -31,11 +32,11 @@ class SinusoidalEmbedding(nn.Module):
     def forward(self, t: torch.LongTensor):
         """
         Args:
-            t (torch.LongTensor): 时间步索引。
+            t (torch.LongTensor): Timestep indices.
                 Shape: (batch_size, )
         
         Returns:
-            torch.Tensor: 时间步的嵌入向量。
+            torch.Tensor: Timestep embeddings.
                 Shape: (batch_size, embed_dim)
         """
         emb = t[:, None].float() * self.freq.to(t.device)  # (batch, half_dim)

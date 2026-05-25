@@ -13,28 +13,29 @@ from .mean_pooling_lstm import MeanPoolingLSTM
 
 class Model(nn.Module):
     """
-    基于 Transformer 和 Diffusion 的行人轨迹预测模型。
-    
-    该模型融合了行人自身的历史状态、邻近行人的社交交互、周围车辆的交互
-    以及静态地图环境信息，用于在扩散模型（DDPM/DDIM）的反向去噪过程中
-    预测行人的运动意图（加速度或噪声）。
+    Pedestrian trajectory prediction model based on Transformer and diffusion.
+
+    The model combines pedestrian history, social interaction with nearby
+    pedestrians, interaction with surrounding vehicles, and static map context
+    to predict motion intent, either acceleration or noise, during reverse
+    denoising in DDPM/DDIM.
     """
 
     def __init__(self, args):
         """
-        初始化模型层和各个嵌入模块。
+        Initialize model layers and embedding modules.
 
         Args:
-            args (Namespace): 配置参数对象，需包含以下关键参数：
-                - model_dim (int): 模型内部特征维度 (Hidden Size)。
-                - map_feature_dim (int): 地图特征提取的中间维度。
-                - lstm_layer_num (int): 用于处理时序数据的 LSTM 层数。
-                - head_num (int): 多头注意力机制的头数。
-                - attention_layer_num (int): Transformer 解码器的层数。
-                - latent_token_num (int): 用于压缩地图特征的 Latent Token 数量。
-                - dropout (float): Dropout 比率。
-                - pred_step (int): 预测步长。
-                - use_spatial_anchor (bool): 是否使用空间锚点增强地图位置编码。
+            args (Namespace): Configuration object containing:
+                - model_dim (int): Internal model feature dimension.
+                - map_feature_dim (int): Intermediate map feature dimension.
+                - lstm_layer_num (int): Number of LSTM layers for temporal data.
+                - head_num (int): Number of attention heads.
+                - attention_layer_num (int): Number of Transformer decoder layers.
+                - latent_token_num (int): Number of latent tokens used to compress map features.
+                - dropout (float): Dropout ratio.
+                - pred_step (int): Prediction horizon.
+                - use_spatial_anchor (bool): Whether to enhance map positional encoding with spatial anchors.
         """
         super().__init__()
         self.args = args
@@ -86,7 +87,7 @@ class Model(nn.Module):
             nn.ReLU(),
             nn.Conv2d(args.map_feature_dim//2, args.map_feature_dim, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(args.map_feature_dim, args.model_dim, kernel_size=1),  # 1x1 卷积，相当于每个 (h,w) 位置的 Linear(C->Df)
+            nn.Conv2d(args.map_feature_dim, args.model_dim, kernel_size=1),  # 1x1 convolution, equivalent to a per-location Linear(C->Df).
             Permuted(1, 2, 0),  # (C, H, W) -> (H, W, C)
             nn.LayerNorm(args.model_dim),
         )
@@ -142,13 +143,13 @@ class Model(nn.Module):
             torch.randn(args.latent_token_num, args.model_dim)
         )
         if args.use_spatial_anchor:
-            # 确保 token 数量是平方数 (e.g., 16, 64)
+            # Ensure the token count is a square number, e.g. 16 or 64.
             grid_size = int(math.sqrt(args.latent_token_num))
             if grid_size ** 2 != args.latent_token_num:
                 raise ValueError(f"latent_token_num ({args.latent_token_num}) must be a square number when use_spatial_anchor is True.")
             self.grid_size = grid_size
-            # 生成 0~1 的相对坐标网格，用于后续映射到物理尺寸
-            # 使用 buffer 注册，这样它会被保存到 state_dict 但不会作为参数更新
+            # Build a normalized 0~1 coordinate grid for later mapping to physical space.
+            # Register it as a buffer so it is saved in the state dict but not updated as a parameter.
             x = torch.linspace(0, 1, grid_size)
             y = torch.linspace(0, 1, grid_size)
             xx, yy = torch.meshgrid(x, y, indexing='ij')
@@ -178,27 +179,28 @@ class Model(nn.Module):
         spd: torch.FloatTensor,
     ):
         """
-        计算并设置行人的综合特征嵌入 (Embedding)。
-        
-        该方法将行人的位置、速度、历史轨迹、目的地和期望速度分别映射到高维空间，
-        并相加得到初始的行人特征向量。同时计算位置编码 (Positional Encoding)。
+        Compute and store the joint pedestrian embedding.
+
+        This method maps pedestrian position, velocity, history, destination,
+        and desired speed into a high-dimensional space and sums them to form
+        the initial pedestrian feature vector. It also computes positional encoding.
 
         Args:
-            pos (torch.FloatTensor): 行人当前时刻的位置坐标 (x, y)。
+            pos (torch.FloatTensor): Current pedestrian coordinates `(x, y)`.
                 Shape: (batch_size, num_peds, 2)
-            vel (torch.FloatTensor): 行人当前时刻的速度向量 (vx, vy)。
+            vel (torch.FloatTensor): Current pedestrian velocity `(vx, vy)`.
                 Shape: (batch_size, num_peds, 2)
-            hst (torch.FloatTensor): 行人的历史轨迹序列。
+            hst (torch.FloatTensor): Pedestrian history trajectory sequence.
                 Shape: (batch_size, num_peds, hist_step, 2)
-            des (torch.FloatTensor): 行人的潜在目的地坐标。
+            des (torch.FloatTensor): Pedestrian destination coordinates.
                 Shape: (batch_size, num_peds, 2)
-            spd (torch.FloatTensor): 行人的期望速率标量。
+            spd (torch.FloatTensor): Pedestrian desired speed scalar.
                 Shape: (batch_size, num_peds, 1)
         
         Side Effects:
-            设置 self.ped_embedding: 融合后的行人特征 (batch_size, num_peds, model_dim)
-            设置 self.pos: 缓存当前位置用于后续地图索引
-            设置 self.pe: 位置编码特征
+            Sets `self.ped_embedding`: fused pedestrian features.
+            Sets `self.pos`: cached current positions for later map indexing.
+            Sets `self.pe`: positional encoding features.
         """
         pos_embedding = self.pos_embedder(pos) # (batch_size, #pedestrian, model_dim)
         vel_embedding = self.vel_embedder(vel) # (batch_size, #pedestrian, model_dim)
@@ -217,17 +219,17 @@ class Model(nn.Module):
         veh: torch.FloatTensor,
     ):
         """
-        计算并设置车辆的特征嵌入。
-        
-        处理场景中存在的车辆历史轨迹信息，通过 LSTM 提取时序特征。
-        如果当前场景无车辆，会自动处理 NaN 填充。
+        Compute and store vehicle feature embeddings.
+
+        Processes vehicle trajectory history with an LSTM. If the current scene
+        contains no vehicles, NaN padding is inserted automatically.
 
         Args:
-            veh (torch.FloatTensor): 车辆的历史轨迹序列。
+            veh (torch.FloatTensor): Vehicle history trajectory sequence.
                 Shape: (batch_size, num_vehs, hist_step + 1, 2)
         
         Side Effects:
-            设置 self.veh_embedding: 车辆特征向量 (batch_size, num_vehs, model_dim)
+            Sets `self.veh_embedding`: vehicle feature vectors.
         """
         shape = list(veh.shape)
         if shape[1] == 0:
@@ -245,24 +247,27 @@ class Model(nn.Module):
         ymax: torch.FloatTensor,
     ):
         """
-        计算并设置静态地图的特征嵌入。
-        
-        利用 CNN 提取栅格化地图的局部特征，并结合绝对位置编码。
-        为了降低计算复杂度，使用 Latent Query (潜在令牌) 通过 Cross-Attention 
-        从高维地图特征中提取关键的环境上下文信息 (Latent Embedding)。
+        Compute and store static map embeddings.
+
+        A CNN extracts local features from the rasterized map and combines them
+        with absolute positional encoding. To reduce computation, latent queries
+        compress the dense map features through cross-attention into a compact
+        environmental context representation.
 
         Args:
-            map (torch.FloatTensor): 栅格化的环境地图，0代表可通行区域，1代表障碍物。
-                Shape: (Map_W, Map_H), 第一维为 x（指向右方），第二维为 y（指向上方）
-            xmin (float): 地图在世界坐标系下的 X 轴最小值。
-            xmax (float): 地图在 world 坐标系下的 X 轴最大值。
-            ymin (float): 地图在 world 坐标系下的 Y 轴最小值。
-            ymax (float): 地图在 world 坐标系下的 Y 轴最大值。
+            map (torch.FloatTensor): Rasterized environment map, where `0`
+                denotes walkable area and `1` denotes obstacles.
+                Shape: `(Map_W, Map_H)`, with the first dimension as `x`
+                pointing right and the second as `y` pointing up.
+            xmin (float): Minimum x value of the map in world coordinates.
+            xmax (float): Maximum x value of the map in world coordinates.
+            ymin (float): Minimum y value of the map in world coordinates.
+            ymax (float): Maximum y value of the map in world coordinates.
         
         Side Effects:
-            设置 self.map_embedding: 密集的网格地图特征 (Map_W, Map_H, model_dim)
-            设置 self.ltn_embedding: 压缩后的地图潜在特征 (latent_token_num, model_dim)
-            缓存地图边界信息 (self.xmin, self.xmax, etc.)
+            Sets `self.map_embedding`: dense grid-map features.
+            Sets `self.ltn_embedding`: compressed latent map features.
+            Caches map boundary metadata such as `self.xmin` and `self.xmax`.
         """
         map_embedding = self.map_embedder(map.unsqueeze(-1)) # (W', H', model_dim)
         xx = torch.linspace(xmin, xmax, map_embedding.size(0), device=map_embedding.device)
@@ -291,13 +296,13 @@ class Model(nn.Module):
 
     def set_sur_info(self):
         """
-        提取每个行人当前所在位置的局部环境特征 (Surrounding Info)。
-        
-        根据行人的世界坐标 (self.pos) 映射到栅格地图的索引，
-        从 dense map embedding 中取出对应位置的特征向量。
+        Extract local environment features at each pedestrian's current position.
+
+        Maps pedestrian world coordinates in `self.pos` to raster-map indices
+        and retrieves the corresponding vectors from the dense map embedding.
         
         Side Effects:
-            设置 self.sur_info: 行人脚下的环境特征 (batch_size, num_peds, model_dim)
+            Sets `self.sur_info`: environmental features under each pedestrian.
         """
         pos = self.pos
         xmax, xmin = self.xmax, self.xmin
@@ -318,31 +323,32 @@ class Model(nn.Module):
         timer: NamedTimer = None,
     ):
         """
-        模型前向传播：根据上下文信息对带噪轨迹进行去噪预测。
-        
-        该方法必须在调用了 set_*_embedding 系列方法之后执行。
-        它通过一系列 Transformer Decoder 层融合以下信息：
-        1. 扩散时间步 embedding (t)
-        2. 当前带噪的加速度 embedding (x_t)
-        3. 社交交互 (Ped-Ped Attention)
-        4. 人车交互 (Ped-Veh Attention)
-        5. 环境交互 (Ped-Map Attention)
+        Forward pass: predict denoised trajectories from noisy inputs.
+
+        This method must be called after the `set_*_embedding` methods. It
+        fuses the following information through Transformer decoder layers:
+        1. Diffusion timestep embedding (`t`)
+        2. Current noisy acceleration embedding (`x_t`)
+        3. Social interaction (`Ped-Ped Attention`)
+        4. Pedestrian-vehicle interaction (`Ped-Veh Attention`)
+        5. Environment interaction (`Ped-Map Attention`)
         
         Args:
-            denoise_t (torch.LongTensor): 当前扩散过程的时间步 t。
+            denoise_t (torch.LongTensor): Current diffusion timestep `t`.
                 Shape: (batch_size,)
-            noisy_acc (torch.FloatTensor): 加了噪声的未来加速度序列（扩散模型的输入 x_t）。
+            noisy_acc (torch.FloatTensor): Noisy future acceleration sequence, the diffusion input `x_t`.
                 Shape: (batch_size, num_peds, pred_step, 2)
-            ped_length (torch.LongTensor): 一个 batch 中每个样本实际有效的行人数（用于 Mask）。
+            ped_length (torch.LongTensor): Number of valid pedestrians per sample in the batch, used for masking.
                 Shape: (batch_size,)
-            veh_length (torch.LongTensor): 一个 batch 中每个样本实际有效的车辆数（用于 Mask）。
+            veh_length (torch.LongTensor): Number of valid vehicles per sample in the batch, used for masking.
                 Shape: (batch_size,)
-            timer (NamedTimer, optional): 用于性能分析的计时器对象。默认为 None。
+            timer (NamedTimer, optional): Timer object for performance profiling.
 
         Returns:
-            torch.FloatTensor: 模型预测的输出。
-                如果 args.predict_noise 为 True，则输出预测的噪声 epsilon；
-                否则输出预测的原始信号 x_0 (加速度)。
+            torch.FloatTensor: Model prediction.
+                If `args.predict_noise` is `True`, this is the predicted noise
+                `epsilon`; otherwise it is the predicted original signal `x_0`
+                in acceleration space.
                 Shape: (batch_size, num_peds, pred_step, 2)
         """
 

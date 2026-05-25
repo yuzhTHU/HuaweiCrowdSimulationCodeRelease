@@ -2,16 +2,18 @@ import torch
 from argparse import Namespace
 from .ddpm import DDPM
 
+
 class DDIM(DDPM):
     """
-    去噪扩散隐式模型 (Denoising Diffusion Implicit Models, DDIM)。
-    
-    继承自 DDPM。DDIM 通过非马尔可夫链的采样过程，允许在反向过程中使用确定性映射，
-    从而支持更快的采样（跳步）且不损失生成质量。
+    Denoising Diffusion Implicit Model (DDIM).
+
+    Inherits from `DDPM`. DDIM enables faster sampling with skipped steps while
+    preserving generation quality through a non-Markovian reverse process.
     """
+
     def __init__(self, args: Namespace, eta=0.0):
         """
-        初始化 DDIM 模型。
+        Initialize the DDIM sampler.
 
         Args:
             args (Namespace): 配置参数对象。
@@ -45,11 +47,11 @@ class DDIM(DDPM):
             torch.FloatTensor: 去噪后的上一时刻数据 x_{t-stride}。
         """
         if not ((x0 is None) ^ (noise is None)):
-            raise ValueError("x0 和 noise 只能传入一个")
+            raise ValueError("Exactly one of `x0` and `noise` must be provided.")
         if denoise_t == 0:
-            raise ValueError("denoise_t 不能为 0")
+            raise ValueError("`denoise_t` cannot be 0.")
         if denoise_t - stride < 0:
-            raise ValueError("denoise_t - stride 不能小于 0")
+            raise ValueError("`denoise_t - stride` cannot be negative.")
         at = self.alpha_bar[denoise_t]
         at_next = self.alpha_bar[denoise_t - stride]
         var = self.eta**2 * (1 - at_next) / (1 - at) * (1 - at / at_next)

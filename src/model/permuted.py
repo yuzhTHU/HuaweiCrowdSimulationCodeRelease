@@ -4,14 +4,14 @@ import torch.nn as nn
 
 class Permuted(nn.Module):
     """
-    维度置换层。
+    Dimension permutation layer.
     
-    封装了 Tensor.permute 操作，使其可以被放入 nn.Sequential 中。
+    Wraps `Tensor.permute` so it can be used inside `nn.Sequential`.
     """
     def __init__(self, *dims):
         """
         Args:
-            *dims (int): 目标维度的顺序索引。
+            *dims (int): Target dimension ordering.
         """
         super().__init__()
         self.dims = dims
