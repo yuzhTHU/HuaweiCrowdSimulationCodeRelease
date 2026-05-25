@@ -56,16 +56,16 @@ class Model(nn.Module):
             nn.LayerNorm(args.model_dim),
         )
         self.hst_embedder = nn.Sequential(
-            NanEmbedding(2, args.model_dim),
+            NanEmbedding(2, args.model_dim, disable=not args.use_nan_embedding),
             MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
         self.des_embedder = nn.Sequential(
-            NanEmbedding(2, args.model_dim),
+            NanEmbedding(2, args.model_dim, disable=not args.use_nan_embedding),
             nn.LayerNorm(args.model_dim),
         )
         self.spd_embedder = nn.Sequential(
-            NanEmbedding(1, args.model_dim),
+            NanEmbedding(1, args.model_dim, disable=not args.use_nan_embedding),
             nn.LayerNorm(args.model_dim),
         )
         self.ped_encoder = nn.Sequential(
@@ -75,12 +75,12 @@ class Model(nn.Module):
             nn.Linear(4*args.model_dim, args.model_dim),
         )
         self.veh_embedder = nn.Sequential(
-            NanEmbedding(2, args.model_dim),
+            NanEmbedding(2, args.model_dim, disable=not args.use_nan_embedding),
             MeanPoolingLSTM(args.model_dim, args.model_dim, args.lstm_layer_num),
             nn.LayerNorm(args.model_dim),
         )
         self.map_embedder = nn.Sequential(
-            NanEmbedding(1, args.map_feature_dim//4),
+            NanEmbedding(1, args.map_feature_dim//4, disable=not args.use_nan_embedding),
             Permuted(2, 0, 1),  # (H, W, C) -> (C, H, W)
             nn.Conv2d(args.map_feature_dim//4, args.map_feature_dim//2, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -277,7 +277,10 @@ class Model(nn.Module):
             anchor_phys = torch.stack([anchor_phys_x, anchor_phys_y], dim=-1) # (S, S, 2)
             anchor_pe = self.positional_encoding(anchor_phys) # (S, S, model_dim)
             latent_tokens = latent_tokens + anchor_pe.flatten(0, 1) # (S, S, D) -> (K, D)
-        ltn_embedding = self.latent_attntn(latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
+        if self.args.use_latent_query:
+            ltn_embedding = self.latent_attntn(latent_tokens, map_embedding.flatten(0, 1)) # (#latent_token, model_dim)
+        else:
+            ltn_embedding = map_embedding.flatten(0, 1)
         self.map_embedding = map_embedding
         self.ltn_embedding = ltn_embedding
         self.map = map

@@ -1,16 +1,14 @@
+import os
 import re
 import sys
-import time
 import json
 import torch
 import shlex
 import random
 import logging
 import numpy as np
-import matplotlib.pyplot as plt
 import torch.utils.data as D
 from copy import deepcopy
-from tqdm import tqdm
 from pathlib import Path
 from datetime import datetime
 from socket import gethostname
@@ -22,97 +20,209 @@ from src.diffusion import DDPM, DDIM
 from src.utils.logger import init_logger
 from src.utils.seed import seed_all
 from src.utils.timer import NamedTimer
-from src.utils.plot import get_fig
 from src.utils.auto_gpu import AutoGPU
 from src.utils.fix_parser import add_negation_flags, add_minus_flags
 from src.utils.tag2ansi import tag2ansi
 from src.utils.use_npu import USE_NPU, npu_attention_fallback_context
-from src.utils.calc_xy_error import calc_xy_error
+from src.tasks import train_once, test_once
 
 _logger = logging.getLogger("src.train")
 
 def main(args):
     ## Load Dataset
-    # 加载数据集
-    dataset_list = []
-    if 'All' in args.datasets:
-        args.datasets.remove('All')
-        args.datasets += ['ETH', 'UCY', 'GC', 'SDD', 'WayMo']
-    if "ETH" in args.datasets:
-        dataset_list += ETHDataset.load_data_batch(args, "./data/ETH/")
-        args.datasets.remove("ETH")
-    if "UCY" in args.datasets:
-        dataset_list += UCYDataset.load_data_batch(args, "./data/UCY/data/")
-        args.datasets.remove("UCY")
-    if "GC" in args.datasets:
-        dataset_list += [GCDataset.load_data(args, "./data/GC/Annotation")]
-        args.datasets.remove("GC")
-    if "SDD" in args.datasets:
-        dataset_list += SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
-        args.datasets.remove("SDD")
-    if 'WayMo' in args.datasets:
-        dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=100)
-        args.datasets.remove("WayMo")
-    if 'ORCA' in args.datasets:
-        dataset_list += ORCADataset.load_data_batch(args, "./data/ORCA/")
-        args.datasets.remove("ORCA")
-    if 'debug' in args.datasets:
-        # dataset_list += [UCYDataset.load_data(args, './data/UCY/data/data_university_students/students003.vsp')]
-        # dataset_list += [SDDDataset.load_data(args, "./data/SDD/annotations/hyang/video0/annotations.txt")]
-        dataset_list += [WayMoDataset.load_data(args, './data/WayMo/Processed/00000_1_2aa43fad083efbf3/data.csv.gz')]
-        # dataset_list[0].samples = dataset_list[0].samples[int(len(dataset_list[0].samples) * 0.8):]
-        args.datasets.remove('debug')
-    if len(args.datasets) > 0:
-        raise ValueError(f"Unknown datase: {args.datasets}!")
-    # 检查地图
-    for dataset in dataset_list:
-        map_data = dataset.map_data
-        delta_x = map_data.xmax - map_data.xmin
-        delta_y = map_data.ymax - map_data.ymin
-        w, h = map_data.map.shape
-        if not (0.8 < (ratio := (delta_x / w) / (delta_y / h)) < 1.2):
-            _logger.warning(
-                f"Map aspect ratio of {dataset.name} mismatch: "
-                f"data ratio={ratio:.4f} (xrange={delta_x:.4f}, yrange={delta_y:.4f}, "
-                f"map shape={map_data.map.shape}), may cause distortion."
-            )
-            exit(1)
-    # 划分训练集和测试集
-    if args.test_name is not None:
-        # 将名称中包含指定字符串的场景划分到测试集
+    if args.test_datasets:
         train_dataset = []
         test_dataset = []
-        for d in dataset_list:
-            if any(test_name in d.name for test_name in args.test_name):
-                test_dataset.append(d)
-            else:
-                train_dataset.append(d)
-    elif args.test_ratio is not None and args.split_by_scenario:
-        # 将特定比例的场景划分到测试集
-        random.shuffle(dataset_list)
-        test_size = max(1, int(len(dataset_list) * args.test_ratio))
-        train_dataset = dataset_list[:-test_size]
-        test_dataset = dataset_list[-test_size:]
-    elif args.test_ratio is not None and not args.split_by_scenario:
+        for (datasets, dataset_names) in zip((train_dataset, test_dataset), (args.train_datasets, args.test_datasets)):
+            for dataset in dataset_names:
+                if dataset == 'eth':
+                    datasets.append(ETHDataset.load_data(args, "./data/ETH/seq_eth/obsmat.txt"))
+                elif dataset == 'hotel':
+                    datasets.append(ETHDataset.load_data(args, "./data/ETH/seq_hotel/obsmat.txt"))
+                elif dataset == 'zara01':
+                    datasets.append(UCYDataset.load_data(args, './data/UCY/data/data_zara/crowds_zara01.vsp'))
+                elif dataset == 'zara02':
+                    datasets.append(UCYDataset.load_data(args, './data/UCY/data/data_zara/crowds_zara02.vsp'))
+                elif dataset == 'univ':
+                    datasets.append(UCYDataset.load_data(args, './data/UCY/data/data_university_students/students003.vsp'))
+                elif dataset == 'ETH_train':
+                    _eth_dataset = ETHDataset.load_data_batch(args, "./data/ETH/") if '_eth_dataset' not in locals() else _eth_dataset
+                    for d in _eth_dataset:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{100-test_ratio*100:.0f}train"
+                        d.samples = d.samples[:train_num]
+                        datasets.append(d)
+                elif dataset == 'ETH_test':
+                    _eth_dataset = ETHDataset.load_data_batch(args, "./data/ETH/") if '_eth_dataset' not in locals() else _eth_dataset
+                    for d in _eth_dataset:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{test_ratio*100:.0f}test"
+                        d.samples = d.samples[train_num:]
+                        datasets.append(d)
+                elif dataset == 'UCY_train':
+                    _ucy_dataset = UCYDataset.load_data_batch(args, "./data/UCY/data/") if '_ucy_dataset' not in locals() else _ucy_dataset
+                    for d in _ucy_dataset:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{100-test_ratio*100:.0f}train"
+                        d.samples = d.samples[:train_num]
+                        datasets.append(d)
+                elif dataset == 'UCY_test':
+                    _ucy_dataset = UCYDataset.load_data_batch(args, "./data/UCY/data/") if '_ucy_dataset' not in locals() else _ucy_dataset
+                    for d in _ucy_dataset:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{test_ratio*100:.0f}test"
+                        d.samples = d.samples[train_num:]
+                        datasets.append(d)
+                elif dataset == 'GC_train':
+                    _gc_dataset = GCDataset.load_data(args, "./data/GC/Annotation") if '_gc_dataset' not in locals() else _gc_dataset
+                    d = deepcopy(_gc_dataset)
+                    test_ratio = 0.2
+                    train_num = int(len(_gc_dataset) * (1-test_ratio))
+                    d.name = d.name + f"_{100-test_ratio*100:.0f}train"
+                    d.samples = d.samples[:train_num]
+                    datasets.append(d)
+                elif dataset == 'GC_test':
+                    _gc_dataset = GCDataset.load_data(args, "./data/GC/Annotation") if '_gc_dataset' not in locals() else _gc_dataset
+                    d = deepcopy(_gc_dataset)
+                    test_ratio = 0.2
+                    train_num = int(len(_gc_dataset) * (1-test_ratio))
+                    d.name = d.name + f"_{test_ratio*100:.0f}test"
+                    d.samples = d.samples[train_num:]
+                    datasets.append(d)
+                elif dataset == 'SDD_train':
+                    for path in ['bookstore/video0','bookstore/video1','bookstore/video2','bookstore/video3','coupa/video0','coupa/video1','coupa/video2','deathCircle/video0','deathCircle/video1','deathCircle/video2','deathCircle/video3','gates/video0','gates/video1','gates/video2','gates/video3','gates/video4','gates/video5','gates/video6','gates/video7','hyang/video0','hyang/video1','hyang/video2','hyang/video3','hyang/video4','hyang/video5','hyang/video6','hyang/video7','hyang/video8','hyang/video9','hyang/video10','hyang/video11','hyang/video12','hyang/video13','little/video0','little/video1','little/video2','nexus/video0','nexus/video1','nexus/video2','nexus/video3','nexus/video4','nexus/video5','nexus/video6','nexus/video7','nexus/video8','quad/video0','quad/video1','quad/video2']:
+                        datasets.append(SDDDataset.load_data(args, f"./data/SDD/annotations/{path}/annotations.txt"))
+                elif dataset == 'SDD_test':
+                    for path in ['bookstore/video4','bookstore/video5','bookstore/video6','coupa/video3','deathCircle/video4','gates/video8','hyang/video14','little/video3','nexus/video9','nexus/video10','nexus/video11','quad/video3']:
+                        datasets.append(SDDDataset.load_data(args, f"./data/SDD/annotations/{path}/annotations.txt"))
+                elif dataset == 'WayMo_train':
+                    _waymo_datasets = WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=500) if '_waymo_datasets' not in locals() else _waymo_datasets
+                    for d in _waymo_datasets:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{100-test_ratio*100:.0f}train"
+                        d.samples = d.samples[:train_num]
+                        datasets.append(d)
+                elif dataset == 'WayMo_test':
+                    _waymo_datasets = WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=500) if '_waymo_datasets' not in locals() else _waymo_datasets
+                    for d in _waymo_datasets:
+                        d = deepcopy(d)
+                        test_ratio = 0.2
+                        train_num = int(len(d) * (1-test_ratio))
+                        d.name = d.name + f"_{test_ratio*100:.0f}test"
+                        d.samples = d.samples[train_num:]
+                        datasets.append(d)
+                else:
+                    raise ValueError(f"Unknown dataset {dataset}!")
+
         # 将每个场景的特定比例样本划分到测试集
+        dataset_list = train_dataset
         train_dataset = []
-        test_dataset = []
+        eval_dataset = []
         for d in dataset_list:
             d1 = d
             d2 = deepcopy(d)
-            train_num = int(len(d) * (1-args.test_ratio))
-            d1.name = d1.name + f"_{100-args.test_ratio*100:.0f}train"
-            d2.name = d2.name + f"_{args.test_ratio*100:.0f}test"
-            d1.samples = d1.samples[:train_num]
-            d2.samples = d2.samples[train_num:]
+            train_num = int(len(d) * (1-args.eval_ratio))
+            d1.name = d1.name + f"_{100-args.eval_ratio*100:.0f}train"
+            d2.name = d2.name + f"_{args.eval_ratio*100:.0f}eval"
+            d1.samples = d1.samples[:train_num] if args.eval_ratio > 0 else d1.samples
+            d2.samples = d2.samples[train_num:] if args.eval_ratio > 0 else d2.samples # d2.samples == d1.samples == d.samples when --eval_ratio 0
             train_dataset.append(d1)
-            test_dataset.append(d2)
+            eval_dataset.append(d2)
     else:
-        # 训练集和测试集相同
-        train_dataset = dataset_list
-        test_dataset = dataset_list
+        # 加载数据集
+        dataset_list = []
+        if 'All' in args.datasets:
+            args.datasets.remove('All')
+            args.datasets += ['ETH', 'UCY', 'GC', 'SDD', 'WayMo']
+        if "ETH" in args.datasets:
+            dataset_list += ETHDataset.load_data_batch(args, "./data/ETH/")
+            args.datasets.remove("ETH")
+        if "UCY" in args.datasets:
+            dataset_list += UCYDataset.load_data_batch(args, "./data/UCY/data/")
+            args.datasets.remove("UCY")
+        if "GC" in args.datasets:
+            dataset_list += [GCDataset.load_data(args, "./data/GC/Annotation")]
+            args.datasets.remove("GC")
+        if "SDD" in args.datasets:
+            dataset_list += SDDDataset.load_data_batch(args, "./data/SDD/annotations/")
+            args.datasets.remove("SDD")
+        if 'WayMo' in args.datasets:
+            dataset_list += WayMoDataset.load_data_batch(args, "./data/WayMo/Processed/", total=500)
+            args.datasets.remove("WayMo")
+        if 'ORCA' in args.datasets:
+            dataset_list += ORCADataset.load_data_batch(args, "./data/ORCA/")
+            args.datasets.remove("ORCA")
+        if 'debug' in args.datasets:
+            # dataset_list += [UCYDataset.load_data(args, './data/UCY/data/data_university_students/students003.vsp')]
+            # dataset_list += [SDDDataset.load_data(args, "./data/SDD/annotations/hyang/video0/annotations.txt")]
+            dataset_list += [WayMoDataset.load_data(args, './data/WayMo/Processed/00000_1_2aa43fad083efbf3/data.csv.gz')]
+            # dataset_list[0].samples = dataset_list[0].samples[int(len(dataset_list[0].samples) * 0.8):]
+            args.datasets.remove('debug')
+        if len(args.datasets) > 0:
+            raise ValueError(f"Unknown datase: {args.datasets}!")
+        # 检查地图
+        for dataset in dataset_list:
+            map_data = dataset.map_data
+            delta_x = map_data.xmax - map_data.xmin
+            delta_y = map_data.ymax - map_data.ymin
+            w, h = map_data.map.shape
+            if not (0.8 < (ratio := (delta_x / w) / (delta_y / h)) < 1.2):
+                _logger.warning(
+                    f"Map aspect ratio of {dataset.name} mismatch: "
+                    f"data ratio={ratio:.4f} (xrange={delta_x:.4f}, yrange={delta_y:.4f}, "
+                    f"map shape={map_data.map.shape}), may cause distortion."
+                )
+                exit(1)
+        # 划分训练集和测试集
+        if args.test_name is not None:
+            # 将名称中包含指定字符串的场景划分到测试集
+            train_dataset = []
+            test_dataset = []
+            for d in dataset_list:
+                if any(test_name in d.name for test_name in args.test_name):
+                    test_dataset.append(d)
+                else:
+                    train_dataset.append(d)
+        elif args.test_ratio is not None and args.split_by_scenario:
+            # 将特定比例的场景划分到测试集
+            random.shuffle(dataset_list)
+            test_size = max(1, int(len(dataset_list) * args.test_ratio))
+            train_dataset = dataset_list[:-test_size]
+            test_dataset = dataset_list[-test_size:]
+        elif args.test_ratio is not None and not args.split_by_scenario:
+            # 将每个场景的特定比例样本划分到测试集
+            train_dataset = []
+            test_dataset = []
+            for d in dataset_list:
+                d1 = d
+                d2 = deepcopy(d)
+                train_num = int(len(d) * (1-args.test_ratio))
+                d1.name = d1.name + f"_{100-args.test_ratio*100:.0f}train"
+                d2.name = d2.name + f"_{args.test_ratio*100:.0f}test"
+                d1.samples = d1.samples[:train_num]
+                d2.samples = d2.samples[train_num:]
+                train_dataset.append(d1)
+                test_dataset.append(d2)
+        else:
+            # 训练集和测试集相同
+            train_dataset = dataset_list
+            test_dataset = dataset_list
+        eval_dataset = test_dataset
+    if args.use_test_as_eval:
+        eval_dataset = test_dataset
     # 创建数据加载器
     train_loaders = []
+    eval_loaders = []
     test_loaders = []
     for dataset in train_dataset:
         if len(dataset) == 0:
@@ -122,6 +232,17 @@ def main(args):
             dataset,
             shuffle=True,
             batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            collate_fn=dataset.collate_fn,
+        ))
+    for dataset in eval_dataset:
+        if len(dataset) == 0:
+            _logger.warning(f"Dataset {dataset.name} has no evaluation samples!")
+            continue
+        eval_loaders.append(D.DataLoader(
+            dataset,
+            shuffle=False,
+            batch_size=args.batch_size // args.sample_num,  # 在实际测试时 batch_size 会乘上 sample_num，可能会很大导致 OOM
             num_workers=args.num_workers,
             collate_fn=dataset.collate_fn,
         ))
@@ -139,6 +260,7 @@ def main(args):
     _logger.note(
         "Datasets:\n"
         f"Train on {[d.name for d in train_dataset]} datasets ({sum([len(d) for d in train_dataset]):,} samples in total)\n"
+        f"Eval on {[d.name for d in eval_dataset]} datasets ({sum([len(d) for d in eval_dataset]):,} samples in total)\n"
         f"Test on {[d.name for d in test_dataset]} datasets ({sum([len(d) for d in test_dataset]):,} samples in total)"
     )
 
@@ -164,7 +286,9 @@ def main(args):
     )
 
     ## Reload Checkpoint
-    if args.reload_checkpoint is not None:
+    if args.force_new_experiment:
+        checkpoint_path = None
+    elif args.reload_checkpoint is not None:
         # 如果指定了 checkpoint 路径，则从该路径加载
         checkpoint_path = Path(args.reload_checkpoint)
     elif (Path(args.save_path) / "checkpoint.pth").exists():
@@ -180,6 +304,11 @@ def main(args):
         if 'args' in checkpoint:
             saved_args = checkpoint['args']
             for key in sorted(set(saved_args.keys()) | set(vars(args).keys())):
+                if key in [
+                    'device', 'save_dir', 'save_path', 'command', 'name', 'exp_name',
+                    'seed', 'reload_checkpoint', 'test_before_train', 'test_per_epoch',
+                ]:
+                    continue
                 val1 = saved_args.get(key, None)
                 val2 = getattr(args, key, None)
                 if val1 != val2:
@@ -213,7 +342,7 @@ def main(args):
             torch.set_grad_enabled(False)
             model.eval()
             with npu_attention_fallback_context(model, enable=USE_NPU):
-                test_records = test_once(args, test_loaders, model, criterion, diffusion, epoch)
+                test_records = test_once(args, eval_loaders, model, criterion, diffusion, epoch)
             timer.add('test')
         else:
             test_records = None
@@ -277,10 +406,20 @@ def main(args):
                     f"at epoch [#66CCFF]{best_records['epoch']}[reset]. "
                     f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
                     f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
+                    f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
+                    f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
+                    f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']) - (base := np.mean(best_records['collision_ped_base'])):.2%} (+{base:.2%}), "
+                    f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']) - (base := np.mean(best_records['collision_veh_base'])):.2%} (+{base:.2%}), "
+                    f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']) - (base := np.mean(best_records['collision_map_base'])):.2%} (+{base:.2%}), "
+                    f"[#66CCFF]Collision-Ped2={np.mean(best_records['collision_ped2']):.2%}, "
+                    f"[#66CCFF]Collision-Veh2={np.mean(best_records['collision_veh2']):.2%}, "
+                    f"[#66CCFF]Collision-Map2={np.mean(best_records['collision_map2']):.2%}, "
                     f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
                     f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
                     f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-                    f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f})"
+                    f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}), "
+                    f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
+                    f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
                 ))
             timer.add('save_best')
 
@@ -297,7 +436,7 @@ def main(args):
         ))
 
         # 释放额外的显存
-        if train_records is not None:
+        if args.minimize_gpu and train_records is not None:
             peak = torch.cuda.max_memory_allocated(args.device) / 1024 / 1024
             reserved_raw = torch.cuda.memory_reserved(args.device) / 1024 / 1024
             torch.cuda.empty_cache() # 释放 reserved 但是未被 allocated 的 block
@@ -319,14 +458,21 @@ def main(args):
 
     ## Log Best Result
     _logger.note(tag2ansi(
-        f"[bold underline orange]best Accuracy={best_records['accuracy']:.2%}[reset] "
+        f"[bold underline orange]best Evaluation Accuracy={best_records['accuracy']:.2%}[reset] "
         f"at [#66CCFF]epoch {best_records['epoch']}[reset]. "
         f"[#66CCFF]ADE={np.mean(best_records['ade']):.4f}, "
         f"[#66CCFF]FDE={np.mean(best_records['fde']):.4f}, "
+        f"[#66CCFF]X_ERROR (normal)={np.nanmean(best_records['norm_err']):.4f}, "
+        f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(best_records['tan_err']):.4f}, "
+        f"[#66CCFF]Collision-Ped={np.mean(best_records['collision_ped']) - (base := np.mean(best_records['collision_ped_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Veh={np.mean(best_records['collision_veh']) - (base := np.mean(best_records['collision_veh_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Map={np.mean(best_records['collision_map']) - (base := np.mean(best_records['collision_map_base'])):.2%} (+{base:.2%}), "
         f"[#66CCFF]AvgLen={np.mean(best_records['trajlen']):.4f}, "
         f"[#66CCFF]Loss={np.mean(best_records['loss']):.4f}, "
         f"[#66CCFF]PedNum={np.mean(best_records['ped_num']):.1f}, "
-        f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}"
+        f"[#66CCFF]VehNum={np.mean(best_records['veh_num']):.1f}, "
+        f"[#66CCFF]RolloutTime={np.mean(best_records['rollout_time'])*1000:.2f}ms "
+        f"([bold underline orange]FPS={1/np.mean(best_records['rollout_time']):.2f} Hz[reset])"
     ))
     if len(set(best_records['dataset_class'])) > 1:
         for klass in sorted(list(set(best_records['dataset_class']))):
@@ -336,6 +482,17 @@ def main(args):
             trajlen = np.array([best_records['trajlen'][i] for i in idxs])
             ped_num = np.array([best_records['ped_num'][i] for i in idxs])
             veh_num = np.array([best_records['veh_num'][i] for i in idxs])
+            norm_err = np.array([best_records['norm_err'][i] for i in idxs])
+            tan_err = np.array([best_records['tan_err'][i] for i in idxs])
+            collision_ped = np.array([best_records['collision_ped'][i] for i in idxs])
+            collision_veh = np.array([best_records['collision_veh'][i] for i in idxs])
+            collision_map = np.array([best_records['collision_map'][i] for i in idxs])
+            collision_ped_base = np.array([best_records['collision_ped_base'][i] for i in idxs])
+            collision_veh_base = np.array([best_records['collision_veh_base'][i] for i in idxs])
+            collision_map_base = np.array([best_records['collision_map_base'][i] for i in idxs])
+            collision_ped2 = np.array([best_records['collision_ped2'][i] for i in idxs])
+            collision_veh2 = np.array([best_records['collision_veh2'][i] for i in idxs])
+            collision_map2 = np.array([best_records['collision_map2'][i] for i in idxs])
             rollout_time = np.array([best_records['rollout_time'][i] for i in idxs])
             w = np.array([best_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
@@ -345,423 +502,112 @@ def main(args):
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
+                f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
+                f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
+                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped) - (base := np.sum(w * collision_ped)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh) - (base := np.sum(w * collision_veh)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Map={np.sum(w * collision_map) - (base := np.sum(w * collision_map)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Ped2={np.sum(w * collision_ped2):.2%}, "
+                f"[#66CCFF]Collision-Veh2={np.sum(w * collision_veh2):.2%}, "
+                f"[#66CCFF]Collision-Map2={np.sum(w * collision_map2):.2%}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
                 f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
                 f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
             ))
-    _logger.note(f"Training finished. Re-run: {args.command}")
-
-
-def train_once(args, train_loaders, model, optimizer, criterion, diffusion, epoch):
-    train_timer = NamedTimer(unit='it', mode='pace')
-    records_list = []
-    for loader in train_loaders:
-        map_data = loader.dataset.map_data
-        map = torch.from_numpy(map_data.map).to(args.device).float()
-        records = dict(loss=[], rollout_loss=[])
-        for batch in tqdm(loader, total=len(loader), disable=False, leave=False, dynamic_ncols=True):
-            optimizer.zero_grad()
-            pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
-            vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
-            hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
-            des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
-            spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian)
-            veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
-            future_acc = batch['future_acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
-            future_pos = batch['future_pos'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
-            future_veh = batch['future_veh'].to(args.device)  # (batch_size, #vehicle, pred_step*roll_step, 2)
-            ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
-            veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
-            train_timer.add('prepare data')
-
-            # Rollout
-            pos_now = pos
-            vel_now = vel
-            hst_now = hst
-            des_now = des
-            spd_now = spd
-            veh_now = veh
-            rollout_loss = []
-            for step in range(args.multi_frame_rollout):
-                # DDPM forward
-                # pos_true = future_pos[:, :, args.pred_step*step:args.pred_step*(step+1), :] # (B, #pedestrian, pred_step, 2)
-                # vel_true = pos_true.diff(dim=-2, prepend=pos_now.unsqueeze(-2)) * args.fps  # (B, #pedestrian, roll_step*pred_step, 2)
-                # acc_true = vel_true.diff(dim=-2, prepend=vel_now.unsqueeze(-2)) * args.fps  # (B, #pedestrian, roll_step*pred_step, 2)
-                acc_true = future_acc[:, :, args.pred_step*step:args.pred_step*(step+1), :] # (B, #pedestrian, pred_step, 2)
-                noisy_acc, noise_true, denoise_t = diffusion.add_noise(acc_true * args.scale_accelerate)
-                train_timer.add('add noise')
-
-                if args.p_drop_map and random.random() < args.p_drop_map:
-                    map = torch.full_like(map, torch.nan, device=map.device)
-                if args.p_drop_destination and random.random() < args.p_drop_destination:
-                    des_now = torch.full_like(des_now, torch.nan, device=des_now.device)
-                if args.p_drop_speed and random.random() < args.p_drop_speed:
-                    spd_now = torch.full_like(spd_now, torch.nan, device=spd_now.device)
-
-                # DDPM backward
-                model.set_map_embedding(
-                    map=map,
-                    xmin=map_data.xmin,
-                    xmax=map_data.xmax,
-                    ymin=map_data.ymin,
-                    ymax=map_data.ymax,
-                )
-                model.set_veh_embedding(veh=veh_now)
-                model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
-                model.set_sur_info()
-                output = model(
-                    noisy_acc=noisy_acc, 
-                    denoise_t=denoise_t,
-                    ped_length=ped_length, 
-                    veh_length=veh_length,
-                )  # (B, #pedestrian, pred_step, 2)
-                train_timer.add('forward')
-
-                # Compute Loss
-                if args.predict_noise:
-                    noise_pred = output
-                    acc_pred = diffusion.noise_to_x0(xt=noisy_acc, denoise_t=denoise_t, noise=noise_pred) / args.scale_accelerate
-                else:
-                    acc_pred = output / args.scale_accelerate
-                
-                if args.loss_type == 'accelerate':
-                    loss = criterion(acc_pred, acc_true)
-                elif args.loss_type == 'position':
-                    # acc_true 是从 pos_true 算出来的，因此不用再返回去计算 pos_true 了
-                    vel_true = vel_now.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps
-                    pos_true = pos_now.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps
-                    vel_pred = vel_now.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps
-                    pos_pred = pos_now.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps
-                    loss = criterion(pos_pred, pos_true)
-                elif args.loss_type == 'noise':
-                    if not args.predict_noise:
-                        raise ValueError("When using noise prediction loss, the model must predict noise!")
-                    loss = criterion(noise_pred, noise_true)
-                else:
-                    raise ValueError(f"Unknown loss type {args.loss_type}!")
-                rollout_loss.append(loss.detach().cpu().tolist())
-                train_timer.add('compute loss')
-                (args.rollout_lambda ** (args.multi_frame_rollout - step) * loss).backward()
-
-                acc_new = acc_pred.detach()  # (B, #pedestrian, pred_step, 2)
-                vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (B, #pedestrian, pred_step, 2)
-                pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (B, #pedestrian, pred_step, 2)
-                veh_new = future_veh[:, :, step*args.pred_step:(step+1)*args.pred_step, :]  # (B, #vehicle, pred_step, 2)
-
-                hst_now = torch.cat([hst_now, pos_now.unsqueeze(-2), pos_new], dim=-2)[:, :, -args.hist_step-1:-1, :] # (B, #pedestrian, hist_step, 2)
-                veh_now = torch.cat([veh_now, veh_new], dim=-2)[:, :, -args.hist_step-1:, :]  # (B, #vehicle, hist_step + 1, 2)
-                pos_now = pos_new[:, :, -1, :] # (B, #pedestrian, 2)
-                vel_now = vel_new[:, :, -1, :] # (B, #pedestrian, 2)
-                train_timer.add('rollout')
-
-            ## Backpropagate
-            optimizer.step()
-            records['loss'].extend([loss.item()] * acc_true.shape[0])
-            records['rollout_loss'].extend([rollout_loss] * acc_true.shape[0])
-            train_timer.add('backpropagate')
-        records_list.append(records)
-        _logger.debug(
-            f"[Epoch {epoch}/{args.epochs}] Train on {loader.dataset.name}: "
-            f"Loss={np.mean(records['loss']):.4f}"
-        )
-    all_records = {
-        'epoch': epoch,
-        'dataset_names': [loader.dataset.name for loader in train_loaders],
-        'sample_nums': [len(loader.dataset) for loader in train_loaders],
-    }
-    for records in records_list:
-        for k, v in records.items():
-            if k not in all_records:
-                all_records[k] = []
-            if isinstance(v[0], (int, float)):
-                mean_v = np.mean(v)
-            else: 
-                mean_v = np.mean(v, axis=0).tolist()
-            all_records[k].append(mean_v)
-    _logger.info(tag2ansi(
-        f"[#66CCFF][Epoch {epoch}/{args.epochs}] "
-        f"[#66CCFF]Loss={np.mean(all_records['loss']):.4f} "
-        f"[#66CCFF]Rollout Loss={np.mean(all_records['rollout_loss'], axis=0).round(4).tolist()} "
-        f"[#66CCFF]Time={train_timer}"
-    ))
-    return all_records
-
-
-def test_once(args, test_loaders, model, criterion, diffusion, epoch):
-    test_timer = NamedTimer(unit='it', mode='pace')
-    records_list = []
-    for loader in test_loaders:
-        map_data = loader.dataset.map_data
-        map = torch.from_numpy(map_data.map).to(args.device).float()
-        test_timer.add('prepare data')
-        model.set_map_embedding(
-            map=map,
-            xmin=map_data.xmin,
-            xmax=map_data.xmax,
-            ymin=map_data.ymin,
-            ymax=map_data.ymax,
-        )
-        test_timer.add('embed map')
-        records = dict(loss=[], ade=[], fde=[], trajlen=[], ped_num=[], veh_num=[], rollout_time=[])
-        for batch_idx, batch in enumerate(tqdm(loader, disable=False, leave=False, dynamic_ncols=True)):
-            pos = batch['pos'].to(args.device)  # (batch_size, #pedestrian, 2)
-            vel = batch['vel'].to(args.device)  # (batch_size, #pedestrian, 2)
-            hst = batch['hst'].to(args.device)  # (batch_size, #pedestrian, hist_step, 2)
-            des = batch['des'].to(args.device)  # (batch_size, #pedestrian, 2)
-            spd = batch['spd'].to(args.device)  # (batch_size, #pedestrian, 1)
-            veh = batch['veh'].to(args.device)  # (batch_size, #vehicle, hist_step + 1, 2)
-            future_acc = batch['future_acc'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
-            future_pos = batch['future_pos'].to(args.device)  # (batch_size, #pedestrian, pred_step*roll_step, 2)
-            future_veh = batch['future_veh'].to(args.device)  # (batch_size, #vehicle, pred_step*roll_step, 2)
-            ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
-            veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
-
-            S = args.sample_num  # 采样次数
-            N = args.denoise_step  # 采样步数
-            assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
-            assert 1 <= args.step_offset <= args.T // N, f"step_offset 应该取值于 {{1, ..., {args.T // N}}}!"
-            pos_now = pos.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
-            vel_now = vel.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
-            hst_now = hst.repeat(S, 1, 1, 1)  # (S*B, #pedestrian, hist_step, 2)
-            des_now = des.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
-            spd_now = spd.repeat(S, 1, 1)  # (S*B, #pedestrian, 1)
-            veh_now = veh.repeat(S, 1, 1, 1)  # (S*B, #vehicle, hist_step + 1, 2)
-            ped_length_repeat = ped_length.repeat(S)  # (S*B,)
-            veh_length_repeat = veh_length.repeat(S)  # (S*B,)
-            test_timer.add('prepare data', n=0)
-
-            for_plot = []
-            acc_pred = []
-            start_time = time.time()
-            for step in range(args.roll_step):
-                model.set_veh_embedding(veh=veh_now)
-                model.set_ped_embedding(pos=pos_now, vel=vel_now, hst=hst_now, des=des_now, spd=spd_now)
-                model.set_sur_info()
-                test_timer.add('embed data')
-
-                shape = list(future_acc.shape)
-                shape[0] *= S
-                shape[2] = args.pred_step
-                xt = torch.randn(shape, device=args.device)  # 从噪声开始
-                for_plot.append([diffusion.noise_to_x0(xt=xt, denoise_t=args.T, noise=0) / args.scale_accelerate])
-                stride = args.T // N
-                steps = reversed(range(args.step_offset, args.T+1, stride))
-                for t in tqdm(steps, disable=True, leave=False, dynamic_ncols=True):
-                    noisy_acc = xt
-                    denoise_t = torch.full((xt.shape[0],), t, device=args.device, dtype=torch.long)
-                    output = model(
-                        noisy_acc=noisy_acc, 
-                        denoise_t=denoise_t,
-                        ped_length=ped_length_repeat, 
-                        veh_length=veh_length_repeat,
-                    )  # (S*B, #pedestrian, pred_step, 2)
-                    if args.predict_noise:
-                        for_plot[-1].append(diffusion.noise_to_x0(xt=xt, denoise_t=t, noise=output) / args.scale_accelerate)
-                        xt = diffusion.denoise(xt, t, noise=output, stride=min(stride, t))
-                    else:
-                        for_plot[-1].append(output / args.scale_accelerate)
-                        xt = diffusion.denoise(xt, t, x0=output, stride=min(stride, t))
-                acc_new = xt / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
-                acc_pred.append(acc_new)
-                test_timer.add('denoise')
-
-                vel_new = vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
-                pos_new = pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
-                veh_new = future_veh[:, :, step*args.pred_step:(step+1)*args.pred_step, :].repeat(S, 1, 1, 1)  # (S*B, #vehicle, pred_step, 2)
-
-                hst_now = torch.cat([hst_now, pos_now.unsqueeze(-2), pos_new], dim=-2)[:, :, -args.hist_step-1:-1, :] # (S*B, #pedestrian, hist_step, 2)
-                veh_now = torch.cat([veh_now, veh_new], dim=-2)[:, :, -args.hist_step-1:, :]  # (S*B, #vehicle, hist_step + 1, 2)
-                pos_now = pos_new[:, :, -1, :] # (S*B, #pedestrian, 2)
-                vel_now = vel_new[:, :, -1, :] # (S*B, #pedestrian, 2)
-                test_timer.add('rollout')
-            rollout_time = (time.time() - start_time) / args.roll_step
-
-            acc_pred = torch.concat(acc_pred, dim=-2)  # (S*B, #pedestrian, roll_step*pred_step, 2)
-            batch_size, ped_num, _, _ = future_acc.shape
-            acc_pred = acc_pred.view(S, batch_size, ped_num, args.roll_step*args.pred_step, 2)  # (S, B, #pedestrian, roll_step*pred_step, 2)
-            # 获取有效的行人掩模
-            mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
-            # 计算 pos_true 和 vel_true
-            acc_true = future_acc # (B, #pedestrian, roll_step*pred_step, 2)
-            vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
-            pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
-            max_err = np.nanmax((pos_true - future_pos).abs().cpu().numpy(), axis=(-2, -1))
-            _logger.debug(
-                f"pos_true 和 future 最大差距 > 1: {(max_err > 1).mean():.2%}, "
-                f"pos_true 和 future 最大差距 > 1e-6: {(max_err > 1e-6).mean():.2%}"
-            )
-            # pos_true = future_pos # (B, #pedestrian, roll_step*pred_step, 2)
-            # 计算 loss
-            loss = criterion(acc_pred, acc_true.expand(acc_pred.shape)) # float
-            records['loss'].extend([loss.item()] * future_acc.shape[0]) # List[float]
-            # 计算 distance error
-            vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
-            pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, pred_step, 2)
-            dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, pred_step)
-            test_timer.add('evaluate')
-            # 可视化
-            if batch_idx == 0:
-                pid = 0
-                save_path = f"{args.save_path}/visualize/epoch{epoch}_{loader.dataset.name}_idx{batch_idx}_pid{pid}.png"
-                visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path, pid)
-                test_timer.add('visualize')
-            # 移除 padding 的行人
-            dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, pred_step)
-            # 选择 ade 最佳的 sample
-            sample_idx = dis_err.mean(dim=-1).argmin(dim=0)  # (valid{B*#pedestrian},)
-            valid_idx = torch.arange(dis_err.shape[1], device=args.device)  # (valid{B*#pedestrian},)
-            dis_err = dis_err[sample_idx, valid_idx, :]  # (valid{B*#pedestrian}, pred_step)
-            # 计算 ade, fde
-            ade = dis_err.mean(dim=-1) # (valid{B*#pedestrian})
-            fde = dis_err[..., -1] # (valid{B*#pedestrian})
-            records['ade'].extend(ade.cpu().tolist()) # List[float]
-            records['fde'].extend(fde.cpu().tolist()) # List[float]
-            # 计算切向误差和法向误差
-            traj_diff = (pos_pred - pos_true)[:, mask, :, :][sample_idx, valid_idx, :, :] # (valid{B*#pedestrian}, pred_step, 2)
-            ped_pos = pos[mask, :] # (valid{B*#pedestrian}, 2)
-            batch_indices = torch.nonzero(mask)[:, 0]  # 有效行人所属的 batch index (valid{B*#pedestrian},)
-            num_valid_ped = batch_indices.shape[0]
-            if veh.shape[1] == 0: # 场景中完全没有车辆数据
-                veh_pos = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
-                veh_vel = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
-            else: # 找到每个场景中距离各个行人最近的车辆
-                all_veh_pos = veh[..., -1, :] # (batch_size, #vehicle, 2)
-                all_veh_vel = (veh[..., -1, :] - veh[..., -2, :]) * args.fps  # (batch_size, #vehicle, 2)
-                # 取出每个有效行人对应场景的车辆数据
-                batch_veh_pos = all_veh_pos[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
-                batch_veh_vel = all_veh_vel[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
-                # 计算行人到同场景所有车辆的距离 (将无效车辆的距离设为无穷大)
-                dist = (ped_pos.unsqueeze(1) - batch_veh_pos).norm(dim=-1).nan_to_num_(nan=float('inf')) # (valid{B*#pedestrian}, #vehicle)
-                # 找到最近车辆的索引
-                min_dist, nearest_idx = torch.min(dist, dim=1) # (valid{B*#pedestrian},)
-                has_vehicle = min_dist != float('inf')
-                # Gather 最近车辆的位置和速度
-                gather_idx = nearest_idx.view(-1, 1, 1).expand(-1, 1, 2)
-                veh_pos = torch.gather(batch_veh_pos, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
-                veh_vel = torch.gather(batch_veh_vel, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
-                # 如果该行人所在的场景没有任何车辆，设为 NaN
-                veh_pos[~has_vehicle] = float('nan')
-                veh_vel[~has_vehicle] = float('nan')
-            records['norm_err'], records['tan_err'] = calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel)
-            # 计算轨迹长度
-            trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1)[mask] # (valid{B*#pedestrian})
-            records['trajlen'].extend(trajlen.cpu().tolist()) # List[float]
-            # 统计行人和车辆数量
-            records['ped_num'].extend(ped_length.cpu().tolist()) # List[int]
-            records['veh_num'].extend(veh_length.cpu().tolist()) # List[int]
-            # 统计 Rollout 用时
-            records['rollout_time'].append(rollout_time)  # List[float]
-            test_timer.add('evaluate', n=0)
-        records_list.append(records)
-        _logger.info(tag2ansi(
-            f"[#66CCFF][Epoch {epoch}/{args.epochs}] Eval on {loader.dataset.name}: "
-            f"[bold underline orange]Accuracy={1 - np.mean(records['ade']) / np.mean(records['trajlen']):.2%}[reset], "
-            f"[#66CCFF]Loss={np.mean(records['loss']):.4f}, "
-            f"[#66CCFF]ADE={np.mean(records['ade']):.4f}, "
-            f"[#66CCFF]FDE={np.mean(records['fde']):.4f}, "
-            f"[#66CCFF]X_ERROR (normal)={np.nanmean(records['norm_err']):.4f}, "
-            f"[#66CCFF]Y_ERROR (tangential)={np.nanmean(records['tan_err']):.4f}, "
-            f"[#66CCFF]AvgLen={np.mean(records['trajlen']):.4f}, "
-            f"[#66CCFF]PedNum={np.mean(records['ped_num']):.1f}, "
-            f"[#66CCFF]VehNum={np.mean(records['veh_num']):.1f}, "
-            f"[#66CCFF]RolloutTime={np.mean(records['rollout_time'])*1000:.2f}ms "
-            f"([bold underline orange]FPS={1/np.mean(records['rollout_time']):.2f} Hz[reset])"
+    
+    ## Load Best Model
+    best_path = Path(args.save_path) / 'best.pth'
+    checkpoint = torch.load(best_path, map_location=args.device)
+    if checkpoint['epoch'] != best_records['epoch']:
+        _logger.warning(tag2ansi(
+            f"Best epoch in records.jsonl ({best_records['epoch']}) does not match that in best.pth ({checkpoint['epoch']})!"
         ))
-    all_records = {
-        'epoch': epoch,
-        'dataset_class': [type(loader.dataset).__name__.removesuffix('Dataset') for loader in test_loaders],
-        'dataset_names': [loader.dataset.name for loader in test_loaders],
-        'sample_nums': [len(loader.dataset) for loader in test_loaders],
-    }
-    for records in records_list:
-        for k, v in records.items():
-            if k not in all_records:
-                all_records[k] = []
-            all_records[k].append(np.mean(v))
-    w = np.array(all_records['sample_nums'], dtype=float)
+    model.load_state_dict(checkpoint["model"])
+    _logger.note(f'Load best model from epoch {best_records["epoch"]} ({best_path}) for final test.')
+
+    ## Test
+    torch.set_grad_enabled(False)
+    model.eval()
+    with npu_attention_fallback_context(model, enable=USE_NPU):
+        test_records = test_once(args, test_loaders, model, criterion, diffusion, best_records['epoch'])
+    with open(f"{args.save_path}/records.jsonl", "a") as f:
+        if test_records is not None:
+            f.write(json.dumps(test_records) + "\n")
+
+    ## Log Test Result
+    w = np.array(test_records['sample_nums'], dtype=float)
     w /= w.sum()
-    all_records['accuracy'] = 1 - np.sum(w * all_records['ade']) / np.sum(w * all_records['trajlen'])
-    all_records['unweighted_accuracy'] = 1 - np.mean(all_records['ade']) / np.mean(all_records['trajlen'])
+    test_records['accuracy'] = 1 - np.sum(w * test_records['ade']) / np.sum(w * test_records['trajlen'])
+    test_records['unweighted_accuracy'] = 1 - np.mean(test_records['ade']) / np.mean(test_records['trajlen'])
     _logger.note(tag2ansi(
-        f"[#66CCFF][Epoch {epoch}/{args.epochs}] Overall: "
-        f"[bold underline orange]Accuracy={all_records['accuracy']:.2%}[reset] (unweighted={all_records['unweighted_accuracy']:.2%}), "
-        f"[#66CCFF]Loss={np.sum(w * all_records['loss']):.4f}, "
-        f"[#66CCFF]ADE={np.sum(w * all_records['ade']):.4f}, "
-        f"[#66CCFF]FDE={np.sum(w * all_records['fde']):.4f}, "
-        f"[#66CCFF]X_ERROR (normal)={np.nansum(w * all_records['norm_err']) / np.sum(w * np.isfinite(all_records['norm_err'])):.4f}, "
-        f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * all_records['tan_err']) / np.sum(w * np.isfinite(all_records['tan_err'])):.4f}, "
-        f"[#66CCFF]AvgLen={np.sum(w * all_records['trajlen']):.4f}, "
-        f"[#66CCFF]PedNum={np.sum(w * all_records['ped_num']):.4f}, "
-        f"[#66CCFF]VehNum={np.sum(w * all_records['veh_num']):.4f}, "
-        f"[#66CCFF]RolloutTime={np.mean(all_records['rollout_time'])*1000:.2}ms "
-        f"([bold underline orange]FPS={1/np.mean(all_records['rollout_time']):.2f} Hz[reset]), "
-        f"[#66CCFF]Time={test_timer}"
+        f"[bold underline orange]Test Accuracy={test_records['accuracy']:.2%}[reset] (unweighted={test_records['unweighted_accuracy']:.2%}), "
+        f"at [#66CCFF]epoch {test_records['epoch']}[reset]. "
+        f"[#66CCFF]ADE={np.sum(w * test_records['ade']):.4f}, "
+        f"[#66CCFF]FDE={np.sum(w * test_records['fde']):.4f}, "
+        f"[#66CCFF]X_ERROR (normal)={np.nansum(w * test_records['norm_err']) / np.sum(w * np.isfinite(test_records['norm_err'])):.4f}, "
+        f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * test_records['tan_err']) / np.sum(w * np.isfinite(test_records['tan_err'])):.4f}, "
+        f"[#66CCFF]Collision-Ped={np.sum(w * test_records['collision_ped']) - (base := np.sum(w * test_records['collision_ped_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Veh={np.sum(w * test_records['collision_veh']) - (base := np.sum(w * test_records['collision_veh_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Map={np.sum(w * test_records['collision_map']) - (base := np.sum(w * test_records['collision_map_base'])):.2%} (+{base:.2%}), "
+        f"[#66CCFF]Collision-Ped2={np.sum(w * test_records['collision_ped2']):.2%}, "
+        f"[#66CCFF]Collision-Veh2={np.sum(w * test_records['collision_veh2']):.2%}, "
+        f"[#66CCFF]Collision-Map2={np.sum(w * test_records['collision_map2']):.2%}, "
+        f"[#66CCFF]APD={np.sum(w * test_records['apd']):.4f}, "
+        f"[#66CCFF]AvgLen={np.sum(w * test_records['trajlen']):.4f}, "
+        f"[#66CCFF]Loss={np.sum(w * test_records['loss']):.4f}, "
+        f"[#66CCFF]PedNum={np.sum(w * test_records['ped_num']):.1f}, "
+        f"[#66CCFF]VehNum={np.sum(w * test_records['veh_num']):.1f}, "
+        f"[#66CCFF]RolloutTime={np.mean(test_records['rollout_time'])*1000:.2f}ms "
+        f"([bold underline orange]FPS={1/np.mean(test_records['rollout_time']):.2f} Hz[reset])"
     ))
-    if len(set(all_records['dataset_class'])) > 1:
-        for klass in sorted(list(set(all_records['dataset_class']))):
-            idxs = [i for i, k in enumerate(all_records['dataset_class']) if k == klass]
-            ade = np.array([all_records['ade'][i] for i in idxs])
-            fde = np.array([all_records['fde'][i] for i in idxs])
-            norm_err = np.array([all_records['norm_err'][i] for i in idxs])
-            tan_err = np.array([all_records['tan_err'][i] for i in idxs])
-            trajlen = np.array([all_records['trajlen'][i] for i in idxs])
-            ped_num = np.array([all_records['ped_num'][i] for i in idxs])
-            veh_num = np.array([all_records['veh_num'][i] for i in idxs])
-            rollout_time = np.array([all_records['rollout_time'][i] for i in idxs])
-            w = np.array([all_records['sample_nums'][i] for i in idxs], dtype=float)
+    if len(set(test_records['dataset_class'])) > 1:
+        for klass in sorted(list(set(test_records['dataset_class']))):
+            idxs = [i for i, k in enumerate(test_records['dataset_class']) if k == klass]
+            ade = np.array([test_records['ade'][i] for i in idxs])
+            fde = np.array([test_records['fde'][i] for i in idxs])
+            trajlen = np.array([test_records['trajlen'][i] for i in idxs])
+            ped_num = np.array([test_records['ped_num'][i] for i in idxs])
+            veh_num = np.array([test_records['veh_num'][i] for i in idxs])
+            norm_err = np.array([test_records['norm_err'][i] for i in idxs])
+            tan_err = np.array([test_records['tan_err'][i] for i in idxs])
+            collision_ped = np.array([test_records['collision_ped'][i] for i in idxs])
+            collision_veh = np.array([test_records['collision_veh'][i] for i in idxs])
+            collision_map = np.array([test_records['collision_map'][i] for i in idxs])
+            collision_ped_base = np.array([test_records['collision_ped_base'][i] for i in idxs])
+            collision_veh_base = np.array([test_records['collision_veh_base'][i] for i in idxs])
+            collision_map_base = np.array([test_records['collision_map_base'][i] for i in idxs])
+            collision_ped2 = np.array([test_records['collision_ped2'][i] for i in idxs])
+            collision_veh2 = np.array([test_records['collision_veh2'][i] for i in idxs])
+            collision_map2 = np.array([test_records['collision_map2'][i] for i in idxs])
+            apd = np.array([test_records['apd'][i] for i in idxs])
+            rollout_time = np.array([test_records['rollout_time'][i] for i in idxs])
+            w = np.array([test_records['sample_nums'][i] for i in idxs], dtype=float)
             w /= w.sum()
             acc = 1 - np.sum(w * ade) / np.sum(w * trajlen)
-            _logger.note(tag2ansi(
-                f"[#66CCFF][Epoch {epoch}/{args.epochs}] Overall on {klass} datasets: "
+            _logger.info(tag2ansi(
+                f"[#66CCFF][Final Test] Overall on {klass} datasets: "
                 f"[bold underline orange]Accuracy={acc:.2%}[reset], "
                 f"[#66CCFF]ADE={np.sum(w * ade):.4f}, "
                 f"[#66CCFF]FDE={np.sum(w * fde):.4f}, "
                 f"[#66CCFF]X_ERROR (normal)={np.nansum(w * norm_err) / np.sum(w * np.isfinite(norm_err)):.4f}, "
                 f"[#66CCFF]Y_ERROR (tangential)={np.nansum(w * tan_err) / np.sum(w * np.isfinite(tan_err)):.4f}, "
+                f"[#66CCFF]Collision-Ped={np.sum(w * collision_ped) - (base := np.sum(w * collision_ped_base)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Veh={np.sum(w * collision_veh) - (base := np.sum(w * collision_veh_base)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Map={np.sum(w * collision_map) - (base := np.sum(w * collision_map_base)):.2%} (+{base:.2%}), "
+                f"[#66CCFF]Collision-Ped2={np.sum(w * collision_ped2):.2%}, "
+                f"[#66CCFF]Collision-Veh2={np.sum(w * collision_veh2):.2%}, "
+                f"[#66CCFF]Collision-Map2={np.sum(w * collision_map2):.2%}, "
+                f"[#66CCFF]APD={np.sum(w * apd):.4f}, "
                 f"[#66CCFF]AvgLen={np.sum(w * trajlen):.4f}, "
                 f"[#66CCFF]PedNum={np.sum(w * ped_num):.4f}, "
                 f"[#66CCFF]VehNum={np.sum(w * veh_num):.4f}, "
                 f"[#66CCFF]RolloutTime={np.mean(rollout_time)*1000:.2f}ms "
                 f"([bold underline orange]FPS={1/np.mean(rollout_time):.2f} Hz[reset])"
             ))
-    return all_records
 
-
-def visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path, pid):
-    S = args.sample_num
-    N = args.denoise_step
-    batch_size, ped_num = pos.shape[:2]
-    for_plot_acc = torch.concat([torch.stack(i, dim=0) for i in for_plot], dim=-2)  # (N+1, S*B, #pedestrian, roll_step*pred_step, 2)
-    for_plot_acc = for_plot_acc.view(N+1, S, batch_size, ped_num, args.roll_step*args.pred_step, 2)  # (N+1, S, B, #pedestrian, roll_step*pred_step, 2)
-    for_plot_vel = vel.unsqueeze(-2) + for_plot_acc.cumsum(dim=-2) / args.fps  # (N+1, S, B, #pedestrian, roll_step*pred_step, 2)
-    for_plot_pos = pos.unsqueeze(-2) + for_plot_vel.cumsum(dim=-2) / args.fps  # (N+1, S, B, #pedestrian, roll_step*pred_step, 2)
-    fi, fig, axes = get_fig(3, 4, AW=6, AH=6, dpi=300)
-    if N + 1 <= 11:
-        loader = range(N+1)
-    else:
-        loader = np.linspace(0, N+1, 12, dtype=int)[:-1].tolist()
-    for idx, n in enumerate(loader):
-        ax = axes[idx]
-        ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # 历史轨迹
-        ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
-        ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
-        ax.title.set_text(f"Step {N-n} / {N}")
-        for line in for_plot_pos[n, :, mask, :, :][:, pid]: # 逐步的扩散结果
-            ax.plot(*line.cpu().numpy().T)
-    ax = axes[-1]
-    ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # 历史轨迹
-    ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
-    ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
-    for line in pos_pred[:, mask, :, :][:, pid]: # 最终的采样结果
-        ax.plot(*line.cpu().numpy().T)
-    for ax in axes:
-        ax.axis('equal')
-    Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(save_path)
-    plt.close(fig)
-    del fi, fig, axes
+    _logger.note(f"Training finished. Re-run: {args.command}")
 
 
 if __name__ == "__main__":
@@ -774,6 +620,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", type=str, default="./logs/train", help="日志和模型权重的保存根目录")
     parser.add_argument("--debug", action="store_true", help="是否开启调试模式（输出更多日志，不保存部分文件）")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader 的工作线程数（0 表示主线程）")
+    parser.add_argument("--minimize_gpu", action="store_true", default=False, help="是否在每个 epoch 结束后尽可能释放显存以供其他进程使用")
     
     # 训练超参数
     parser.add_argument("--batch_size", type=int, default=128, help="训练批次大小")
@@ -782,7 +629,8 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, default=20, help="Early Stopping 的耐心值（多少个 epoch 验证集指标不提升则停止）")
     parser.add_argument('--loss_type', type=str, default='noise', choices=['position', 'accelerate', 'noise'], help="损失函数计算的目标类型")
     parser.add_argument('--reload_checkpoint', type=str, default=None, help="断点续训的 checkpoint 路径（.pth 文件）")
-    parser.add_argument('--required_memory_MB', type=int, default=6000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
+    parser.add_argument('--force_new_experiment', action='store_true', help="是否强制不使用 checkpoint 继续训练，即使存在 checkpoint 文件")
+    parser.add_argument('--required_memory_MB', type=int, default=5000, help="自动选择 GPU 时要求的最小剩余显存 (MB)")
 
     # 扩散模型参数 (Diffusion)
     parser.add_argument('--sampling_method', type=str, default="DDIM", choices=['DDPM', 'DDIM'], help="采样/生成方法")
@@ -798,12 +646,15 @@ if __name__ == "__main__":
     parser.add_argument('--scale_accelerate', type=float, default=1.0, help="加速度数据的缩放因子（用于稳定训练）")
 
     # 数据增强与Dropout
-    parser.add_argument('--p_drop_map', type=float, default=None, help="以一定概率丢弃地图信息（实现无地图引导的生成）")
-    parser.add_argument('--p_drop_destination', type=float, default=None, help="以一定概率丢弃目的地条件（实现无目标引导的生成）")
-    parser.add_argument('--p_drop_speed', type=float, default=None, help="以一定概率丢弃初始速度条件")
+    parser.add_argument('--p_drop_map', type=float, default=0.1, help="以一定概率丢弃地图信息（实现无地图引导的生成）")
+    parser.add_argument('--p_drop_destination', type=float, default=0.1, help="以一定概率丢弃目的地条件（实现无目标引导的生成）")
+    parser.add_argument('--p_drop_speed', type=float, default=0.1, help="以一定概率丢弃初始速度条件")
     parser.add_argument('--dropout', type=float, default=0.5, help="模型中的 Dropout 比率")
 
     # 数据集配置
+    parser.add_argument('--train_datasets', type=str, default=[], nargs='*', choices=['eth', 'hotel', 'zara01', 'zara02', 'univ', 'ETH_train', 'UCY_train', 'GC_train', 'SDD_train', 'WayMo_train'], help="使用的训练数据集列表 (KDD)")
+    parser.add_argument('--test_datasets', type=str, default=[], nargs='*', choices=['eth', 'hotel', 'zara01', 'zara02', 'univ', 'ETH_test', 'UCY_test', 'GC_test', 'SDD_test', 'WayMo_test'], help="使用的训练数据集列表 (KDD)")
+    parser.add_argument('--eval_ratio', type=float, default=0.2, help="训练集划分为训练/验证集的比例 (KDD)")
     parser.add_argument('--datasets', type=str, default=["ETH"], nargs='*', choices=['ETH', 'UCY', 'GC', 'SDD', 'WayMo', 'ORCA', 'All', 'debug'], help="使用的训练数据集列表")
     parser.add_argument("--hist_step", type=int, default=8, help="输入的历史轨迹长度（帧数）")
     parser.add_argument("--pred_step", type=int, default=1, help="单步预测的未来轨迹长度（帧数，通常配合 Rollout 使用）")
@@ -817,6 +668,8 @@ if __name__ == "__main__":
     parser.add_argument('--cache_dataset', action='store_true', default=True, help="是否缓存预处理后的数据集以加速加载")
     parser.add_argument('--test_before_train', action='store_true', help="是否在训练开始前先运行一次测试")
     parser.add_argument('--test_per_epoch', type=int, default=10, help="每隔多少个 epoch 运行一次测试")
+    parser.add_argument('--collision_threshold', type=float, default=0.3, help="碰撞检测的距离阈值（单位：米）")
+    parser.add_argument('--use_test_as_eval', action='store_true', default=False, help="是否使用测试集作为评估集（在目标函数中计算指标）")
 
     # 模型结构参数
     parser.add_argument('--model_dim', type=int, default=64, help="模型的隐藏层维度 (Hidden Dimension)")
@@ -828,6 +681,30 @@ if __name__ == "__main__":
     parser.add_argument('--use_relative_model', action='store_true', default=True, help="是否使用相对坐标模型结构")
     parser.add_argument('--use_spatial_anchor', action='store_true', default=True, help="是否使用空间锚点增强位置编码")
     parser.add_argument('--use_new_model', action='store_true', default=False, help="是否使用改进版的新模型结构")
+    parser.add_argument('--use_nan_embedding', action='store_true', default=True, help="是否使用可学习的空值嵌入")
+    parser.add_argument('--use_latent_query', action='store_true', default=True, help="是否使用 Latent Token 查询地图以缩减计算量")
+    parser.add_argument('--cache_latent_query', action='store_true', default=True, help="是否缓存 Latent Query 以加速推理")
+    parser.add_argument('--use_relative_features', action='store_true', default=True, help="是否使用相对特征")
+    parser.add_argument('--use_frequency_encoding', action='store_true', default=True, help="是否使用傅里叶频域位置编码")
+
+    # 条件引导参数
+    parser.add_argument('--cfg_des', type=float, default=None, help="通过 Classifier-Free Guidance 引导控制目的地条件的影响强度")
+    parser.add_argument('--cfg_map', type=float, default=None, help="通过 Classifier-Free Guidance 引导控制地图条件的影响强度")
+    parser.add_argument('--cg_dir', type=float, default=None, help="通过 Classifier Guidance 引导控制向目的地前进的影响强度")
+    parser.add_argument('--cg_dis', type=float, default=None, help="通过 Classifier Guidance 引导控制与目的地距离的影响强度")
+    parser.add_argument('--cg_sfm_des', type=float, default=None, help="通过 Classifier Guidance 引导控制社会力目标引导条件的影响强度")
+    parser.add_argument('--cg_sfm_obs', type=float, default=None, help="通过 Classifier Guidance 引导控制社会力地图排斥条件的影响强度")
+    parser.add_argument('--cg_sfm_soc', type=float, default=None, help="通过 Classifier Guidance 引导控制社会力社交排斥条件的影响强度")
+    parser.add_argument('--sfm_t_des', type=float, default=0.5, help="社会力中目标引导力的弛豫时间")
+    parser.add_argument('--sfm_a_ped', type=float, default=25, help="社会力中行人排斥力的强度系数")
+    parser.add_argument('--sfm_a_veh', type=float, default=30, help="社会力中车辆排斥力的强度系数")
+    parser.add_argument('--sfm_a_map', type=float, default=30, help="社会力中地图排斥力的强度系数")
+    parser.add_argument('--sfm_b_ped', type=float, default=0.08, help="社会力中行人排斥力的衰减系数")
+    parser.add_argument('--sfm_b_veh', type=float, default=0.10, help="社会力中车辆排斥力的衰减系数")
+    parser.add_argument('--sfm_b_map', type=float, default=0.10, help="社会力中地图排斥力的衰减系数")
+    parser.add_argument('--sfm_r_map', type=int, default=10, help="社会力中地图排斥力距离阈值 (in pixel)")
+    parser.add_argument('--sfm_a_damp', type=float, default=0.5, help="社会力中速度阻尼系数（用于计算引导力时的速度衰减）")
+    parser.add_argument('--use_sfm', action='store_true', default=False, help="使用社会力模型代替神经网络计算引导力")
 
     parser = add_minus_flags(parser) ## --key_name -> --key-name
     parser = add_negation_flags(parser) ## --action-as-true -> --no-action-as-true

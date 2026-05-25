@@ -104,6 +104,76 @@
       font-family: monospace;
     }
 
+    /* 自定义右键菜单 */
+    .custom-context-menu {
+      position: absolute;
+      z-index: 1050;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      padding: 5px 0;
+      display: none;
+      min-width: 150px;
+    }
+    .custom-context-menu-item {
+      padding: 5px 15px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .custom-context-menu-item:hover {
+      background-color: #f0f0f0;
+    }
+
+    /* 双柄滑动条样式 */
+    .range-slider-container {
+      position: relative;
+      height: 40px;
+      margin-top: 10px;
+    }
+    .range-track {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 4px;
+      width: 100%;
+      background: #ddd;
+      border-radius: 2px;
+    }
+    .range-slider-container input[type=range] {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 100%;
+      pointer-events: none;
+      appearance: none;
+      background: none;
+      z-index: 2;
+      margin: 0;
+    }
+    .range-slider-container input[type=range]::-webkit-slider-thumb {
+      pointer-events: auto;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      background: #007bff;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid white;
+      box-shadow: 0 0 2px rgba(0,0,0,0.3);
+    }
+    .range-slider-container input[type=range]::-moz-range-thumb {
+      pointer-events: auto;
+      width: 18px;
+      height: 18px;
+      background: #007bff;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid white;
+      box-shadow: 0 0 2px rgba(0,0,0,0.3);
+    }
+
     /* 响应式：小屏幕下上下布局 */
     @media (max-width: 992px) {
       .main-container {
