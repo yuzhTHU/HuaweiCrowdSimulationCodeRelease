@@ -17,7 +17,7 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
     future_acc = x0 / args.scale_accelerate  # (S*B, #pedestrian, pred_step, 2)
     future_vel = state.vel_now.unsqueeze(-2) + future_acc.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
     future_pos = state.pos_now.unsqueeze(-2) + future_vel.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
-    # 目的地 CFG 引导
+    # Destination CFG guidance.
     if args.cfg_des is not None:
         if 'model_wo_des' not in locals():
             dst_nan = torch.full_like(state.des_now, torch.nan)
@@ -37,7 +37,7 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
         )  # (S*B, #pedestrian, pred_step, 2)
         x0_wo_des = diffusion.noise_to_x0(xt, denoise_t, output_wo_des) if args.predict_noise else output_wo_des
         total_guidance = total_guidance + args.cfg_des * (x0 - x0_wo_des)
-    # 障碍物 CFG 引导
+    # Obstacle CFG guidance.
     if args.cfg_map is not None:
         if 'model_wo_map' not in locals():
             map_nan = torch.full_like(model.map, torch.nan)
@@ -56,14 +56,14 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
         )  # (S*B, #pedestrian, pred_step, 2)
         x0_wo_map = diffusion.noise_to_x0(xt, denoise_t, output_wo_map) if args.predict_noise else output_wo_map
         total_guidance = total_guidance + args.cfg_map * (x0 - x0_wo_map)
-    # 目的地 CG 引导 (acc 方向应指向 pos_now 与 des_now 连线的方向)
+    # Destination CG guidance: acceleration should point toward the line from `pos_now` to `des_now`.
     if args.cg_dir is not None:
         direction = F.normalize(state.des_now.unsqueeze(-2) - future_pos, dim=-1).nan_to_num(0.0)  # (S*B, #pedestrian, pred_step, 2)
         # loss = F.mse_loss(future_acc, direction.detach())
         # grad = torch.autograd.grad(loss, x0)[0]
-        grad = 2 * (future_acc - direction) / args.scale_accelerate  # 可以直接手算
+        grad = 2 * (future_acc - direction) / args.scale_accelerate  # Closed-form gradient.
         total_guidance = total_guidance - args.cg_dir * grad
-    # 目的地 CG 引导 (acc 应使得在目的地形成的势阱中能量更低)
+    # Destination CG guidance: acceleration should reduce the energy in the destination potential well.
     if args.cg_dis is not None:
         with torch.enable_grad():
             x0_grad = x0.detach().requires_grad_(True)
@@ -73,15 +73,15 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
             loss = (state.des_now.unsqueeze(-2) - future_pos_grad).nan_to_num(0.0).pow(2).sum()
             grad = torch.autograd.grad(loss, x0_grad)[0]
         total_guidance = total_guidance - args.cg_dis * grad
-    # 社会力-目的地引导力 CG 引导 (acc 应类似于社会力中的目标导向力)
+    # Social-force destination CG guidance: acceleration should resemble the goal force in the social-force model.
     if args.cg_sfm_des is not None:
         desire_vel = F.normalize(state.des_now.unsqueeze(-2) - future_pos, dim=-1) * state.spd_now.unsqueeze(-2)  # (S*B, #pedestrian, pred_step, 2)
         des_force = (desire_vel - future_vel).nan_to_num(0.0) / args.sfm_t_des  # (S*B, #pedestrian, pred_step, 2)
         grad = 2 * (future_acc - des_force) / args.scale_accelerate
         total_guidance = total_guidance - args.cg_sfm_des * grad
-    # 基于社会力，引导 acc 方向远离障碍物
+    # Social-force guidance: steer acceleration away from obstacles.
     if args.cg_sfm_obs is not None:
-        # 场景障碍物排斥力
+        # Obstacle repulsion force from the scene map.
         F_map = get_force_map(r=args.sfm_r_map, A=args.sfm_a_map, B=args.sfm_b_map, device=args.device)  # (2r+1, 2r+1, 2)
         idx = future_pos[..., 0].sub(model.xmin).div(model.xmax - model.xmin).mul(model.map.shape[0]).round().long().clamp(0, model.map.shape[0] - 1)  # (S*B, #pedestrian, pred_step)
         jdx = future_pos[..., 1].sub(model.ymin).div(model.ymax - model.ymin).mul(model.map.shape[1]).round().long().clamp(0, model.map.shape[1] - 1)  # (S*B, #pedestrian, pred_step)
@@ -89,27 +89,27 @@ def guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_le
         map_force = (patches[..., None] * F_map).nan_to_num(0.0).flatten(-3, -2).sum(-2) # (S*B, #pedestrian, pred_step, 2)
         # loss = F.mse_loss(future_acc, map_force.detach())
         # grad = torch.autograd.grad(loss, x0)[0]
-        grad = 2 * (future_acc - map_force) / args.scale_accelerate  # 可以直接手算
+        grad = 2 * (future_acc - map_force) / args.scale_accelerate  # Closed-form gradient.
         total_guidance = total_guidance - args.cg_sfm_obs * grad
-    # 基于社会力，引导 acc 方向远离其他行人和车辆
+    # Social-force guidance: steer acceleration away from other pedestrians and vehicles.
     if args.cg_sfm_soc is not None:
-        # 其他行人排斥力
+        # Repulsion from other pedestrians.
         p = future_pos[:, None, :, :, :] - future_pos[:, :, None, :, :] # (S*B, #focal-pedestrian, #other-pedestrian, pred_step, 2)
         d = torch.norm(p, dim=-1, keepdim=True)
         n = -p / d.clamp(min=1e-6)
         F_ped = args.sfm_a_ped * torch.exp(-d / args.sfm_b_ped) * n
         ped_force = F_ped.nan_to_num(0.0).sum(dim=2) # (S*B, #pedestrian, pred_step, 2)
-        # 其它车辆排斥力 (车辆用最后一帧位置)
+        # Repulsion from vehicles, using their last-frame positions.
         p = state.veh_now[:, :, None, -1:, :] - future_pos[:, None, :, :, :] # (S*B, #vehicle, #pedestrian, pred_step, 2)
         d = torch.norm(p, dim=-1, keepdim=True)
         n = -p / d.clamp(min=1e-6)
         F_veh = args.sfm_a_veh * torch.exp(-d / args.sfm_b_veh) * n
         veh_force = F_veh.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
-        # 合力
+        # Total social force.
         social_force = ped_force + veh_force  # (S*B, #pedestrian, pred_step, 2)
         # loss = F.mse_loss(future_acc, social_force.detach())
         # grad = torch.autograd.grad(loss, x_in)[0]
-        grad = 2 * (future_acc - social_force) / args.scale_accelerate  # 可以直接手算
+        grad = 2 * (future_acc - social_force) / args.scale_accelerate  # Closed-form gradient.
         total_guidance = total_guidance - args.cg_sfm_soc * grad
     if not isinstance(total_guidance, float):
         total_guidance = total_guidance.clip(-1, 1)

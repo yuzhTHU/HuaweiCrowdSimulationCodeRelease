@@ -21,27 +21,27 @@ _logger = logging.getLogger(__name__)
 def get_xy_error(args, pos, veh, mask, pos_true, pos_pred, sample_idx, valid_idx):
     traj_diff = (pos_pred - pos_true)[:, mask, :, :][sample_idx, valid_idx, :, :] # (valid{B*#pedestrian}, roll_step*pred_step, 2)
     ped_pos = pos[mask, :] # (valid{B*#pedestrian}, 2)
-    batch_indices = torch.nonzero(mask)[:, 0]  # 有效行人所属的 batch index (valid{B*#pedestrian},)
+    batch_indices = torch.nonzero(mask)[:, 0]  # Batch indices of valid pedestrians (valid{B*#pedestrian},)
     num_valid_ped = batch_indices.shape[0]
-    if veh.shape[1] == 0: # 场景中完全没有车辆数据
+    if veh.shape[1] == 0: # The scene contains no vehicle data at all.
         veh_pos = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
         veh_vel = torch.full((num_valid_ped, 2), float('nan'), device=pos.device)
-    else: # 找到每个场景中距离各个行人最近的车辆
+    else: # Find the nearest vehicle for each pedestrian in each scene.
         all_veh_pos = veh[..., -1, :] # (batch_size, #vehicle, 2)
         all_veh_vel = (veh[..., -1, :] - veh[..., -2, :]) * args.fps  # (batch_size, #vehicle, 2)
-        # 取出每个有效行人对应场景的车辆数据
+        # Gather vehicle data from the scene corresponding to each valid pedestrian.
         batch_veh_pos = all_veh_pos[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
         batch_veh_vel = all_veh_vel[batch_indices] # (valid{B*#pedestrian}, #vehicle, 2)
-        # 计算行人到同场景所有车辆的距离 (将无效车辆的距离设为无穷大)
+        # Compute distances to all vehicles in the same scene; invalid vehicles get infinite distance.
         dist = (ped_pos.unsqueeze(1) - batch_veh_pos).norm(dim=-1).nan_to_num_(nan=float('inf')) # (valid{B*#pedestrian}, #vehicle)
-        # 找到最近车辆的索引
+        # Find the nearest vehicle index.
         min_dist, nearest_idx = torch.min(dist, dim=1) # (valid{B*#pedestrian},)
         has_vehicle = min_dist != float('inf')
-        # Gather 最近车辆的位置和速度
+        # Gather the nearest vehicle position and velocity.
         gather_idx = nearest_idx.view(-1, 1, 1).expand(-1, 1, 2)
         veh_pos = torch.gather(batch_veh_pos, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
         veh_vel = torch.gather(batch_veh_vel, 1, gather_idx).squeeze(1) # (valid{B*#pedestrian}, 2)
-        # 如果该行人所在的场景没有任何车辆，设为 NaN
+        # If a pedestrian's scene has no vehicle at all, mark it as NaN.
         veh_pos[~has_vehicle] = float('nan')
         veh_vel[~has_vehicle] = float('nan')
     norm_err, tan_err = calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel)
@@ -50,10 +50,10 @@ def get_xy_error(args, pos, veh, mask, pos_true, pos_pred, sample_idx, valid_idx
 
 def get_collision_rate(args, map_data, future_veh, veh_length, mask, pos_pred):
     S, B, P, T, _ = pos_pred.shape
-    flat_pos = pos_pred.permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## 将 (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
+    flat_pos = pos_pred.permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## Reshape (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
     dist_matrix = torch.cdist(flat_pos, flat_pos, p=2)  # (S*B*T, P, P)
     eye_matrix = torch.eye(P, device=pos_pred.device, dtype=torch.bool).unsqueeze(0)
-    # 只有当行人 i 和行人 j 都有效 (mask=True) 时才计入碰撞
+    # Count a collision only when both pedestrian i and pedestrian j are valid.
     mask_expanded = mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, P) # (B, P) -> (1, B, 1, P) -> (S, B, T, P) -> (S*B*T, P)
     valid_pair_mask = mask_expanded.unsqueeze(2) & mask_expanded.unsqueeze(1)
     collision_matrix = (
@@ -68,14 +68,14 @@ def get_collision_rate(args, map_data, future_veh, veh_length, mask, pos_pred):
         collision_veh = float('nan')
     else:
         _, V, _, _ = future_veh.shape # (B, V, T, 2)
-        flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## 将 (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
+        flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## Reshape (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
         dist_matrix = torch.cdist(flat_pos, flat_veh, p=2) # (S*B*T, P, V)
-        # 只有当行人 i 和车辆 j 都有效时才计入碰撞
+        # Count a collision only when pedestrian i and vehicle j are both valid.
         veh_mask = torch.arange(V, device=args.device).expand(B, V) < veh_length.unsqueeze(-1)  # (B, V)
         veh_mask_expanded = veh_mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, V) # (B, V) -> (1, B, 1, V) -> (S, B, T, V) -> (S*B*T, V)
         valid_pair_mask = mask_expanded.unsqueeze(2) & veh_mask_expanded.unsqueeze(1) # (S*B*T, P, V)
         collision_matrix = (dist_matrix < args.collision_threshold) & valid_pair_mask
-        collision_rate = collision_matrix.sum() / 2 / (S * mask.sum() * T) # 除以 2 因为碰撞双方只有一方是行人
+        collision_rate = collision_matrix.sum() / 2 / (S * mask.sum() * T) # Divide by 2 because only one side of the collision is a pedestrian.
         collision_veh = collision_rate.item()
 
 
@@ -93,10 +93,10 @@ def get_collision_rate(args, map_data, future_veh, veh_length, mask, pos_pred):
 
 def get_collision_rate2(args, map_data, future_veh, veh_length, mask, pos_pred, pos_true):
     S, B, P, T, _ = pos_true.unsqueeze(0).shape
-    flat_pos_true = pos_true.unsqueeze(0).permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## 将 (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
+    flat_pos_true = pos_true.unsqueeze(0).permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## Reshape (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
     dist_matrix = torch.cdist(flat_pos_true, flat_pos_true, p=2)  # (S*B*T, P, P)
     eye_matrix = torch.eye(P, device=pos_true.unsqueeze(0).device, dtype=torch.bool).unsqueeze(0)
-    # 只有当行人 i 和行人 j 都有效 (mask=True) 时才计入碰撞
+    # Count a collision only when both pedestrian i and pedestrian j are valid.
     mask_expanded_true = mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, P) # (B, P) -> (1, B, 1, P) -> (S, B, T, P) -> (S*B*T, P)
     valid_pair_mask = mask_expanded_true.unsqueeze(2) & mask_expanded_true.unsqueeze(1)
     collision_matrix_true = (
@@ -106,10 +106,10 @@ def get_collision_rate2(args, map_data, future_veh, veh_length, mask, pos_pred, 
     )
 
     S, B, P, T, _ = pos_pred.shape
-    flat_pos = pos_pred.permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## 将 (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
+    flat_pos = pos_pred.permute(0, 1, 3, 2, 4).reshape(-1, P, 2)  ## Reshape (S, B, P, T, 2) -> (S, B, T, P, 2) -> (S*B*T, P, 2)
     dist_matrix = torch.cdist(flat_pos, flat_pos, p=2)  # (S*B*T, P, P)
     eye_matrix = torch.eye(P, device=pos_pred.device, dtype=torch.bool).unsqueeze(0)
-    # 只有当行人 i 和行人 j 都有效 (mask=True) 时才计入碰撞
+    # Count a collision only when both pedestrian i and pedestrian j are valid.
     mask_expanded = mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, P) # (B, P) -> (1, B, 1, P) -> (S, B, T, P) -> (S*B*T, P)
     valid_pair_mask = mask_expanded.unsqueeze(2) & mask_expanded.unsqueeze(1)
     collision_matrix = (
@@ -117,7 +117,7 @@ def get_collision_rate2(args, map_data, future_veh, veh_length, mask, pos_pred, 
         (~eye_matrix) &
         valid_pair_mask
     )
-    collision_matrix = collision_matrix.reshape(S, B, T, P, P) & (~collision_matrix_true).reshape(1, B, T, P, P)  # 只统计预测中出现但真实中没有的碰撞
+    collision_matrix = collision_matrix.reshape(S, B, T, P, P) & (~collision_matrix_true).reshape(1, B, T, P, P)  # Count only collisions that appear in prediction but not in ground truth.
     collision_rate = collision_matrix.sum() / (S * mask.sum() * T)
     collision_ped = collision_rate.item()
 
@@ -126,9 +126,9 @@ def get_collision_rate2(args, map_data, future_veh, veh_length, mask, pos_pred, 
     else:
         S, B, P, T, _ = pos_true.unsqueeze(0).shape
         _, V, _, _ = future_veh.shape # (B, V, T, 2)
-        flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## 将 (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
+        flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## Reshape (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
         dist_matrix = torch.cdist(flat_pos_true, flat_veh, p=2) # (S*B*T, P, V)
-        # 只有当行人 i 和车辆 j 都有效时才计入碰撞
+        # Count a collision only when pedestrian i and vehicle j are both valid.
         veh_mask = torch.arange(V, device=args.device).expand(B, V) < veh_length.unsqueeze(-1)  # (B, V)
         veh_mask_expanded = veh_mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, V) # (B, V) -> (1, B, 1, V) -> (S, B, T, V) -> (S*B*T, V)
         valid_pair_mask = mask_expanded_true.unsqueeze(2) & veh_mask_expanded.unsqueeze(1) # (S*B*T, P, V)
@@ -136,15 +136,15 @@ def get_collision_rate2(args, map_data, future_veh, veh_length, mask, pos_pred, 
 
         S, B, P, T, _ = pos_pred.shape
         _, V, _, _ = future_veh.shape # (B, V, T, 2)
-        flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## 将 (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
+        flat_veh = future_veh.unsqueeze(0).expand(S, -1, -1, -1, -1).permute(0, 1, 3, 2, 4).reshape(-1, V, 2)  ## Reshape (B, V, T, 2) -> (1, B, V, T, 2) -> (S, B, T, V, 2) -> (S*B*T, V, 2)
         dist_matrix = torch.cdist(flat_pos, flat_veh, p=2) # (S*B*T, P, V)
-        # 只有当行人 i 和车辆 j 都有效时才计入碰撞
+        # Count a collision only when pedestrian i and vehicle j are both valid.
         veh_mask = torch.arange(V, device=args.device).expand(B, V) < veh_length.unsqueeze(-1)  # (B, V)
         veh_mask_expanded = veh_mask.unsqueeze(0).unsqueeze(2).expand(S, -1, T, -1).reshape(-1, V) # (B, V) -> (1, B, 1, V) -> (S, B, T, V) -> (S*B*T, V)
         valid_pair_mask = mask_expanded.unsqueeze(2) & veh_mask_expanded.unsqueeze(1) # (S*B*T, P, V)
         collision_matrix = (dist_matrix < args.collision_threshold) & valid_pair_mask
-        collision_matrix = collision_matrix.reshape(S, B, T, P, V) & (~collision_matrix_true).reshape(1, B, T, P, V)  # 只统计预测中出现但真实中没有的碰撞
-        collision_rate = collision_matrix.sum() / 2 / (S * mask.sum() * T) # 除以 2 因为碰撞双方只有一方是行人
+        collision_matrix = collision_matrix.reshape(S, B, T, P, V) & (~collision_matrix_true).reshape(1, B, T, P, V)  # Count only collisions that appear in prediction but not in ground truth.
+        collision_rate = collision_matrix.sum() / 2 / (S * mask.sum() * T) # Divide by 2 because only one side of the collision is a pedestrian.
         collision_veh = collision_rate.item()
 
     if not np.isfinite(map_data.map).any():
@@ -158,7 +158,7 @@ def get_collision_rate2(args, map_data, future_veh, veh_length, mask, pos_pred, 
         idx = pos_pred[..., 0].sub(map_data.xmin).div(map_data.xmax-map_data.xmin).mul(map_data.map.shape[0]).round().long().clamp(0, map_data.map.shape[0] - 1)  # (S, B, P, T)
         jdx = pos_pred[..., 1].sub(map_data.ymin).div(map_data.ymax-map_data.ymin).mul(map_data.map.shape[1]).round().long().clamp(0, map_data.map.shape[1] - 1)  # (S, B, P, T)
         sur_info = map_data.map[idx.cpu().numpy(), jdx.cpu().numpy()] # (S, B, P, T)
-        collision_matrix = (sur_info > 0.9).reshape(S, B, P, T) & (~collision_matrix_true).reshape(1, B, P, T)  # 只统计预测中出现但真实中没有的碰撞
+        collision_matrix = (sur_info > 0.9).reshape(S, B, P, T) & (~collision_matrix_true).reshape(1, B, P, T)  # Count only collisions that appear in prediction but not in ground truth.
         collision_rate = collision_matrix.sum() / (S * mask.sum() * T)
         collision_map = collision_rate.item()
 
@@ -174,18 +174,18 @@ def test_once(
     epoch: int,
 ) -> Dict:
     """
-    进行单步测试
+    Run one evaluation epoch over the provided loaders.
 
     Args:
-        args: 全局参数
-        test_loaders: 测试数据加载器列表
-        model: 待测试模型
-        criterion: 损失函数
-        diffusion: 扩散模型
-        epoch: 当前训练轮数
+        args: Global arguments.
+        test_loaders: Test dataloaders.
+        model: Model under evaluation.
+        criterion: Loss function.
+        diffusion: Diffusion module.
+        epoch: Current epoch index.
 
     Returns:
-        all_records: 测试记录字典    
+        all_records: Evaluation metrics dictionary.
     """
     test_timer = NamedTimer(unit='it', mode='pace')
     records_list = []
@@ -222,10 +222,10 @@ def test_once(
             ped_length = batch['ped_length'].to(args.device)  # (batch_size,)
             veh_length = batch['veh_length'].to(args.device)  # (batch_size,)
 
-            S = args.sample_num  # 采样次数
-            N = args.denoise_step  # 采样步数
-            assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
-            assert 1 <= args.step_offset <= args.T // N, f"step_offset 应该取值于 {{1, ..., {args.T // N}}}!"
+            S = args.sample_num  # Number of samples.
+            N = args.denoise_step  # Number of denoising steps.
+            assert args.T % N == 0, f"Requested {N} sampling steps, but training steps {args.T} mod {N} is not 0."
+            assert 1 <= args.step_offset <= args.T // N, f"`step_offset` must lie in {{1, ..., {args.T // N}}}."
             pos_now = pos.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
             vel_now = vel.repeat(S, 1, 1)  # (S*B, #pedestrian, 2)
             hst_now = hst.repeat(S, 1, 1, 1)  # (S*B, #pedestrian, hist_step, 2)
@@ -256,7 +256,7 @@ def test_once(
                 shape = list(future_acc.shape)
                 shape[0] *= S
                 shape[2] = args.pred_step
-                xt = torch.randn(shape, device=args.device)  # 从噪声开始
+                xt = torch.randn(shape, device=args.device)  # Start from Gaussian noise.
                 for_plot.append([diffusion.noise_to_x0(xt=xt, denoise_t=args.T, noise=0) / args.scale_accelerate])
                 stride = args.T // N
                 steps = reversed(range(args.step_offset, args.T+1, stride))
@@ -269,9 +269,9 @@ def test_once(
                         ped_length=ped_length_repeat, 
                         veh_length=veh_length_repeat,
                     )  # (S*B, #pedestrian, pred_step, 2)
-                    ## 获取估计的 x0
+                    ## Recover the estimated x0.
                     x0 = diffusion.noise_to_x0(xt, denoise_t, output) if args.predict_noise else output
-                    ## 尝试各种引导，各种 guidance 应为 0~1 左右的系数
+                    ## Apply different guidance terms. The coefficients are typically around 0~1.
                     state = SimulateState(
                         df_ped=None, df_veh=None, map_data=None, 
                         ped_list=None, veh_list=None, frame=None,
@@ -279,7 +279,7 @@ def test_once(
                         hst_now=hst_now, spd_now=spd_now, veh_now=veh_now,
                     )
                     x0 = x0 + guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_length_repeat, veh_length_repeat)
-                    ## 去噪
+                    ## Denoise.
                     xt = diffusion.denoise(xt, t, x0=x0, stride=min(stride, t))
                     for_plot[-1].append(x0 / args.scale_accelerate)
 
@@ -301,48 +301,48 @@ def test_once(
             acc_pred = torch.concat(acc_pred, dim=-2)  # (S*B, #pedestrian, roll_step*pred_step, 2)
             batch_size, ped_num, _, _ = future_acc.shape
             acc_pred = acc_pred.view(S, batch_size, ped_num, args.roll_step*args.pred_step, 2)  # (S, B, #pedestrian, roll_step*pred_step, 2)
-            # 获取有效的行人掩模
+            # Get the valid-pedestrian mask.
             mask = torch.arange(ped_num, device=args.device).expand(batch_size, ped_num) < ped_length.unsqueeze(-1)  # (B, #pedestrian)
-            # 计算 pos_true 和 vel_true
+            # Compute `pos_true` and `vel_true`.
             acc_true = future_acc # (B, #pedestrian, roll_step*pred_step, 2)
             vel_true = vel.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
             pos_true = pos.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps # (B, #pedestrian, roll_step*pred_step, 2)
             max_err = np.nanmax((pos_true - future_pos).abs().cpu().numpy(), axis=(-2, -1))
             _logger.debug(
-                f"pos_true 和 future 最大差距 > 1: {(max_err > 1).mean():.2%}, "
-                f"pos_true 和 future 最大差距 > 1e-6: {(max_err > 1e-6).mean():.2%}"
+                f"max gap between `pos_true` and `future` > 1: {(max_err > 1).mean():.2%}, "
+                f"max gap between `pos_true` and `future` > 1e-6: {(max_err > 1e-6).mean():.2%}"
             )
             # pos_true = future_pos # (B, #pedestrian, roll_step*pred_step, 2)
-            # 计算 loss
+            # Compute loss.
             loss = criterion(acc_pred, acc_true.expand(acc_pred.shape)) # float
             records['loss'].extend([loss.item()] * future_acc.shape[0]) # List[float]
-            # 计算 distance error
+            # Compute distance error.
             vel_pred = vel.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, roll_step*pred_step, 2)
             pos_pred = pos.unsqueeze(-2) + vel_pred.cumsum(dim=-2) / args.fps  # (S, B, #pedestrian, roll_step*pred_step, 2)
             dis_err = (pos_pred - pos_true).norm(dim=-1) # (S, B, #pedestrian, roll_step*pred_step)
             test_timer.add('evaluate')
-            # 可视化
+            # Visualization.
             if False and batch_idx == 0:
                 pid = 0
                 save_path = f"{args.save_path}/visualize/epoch{epoch}_{loader.dataset.name}_idx{batch_idx}_pid{pid}.png"
                 visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path, pid)
                 test_timer.add('visualize')
-            # 移除 padding 的行人
+            # Remove padded pedestrians.
             dis_err = dis_err[:, mask, :] # (S, valid{B*#pedestrian}, roll_step*pred_step)
-            # 选择 ade 最佳的 sample
+            # Select the sample with the best ADE.
             sample_idx = dis_err.mean(dim=-1).argmin(dim=0)  # (valid{B*#pedestrian},)
             valid_idx = torch.arange(dis_err.shape[1], device=args.device)  # (valid{B*#pedestrian},)
             dis_err = dis_err[sample_idx, valid_idx, :]  # (valid{B*#pedestrian}, roll_step*pred_step)
-            # 计算 ade, fde
+            # Compute ADE and FDE.
             ade = dis_err.mean(dim=-1) # (valid{B*#pedestrian})
             fde = dis_err[..., -1] # (valid{B*#pedestrian})
             records['ade'].extend(ade.cpu().tolist()) # List[float]
             records['fde'].extend(fde.cpu().tolist()) # List[float]
-            # 计算切向误差和法向误差
+            # Compute tangential and normal errors.
             norm_err, tan_err = get_xy_error(args, pos, veh, mask, pos_true, pos_pred, sample_idx, valid_idx)
             records['norm_err'].extend(norm_err.cpu().tolist()) # List[float]
             records['tan_err'].extend(tan_err.cpu().tolist()) # List[float]
-            # 计算碰撞数
+            # Compute collision counts.
             collision_ped, collision_veh, collision_map = get_collision_rate(args, map_data, future_veh, veh_length, mask, pos_pred)
             records['collision_ped'].append(collision_ped)
             records['collision_veh'].append(collision_veh)
@@ -355,18 +355,18 @@ def test_once(
             records['collision_ped2'].append(collision_ped2)
             records['collision_veh2'].append(collision_veh2)
             records['collision_map2'].append(collision_map2)
-            # 计算 APD 多样性指标
+            # Compute APD diversity.
             tmp = pos_pred[:, mask, :, :] # (S, valid{B*#pedestrian}, roll_step*pred_step, 2)
             tmp = (tmp[None, :, ...] - tmp[:, None, ...]).norm(dim=-1).mean(dim=-1)  # (S, S, valid{B*#pedestrian})
             apd = tmp.flatten(0, 1).sum(dim=0) / (S * (S - 1)) # (valid{B*#pedestrian},)
             records['apd'].extend(apd.cpu().tolist()) # List[float]
-            # 计算轨迹长度
+            # Compute trajectory length.
             trajlen = pos_true.diff(dim=-2).norm(dim=-1).sum(dim=-1)[mask] # (valid{B*#pedestrian})
             records['trajlen'].extend(trajlen.cpu().tolist()) # List[float]
-            # 统计行人和车辆数量
+            # Count pedestrians and vehicles.
             records['ped_num'].extend(ped_length.cpu().tolist()) # List[int]
             records['veh_num'].extend(veh_length.cpu().tolist()) # List[int]
-            # 统计 Rollout 用时
+            # Record rollout time.
             records['rollout_time'].append(rollout_time)  # List[float]
             test_timer.add('evaluate', n=0)
         records_list.append(records)

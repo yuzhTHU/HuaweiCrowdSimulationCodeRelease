@@ -19,14 +19,15 @@ _logger = logging.getLogger(__name__)
 @dataclass
 class RasterizedMap:
     """
-    栅格化地图数据结构。
-    
+    Rasterized map data structure.
+
     Attributes:
-        map (np.array): 二维栅格地图数组，通常 0 表示可通行区域，1 表示障碍物。
-        xmin (float): 地图在世界坐标系下的 x 轴最小值。
-        ymin (float): 地图在世界坐标系下的 y 轴最小值。
-        xmax (float): 地图在世界坐标系下的 x 轴最大值。
-        ymax (float): 地图在世界坐标系下的 y 轴最大值。
+        map (np.array): 2D raster map array, where 0 usually means walkable
+            area and 1 means obstacle.
+        xmin (float): Minimum x value of the map in world coordinates.
+        ymin (float): Minimum y value of the map in world coordinates.
+        xmax (float): Maximum x value of the map in world coordinates.
+        ymax (float): Maximum y value of the map in world coordinates.
     """
     map: np.array = None
     xmin: float = None
@@ -41,10 +42,12 @@ class EmptyDatasetError(BaseException):
 
 class BaseDataset(D.Dataset):
     """
-    所有行人轨迹预测数据集的基类。
-    
-    提供了通用的样本切分、数据重采样、坐标标准化、缓存管理以及 PyTorch DataLoader 的 collate_fn。
-    具体的加载逻辑由子类通过实现 `load_data` 类方法来完成。
+    Base class for all pedestrian-trajectory prediction datasets.
+
+    Provides shared logic for sample splitting, resampling, coordinate
+    normalization, cache management, and the PyTorch DataLoader `collate_fn`.
+    Dataset-specific loading logic is implemented by subclasses through
+    `load_data`.
     """
     def __init__(
         self, 
@@ -54,18 +57,19 @@ class BaseDataset(D.Dataset):
         map_data: RasterizedMap=None,
     ):
         """
-        初始化数据集。
+        Initialize the dataset.
 
         Args:
-            name (str): 数据集名称（例如 "eth", "zara01"）。
-            args (Namespace): 全局参数配置，需包含 fps, hist_step, pred_step 等。
-            df_data (pd.DataFrame): 包含所有轨迹数据的 DataFrame。
-                必须包含列: ['f', 'id', 'x', 'y', 'type']。
+            name (str): Dataset name, e.g. `"eth"` or `"zara01"`.
+            args (Namespace): Global configuration containing `fps`,
+                `hist_step`, `pred_step`, and related fields.
+            df_data (pd.DataFrame): DataFrame containing all trajectory data.
+                Required columns: `['f', 'id', 'x', 'y', 'type']`.
                 - f: 帧号
                 - id: 轨迹 ID
                 - x, y: 坐标
                 - type: 'pedestrian' 或 'vehicle'
-            map_data (RasterizedMap, optional): 对应的场景地图数据。默认为 None。
+            map_data (RasterizedMap, optional): Scene map data.
         """
         self.args = args
         self.name = name
@@ -87,17 +91,17 @@ class BaseDataset(D.Dataset):
     def load_data(cls, args) -> 'BaseDataset':
         """
         [抽象方法] 从文件路径加载数据并返回数据集实例。
-        
+
         子类必须实现此方法以处理特定的原始数据格式。
 
         Args:
-            args (Namespace): 全局参数配置。
+            args (Namespace): Global configuration.
 
         Returns:
-            BaseDataset: 加载好的数据集实例。
+            BaseDataset: Loaded dataset instance.
         
         Raises:
-            NotImplementedError: 如果子类未实现此方法。
+            NotImplementedError: Raised when a subclass does not implement this method.
         """
         raise NotImplementedError
         df_data = ...
@@ -105,27 +109,27 @@ class BaseDataset(D.Dataset):
         return cls(name="unknown", args=args, df_data=df_data, map_data=map_data)
 
     def __len__(self):
-        """返回数据集中的样本数量。"""
+        """Return the number of samples in the dataset."""
         return len(self.samples)
 
     def __getitem__(self, index):
-        """获取指定索引的样本数据。"""
+        """Fetch the sample at the given index."""
         return self.samples[index]
 
     def split_samples(self, df_data, use_tqdm=True):
         """
-        将连续的轨迹数据切分为用于训练/测试的滑动窗口样本。
+        Split continuous trajectory data into sliding-window samples for training and evaluation.
 
-        根据 args.hist_step (历史步长) 和 args.pred_step (预测步长) 
-        以及 args.skip_step (滑窗步长) 生成样本。每个样本包含当前场景下的
-        所有行人和车辆的历史轨迹、未来轨迹标签以及相关的上下文信息。
+        Samples are generated according to `args.hist_step`, `args.pred_step`,
+        and `args.skip_step`. Each sample contains the pedestrian and vehicle
+        history, future labels, and context for the current scene.
 
         Args:
-            df_data (pd.DataFrame): 包含完整轨迹的 DataFrame。
-            use_tqdm (bool, optional): 是否显示进度条。默认为 True。
+            df_data (pd.DataFrame): DataFrame containing complete trajectories.
+            use_tqdm (bool, optional): Whether to show a progress bar.
 
         Returns:
-            List[dict]: 样本列表，每个样本是一个字典，包含：
+            List[dict]: List of sample dictionaries, including:
                 - pos: 当前时刻位置 (#ped, 2)
                 - vel: 当前时刻速度 (#ped, 2)
                 - des: 目的地 (#ped, 2)
@@ -151,7 +155,7 @@ class BaseDataset(D.Dataset):
         for f in tqdm(range(f_min + hist_step, f_max - pred_step + 1, skip_step), disable=not use_tqdm):
             df = df_data[df_data['f'].ge(f - hist_step) & df_data['f'].lt(f + pred_step + 1)]
 
-            ## 行人数据整理
+            ## Organize pedestrian data.
             ped_data = df[df['type'].eq('pedestrian')]
             ped_list = ped_data['id'].unique().tolist()
             ped_table = (
@@ -163,10 +167,10 @@ class BaseDataset(D.Dataset):
                 .sort_index(axis='columns')
             )
 
-            # 插值
+            # Interpolation.
             ped_table = ped_table.interpolate(method='linear', limit_area='inside', axis=0)
 
-            # 排除 f 时刻不在场的行人
+            # Exclude pedestrians not present at frame `f`.
             ped_list = ped_table.loc[f].unstack().notna().all(axis='columns')
             ped_list = ped_list[ped_list].index.tolist()
             ped_table = ped_table[ped_list]
@@ -174,16 +178,16 @@ class BaseDataset(D.Dataset):
                 _logger.debug(f"No pedestrian at frame {f} in dataset {self.name}, skip.")
                 continue
 
-            # 填充 NaN
+            # Fill NaN if needed.
             # ped_table = ped_table.ffill().bfill()
 
-            # 当前状态
+            # Current state.
             pos = ped_table.loc[f].values.reshape(len(ped_list), 2)  # (#ped, 2)
             assert pos.shape == (len(ped_list), 2)
             vel = ped_table.diff().loc[f].mul(fps).fillna(0).values.reshape(len(ped_list), 2)  # (#ped, 2)
             assert vel.shape == (len(ped_list), 2)
 
-            # 未来加速度作为标签
+            # Future acceleration as the label.
             future_acc = (
                 ped_table
                 .diff().mul(fps)
@@ -195,7 +199,7 @@ class BaseDataset(D.Dataset):
                 .transpose(1, 0, 2)
             )  # (#ped, pred_step, 2)
             assert future_acc.shape == (len(ped_list), pred_step, 2)
-            # 未来轨迹
+            # Future trajectory.
             future_pos = (
                 ped_table
                 .iloc[-pred_step:]
@@ -205,7 +209,7 @@ class BaseDataset(D.Dataset):
             )  # (#ped, pred_step, 2)
             assert future_pos.shape == (len(ped_list), pred_step, 2)
 
-            # 历史轨迹
+            # History trajectory.
             hst = (
                 ped_table
                 .iloc[:hist_step]
@@ -215,10 +219,10 @@ class BaseDataset(D.Dataset):
             )  # (#ped, hist_step, 2)
             assert hst.shape == (len(ped_list), hist_step, 2)
 
-            # 未来 5s 平均速度
+            # Mean speed over the next 5 seconds.
             future_5s = (
                 df_data[
-                    df_data['f'].ge(f - 1) &  # 包含当前帧，以允许计算下一步的速度
+                    df_data['f'].ge(f - 1) &  # Include the current frame so the next-step speed can be computed.
                     df_data['f'].lt(f + 5 * fps) &
                     df_data['id'].isin(ped_list)
                 ]
@@ -231,16 +235,16 @@ class BaseDataset(D.Dataset):
             )
             spd = (
                 future_5s
-                .diff().mul(fps).iloc[1:]  # 去掉第一行 NaN（对应于当前第 f 帧的速度），只剩未来 5s
-                .swaplevel(axis='columns').stack(future_stack=True) # dropna 避免 (NaN, NaN) 被丢弃
-                .pow(2).sum(axis='columns', min_count=2).pow(0.5) # min_count 避免 (NaN, NaN) 被识别为 speed=0
+                .diff().mul(fps).iloc[1:]  # Drop the first NaN row, which corresponds to the speed at the current frame.
+                .swaplevel(axis='columns').stack(future_stack=True) # Keep `(NaN, NaN)` instead of dropping it.
+                .pow(2).sum(axis='columns', min_count=2).pow(0.5) # `min_count` prevents `(NaN, NaN)` from being interpreted as speed=0.
                 .unstack()
                 .mean(axis='rows').values
                 [..., np.newaxis]
             )  # (#ped, 1)
-            assert spd.shape == (len(ped_list), 1), "您可能需要将这里上方的 future_stack=True 改成 dropna=False 再试一试，或者用我们推荐的 pandas 版本 2.3.3"
+            assert spd.shape == (len(ped_list), 1), "You may need to replace `future_stack=True` above with `dropna=False`, or use the recommended pandas version 2.3.3."
             
-            # 目的地 (最后出现位置) 作为条件
+            # Destination condition: the final observed position.
             des = (
                 df_data[df_data['id'].isin(ped_list)]
                 .groupby('id').tail(1)
@@ -249,7 +253,7 @@ class BaseDataset(D.Dataset):
             )  # (#ped, 2)
             assert des.shape == (len(ped_list), 2)
 
-            # 车辆信息作为条件
+            # Vehicle context.
             veh_data = df[df['type'].eq('vehicle') & df['f'].ge(f - hist_step) & df['f'].lt(f + pred_step + 1)]
             veh_list = veh_data['id'].unique().tolist()
             veh_table = (
@@ -297,13 +301,13 @@ class BaseDataset(D.Dataset):
     @staticmethod
     def collate_fn(batch):
         """
-        DataLoader 的自定义整理函数，用于处理变长序列的 Padding。
+        Custom DataLoader collate function for padding variable-length sequences.
 
         Args:
-            batch (List[dict]): 由 __getitem__ 返回的样本列表。
+            batch (List[dict]): Sample list returned by `__getitem__`.
 
         Returns:
-            dict: 整理后的批次数据，所有张量已 Padding 并堆叠。
+            dict: Batched tensors after padding and stacking.
                 包含 'pos', 'vel', 'ped_length', 'veh_length' 等键。
                 Padding 值通常为 0 (对于坐标) 或 -1 (对于 ID)。
         """
@@ -342,15 +346,15 @@ class BaseDataset(D.Dataset):
     @staticmethod
     def resample_dataframe(df_data, raw_fps=30, target_fps=2.5):
         """
-        对轨迹数据进行重采样，以匹配模型所需的目标帧率。
+        Resample trajectory data to the target frame rate expected by the model.
 
         Args:
-            df_data (pd.DataFrame): 原始轨迹数据。
-            raw_fps (float): 原始数据的帧率。默认为 30。
-            target_fps (float): 目标帧率。默认为 2.5。
+            df_data (pd.DataFrame): Raw trajectory data.
+            raw_fps (float): Original frame rate.
+            target_fps (float): Target frame rate.
 
         Returns:
-            pd.DataFrame: 重采样后的 DataFrame，包含插值后的坐标和更新的帧号。
+            pd.DataFrame: Resampled DataFrame with interpolated coordinates and updated frame indices.
         """
         if raw_fps == target_fps:
             return df_data.copy()
@@ -383,17 +387,17 @@ class BaseDataset(D.Dataset):
     @staticmethod
     def normalize_xy(df_data, map_data):
         """
-        对坐标数据进行 Z-Score 标准化（归一化）。
+        Apply Z-score-style normalization to coordinate data.
 
-        计算轨迹数据的均值和标准差，并将轨迹数据和地图边界同时进行标准化。
-        注意：目前实现中 std 默认为 1.0 (仅去均值)，注释掉的代码为标准差归一化。
+        The current implementation uses `std = 1.0`, so it effectively centers
+        only. The commented code shows how full standard-deviation scaling would work.
 
         Args:
-            df_data (pd.DataFrame): 轨迹数据。
-            map_data (RasterizedMap): 地图数据。
+            df_data (pd.DataFrame): Trajectory data.
+            map_data (RasterizedMap): Map data.
 
         Returns:
-            tuple: (标准化后的 df_data, 更新后的 map_data)
+            tuple: `(normalized_df_data, updated_map_data)`
         """
         x_mean = 0.0 # df_data['x'].mean()
         x_std = 1.0 # df_data['x'].std()
@@ -416,18 +420,19 @@ class BaseDataset(D.Dataset):
     @staticmethod
     def _make_cache_path(args, data_path, name: str, cache_dir: str = "./data/.cache") -> Path:
         """
-        生成唯一的数据集缓存文件路径。
+        Generate a unique dataset cache path.
 
-        缓存文件名包含数据集名称及关键参数 (fps, steps)，以避免参数变更后读取旧缓存。
+        The cache filename includes the dataset name and key parameters to avoid
+        loading stale caches after argument changes.
 
         Args:
-            args (Namespace): 参数配置。
-            data_path (str): 原始数据路径 (未使用，仅作为签名参考)。
-            name (str): 数据集名称。
-            cache_dir (str, optional): 缓存目录。默认为 "./data/.cache"。
+            args (Namespace): Configuration arguments.
+            data_path (str): Raw data path, unused except for signature compatibility.
+            name (str): Dataset name.
+            cache_dir (str, optional): Cache directory.
 
         Returns:
-            Path: 缓存文件的完整路径。
+            Path: Full cache file path.
         """
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -440,12 +445,12 @@ class BaseDataset(D.Dataset):
 
     @staticmethod
     def save_cache(obj, cache_path):
-        """将数据集对象序列化保存到磁盘缓存。"""
+        """Serialize and save a dataset object to disk cache."""
         with open(cache_path, "wb") as f:
             pickle.dump(obj, f)
 
     @staticmethod
     def load_cache(cache_path):
-        """从磁盘缓存加载数据集对象。"""
+        """Load a dataset object from disk cache."""
         with open(cache_path, "rb") as f:
             return pickle.load(f)

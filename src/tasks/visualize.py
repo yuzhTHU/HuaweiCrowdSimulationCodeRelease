@@ -32,19 +32,20 @@ from src.tasks import train_once, test_once
 
 def visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path, pid) -> None:
     """
-    可视化单个样本的扩散过程。
+    Visualize the diffusion process for a single sample.
 
     Args:
-        args: 全局参数。
-        pos: 当前时刻位置张量，形状为 (B, #pedestrian, 2)。
-        vel: 当前时刻速度张量，形状为 (B, #pedestrian, 2)。
-        hst: 历史轨迹张量，形状为 (B, hist_step, 2)。
-        for_plot: 扩散过程中间结果列表，每个元素形状为 (B, #pedestrian, roll_step*pred_step, 2)。
-        mask: 有效行人掩码张量，形状为 (B, )。
-        pos_true: 真实未来轨迹张量，形状为 (B, pred_step, 2)。
-        pos_pred: 预测未来轨迹张量，形状为 (sample_num, B, pred_step, 2)。
-        save_path: 保存可视化图像的路径。
-        pid: 要可视化的行人索引。
+        args: Global arguments.
+        pos: Current position tensor of shape `(B, #pedestrian, 2)`.
+        vel: Current velocity tensor of shape `(B, #pedestrian, 2)`.
+        hst: History tensor of shape `(B, hist_step, 2)`.
+        for_plot: Intermediate diffusion results, each shaped
+            `(B, #pedestrian, roll_step*pred_step, 2)`.
+        mask: Valid-pedestrian mask tensor of shape `(B,)`.
+        pos_true: Ground-truth future trajectory tensor of shape `(B, pred_step, 2)`.
+        pos_pred: Predicted future trajectories of shape `(sample_num, B, pred_step, 2)`.
+        save_path: Output path for the visualization image.
+        pid: Pedestrian index to visualize.
     """
     S = args.sample_num
     N = args.denoise_step
@@ -60,17 +61,17 @@ def visualize(args, pos, vel, hst, for_plot, mask, pos_true, pos_pred, save_path
         loader = np.linspace(0, N+1, 12, dtype=int)[:-1].tolist()
     for idx, n in enumerate(loader):
         ax = axes[idx]
-        ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # 历史轨迹
-        ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
-        ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
+        ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # History trajectory.
+        ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # Current position.
+        ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # Future trajectory.
         ax.title.set_text(f"Step {N-n} / {N}")
-        for line in for_plot_pos[n, :, mask, :, :][:, pid]: # 逐步的扩散结果
+        for line in for_plot_pos[n, :, mask, :, :][:, pid]: # Step-by-step diffusion results.
             ax.plot(*line.cpu().numpy().T)
     ax = axes[-1]
-    ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # 历史轨迹
-    ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # 当前位置
-    ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # 未来轨迹
-    for line in pos_pred[:, mask, :, :][:, pid]: # 最终的采样结果
+    ax.plot(*hst[mask, :, :][pid].cpu().numpy().T, color='blue', lw=1.0) # History trajectory.
+    ax.scatter(*pos[mask, :][pid].cpu().numpy(), color='blue') # Current position.
+    ax.plot(*pos_true[mask, :, :][pid].cpu().numpy().T, 'r.:', markevery=args.pred_step, lw=1.0) # Future trajectory.
+    for line in pos_pred[:, mask, :, :][:, pid]: # Final sampled results.
         ax.plot(*line.cpu().numpy().T)
     for ax in axes:
         ax.axis('equal')

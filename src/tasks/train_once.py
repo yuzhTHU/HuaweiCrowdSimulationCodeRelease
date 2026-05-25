@@ -23,20 +23,20 @@ def train_once(
     diffusion: DDPM,
     epoch: int,
 ) -> Dict:
-    """ 
-    进行单步训练
+    """
+    Run one training epoch over the provided loaders.
 
     Args:
-        args: 全局参数
-        train_loaders: 训练数据加载器列表
-        model: 待训练模型
-        optimizer: 优化器
-        criterion: 损失函数
-        diffusion: 扩散模型
-        epoch: 当前训练轮数
+        args: Global arguments.
+        train_loaders: Training dataloaders.
+        model: Model to train.
+        optimizer: Optimizer.
+        criterion: Loss function.
+        diffusion: Diffusion module.
+        epoch: Current epoch index.
     
     Returns:
-        all_records: 训练记录字典
+        all_records: Training metrics dictionary.
     """
     train_timer = NamedTimer(unit='it', mode='pace')
     records_list = []
@@ -112,7 +112,7 @@ def train_once(
                 if args.loss_type == 'accelerate':
                     loss = criterion(acc_pred, acc_true)
                 elif args.loss_type == 'position':
-                    # acc_true 是从 pos_true 算出来的，因此不用再返回去计算 pos_true 了
+                    # `acc_true` is derived from `pos_true`, so there is no need to reconstruct `pos_true` again.
                     vel_true = vel_now.unsqueeze(-2) + acc_true.cumsum(dim=-2) / args.fps
                     pos_true = pos_now.unsqueeze(-2) + vel_true.cumsum(dim=-2) / args.fps
                     vel_pred = vel_now.unsqueeze(-2) + acc_pred.cumsum(dim=-2) / args.fps

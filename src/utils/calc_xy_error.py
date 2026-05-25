@@ -18,29 +18,29 @@ def calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel):
     # 场景无车辆的无效数据
     valid_data_mask = ~veh_pos.isnan().any(dim=-1) # (N,)
 
-    # 计算射线方向向量
+    # Compute the ray direction vector.
     speed = veh_vel.norm(dim=-1, keepdim=True) # (N, 1)
     vel_dir = veh_vel / (speed + 1e-8) # (N, 2)
 
-    # 计算行人到射线的距离
+    # Compute the pedestrian-to-ray distance.
     rel_pos = ped_pos - veh_pos # (N, 2)
     proj_len = (rel_pos * vel_dir).sum(dim=-1, keepdim=True) # (N, 1)
     perp_vec = rel_pos - proj_len * vel_dir
     dist_to_ray = torch.norm(perp_vec, dim=-1) # (N,)
     
-    # 综合筛选条件 (1. 数据有效  2. 车辆在移动  3. 行人距离车辆前进射线距离 < 10m)
+    # Combined filtering: valid data, moving vehicle, and pedestrian within 10m of the forward ray.
     final_mask = valid_data_mask & (speed.squeeze(-1) > 0.01) & (dist_to_ray < 10.0)
     if not final_mask.any():
         return torch.tensor([float('nan')]), torch.tensor([float('nan')])
         
-    # 误差分解
+    # Decompose the error.
     target_diff = traj_diff[final_mask]
     target_dir = vel_dir[final_mask].unsqueeze(1)
-    # 切向误差 (Tangential): 在方向向量上的投影
+    # Tangential error: projection onto the direction vector.
     tang_err = torch.abs((target_diff * target_dir).sum(dim=-1)) # (N_subset, T)
-    # 法向误差 (Normal): 在法向量上的投影
+    # Normal error: projection onto the normal vector.
     target_norm_vec = torch.stack([-target_dir[..., 1], target_dir[..., 0]], dim=-1)
     norm_err = torch.abs((target_diff * target_norm_vec).sum(dim=-1)) # (N_subset, T)
-    
-    # 返回平均值
+
+    # Return the averages.
     return norm_err.mean(dim=-1), tang_err.mean(dim=-1)

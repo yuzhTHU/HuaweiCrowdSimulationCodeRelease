@@ -19,41 +19,41 @@ _logger = logging.getLogger(__name__)
 
 class ETHDataset(BaseDataset):
     """
-    ETH 行人数据集加载器。
-    
-    处理 BIWI Hotel (ETH) 和 ETH Univ 等场景的数据。
-    原始数据格式通常为观察矩阵 (obsmat.txt) 或类似格式。
+    ETH pedestrian dataset loader.
+
+    Handles scenes such as BIWI Hotel (ETH) and ETH Univ. The raw data usually
+    comes in `obsmat.txt` or a similar observation-matrix format.
     """
 
-    raw_fps = 25  # 官方 README 说是 25 fps，但是看视频感觉走起路来太快了不像真的
+    raw_fps = 25  # The official README says 25 fps, although the video subjectively looks faster than real walking.
 
     @classmethod
     def load_data(cls, args: Namespace, data_path: str) -> "ETHDataset":
         """
-        加载单个 ETH 场景数据。
+        Load a single ETH scene.
 
-        支持读取缓存。如果无缓存，则读取原始 txt/csv 文件，
-        加载地图图像和单应性矩阵 (H matrix)，进行坐标映射和重采样。
+        If no cache is available, read the raw txt/csv file, load the map image
+        and homography matrix, then apply coordinate mapping and resampling.
 
         Args:
-            args (Namespace): 全局参数。
-            data_path (str): 数据文件路径 (通常是包含位置信息的 txt 文件)。
+            args (Namespace): Global arguments.
+            data_path (str): Data file path, usually a txt file containing positions.
 
         Returns:
-            ETHDataset: 初始化后的数据集实例。
+            ETHDataset: Initialized dataset instance.
         """
         data_path = Path(data_path)
         name = data_path.parent.name.removeprefix("seq_")
 
-        ## 检查缓存
+        ## Check cache.
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and os.path.exists(cache_path):
             _logger.info(f"Loading cached dataset from {cache_path}")
             try:
                 dataset = cls.load_cache(cache_path)
-                if len(dataset) == 0: # 如果能读取但却是空的，重新生成一次也会是空的，不如直接报错通知这个用不了
+                if len(dataset) == 0: # If it can be read but is empty, regenerating it would still be empty; fail early instead.
                     raise EmptyDatasetError(f"Cached dataset {cache_path} is empty.")
-                cls.collate_fn([dataset[0]]) # 测试能否正常使用
+                cls.collate_fn([dataset[0]]) # Sanity-check that the dataset is usable.
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
@@ -61,7 +61,7 @@ class ETHDataset(BaseDataset):
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
 
-        ## 读取数据
+        ## Read raw data.
         df_data = pd.read_csv(
             data_path,
             sep=' ',
@@ -71,22 +71,22 @@ class ETHDataset(BaseDataset):
         )
         df_data['type'] = 'pedestrian'
 
-        ## 数据重采样
+        ## Resample data.
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
 
-        ## 创建地图
+        ## Build map.
         H = np.loadtxt(data_path.parent / "H.txt")  # (3, 3)
         image = np.array(Image.open(data_path.parent / 'map.png').convert('L')) / 255.0 # (H, W)
         map, xmin, xmax, ymin, ymax = image_to_world(image, H, dot_per_meter=args.dot_per_meter)
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
 
-        ## 标准化坐标
+        ## Normalize coordinates.
         df_data, map_data = cls.normalize_xy(df_data, map_data)
 
-        ## 处理数据集
+        ## Build dataset object.
         dataset = cls(name=name, args=args, df_data=df_data, map_data=map_data)
 
-        ## 保存缓存
+        ## Save cache.
         cache_path = cls._make_cache_path(args, str(data_path), name)
         _logger.info(f"Caching dataset to {cache_path}")
         cls.save_cache(dataset, cache_path)
@@ -96,15 +96,15 @@ class ETHDataset(BaseDataset):
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["ETHDataset"]:
         """
-        批量加载指定目录下的所有 ETH 场景数据。
+        Batch-load all ETH scenes under the given directory.
 
         Args:
-            args (Namespace): 全局参数。
-            data_path (str): 根目录路径或 glob 模式字符串。
-            show_tqdm (bool, optional): 是否显示进度条。默认为 True。
+            args (Namespace): Global arguments.
+            data_path (str): Root directory path or glob pattern.
+            show_tqdm (bool, optional): Whether to show a progress bar.
 
         Returns:
-            List[ETHDataset]: 数据集实例列表。
+            List[ETHDataset]: List of dataset instances.
         """
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / f"{name}.pkl"

@@ -17,34 +17,34 @@ _logger = logging.getLogger('src.simulate')
 
 @dataclass
 class SimulateState:
-    df_ped: pd.DataFrame  # 行人数据 DataFrame
-    df_veh: pd.DataFrame # 车辆数据 DataFrame
-    map_data: object # 地图数据对象
-    ped_list: List[int] # 行人 ID 列表 (#pedestrian,)
-    veh_list: List[int] # 车辆 ID 列表 (#vehicle,)
-    frame: int  # 当前帧
-    pos_now: torch.Tensor # 当前行人位置 (Batch, #pedestrian, 2)
-    vel_now: torch.Tensor # 当前行人速度 (Batch, #pedestrian, 2)
-    hst_now: torch.Tensor # 当前行人历史位置 (Batch, #pedestrian, hist_step, 2)
-    des_now: torch.Tensor  # 当前行人目的地 (Batch, #pedestrian, 2)
-    spd_now: torch.Tensor  # 当前行人期望速度 (Batch, #pedestrian, 1)
-    veh_now: torch.Tensor  # 当前车辆位置 (Batch, #vehicle, hist_step + 1, 2)
+    df_ped: pd.DataFrame  # Pedestrian dataframe.
+    df_veh: pd.DataFrame # Vehicle dataframe.
+    map_data: object # Map data object.
+    ped_list: List[int] # Pedestrian ID list (#pedestrian,)
+    veh_list: List[int] # Vehicle ID list (#vehicle,)
+    frame: int  # Current frame.
+    pos_now: torch.Tensor # Current pedestrian positions (Batch, #pedestrian, 2)
+    vel_now: torch.Tensor # Current pedestrian velocities (Batch, #pedestrian, 2)
+    hst_now: torch.Tensor # Current pedestrian history (Batch, #pedestrian, hist_step, 2)
+    des_now: torch.Tensor  # Current pedestrian destinations (Batch, #pedestrian, 2)
+    spd_now: torch.Tensor  # Current pedestrian desired speeds (Batch, #pedestrian, 1)
+    veh_now: torch.Tensor  # Current vehicle positions (Batch, #vehicle, hist_step + 1, 2)
 
 
 def init_simulation(
     args: Namespace, dataset: BaseDataset, frame_idx: int, model: Model
 ) -> SimulateState:
     """
-    初始化模拟所需的数据
+    Initialize the state required for simulation.
 
     Args:
-        args: 配置参数
-        dataset: 数据集对象
-        frame_idx: 初始帧
-        model: 模型对象
+        args: Configuration arguments.
+        dataset: Dataset object.
+        frame_idx: Initial frame index.
+        model: Model object.
 
     Returns:
-        SimulateState: 包含初始化状态的对象
+        SimulateState: Initialized simulation state.
     """
     df_data = dataset.df_data.set_index(['f', 'id']).sort_index()
     df_ped = df_data.loc[df_data['type'] == 'pedestrian', ['x', 'y']]
@@ -57,7 +57,7 @@ def init_simulation(
             [frame_idx], 
             ped_list
         ], names=['f', 'id']))
-        # .fillna(0.0)  # 不应该有 nan
+        # .fillna(0.0)  # There should be no NaN here.
         .values.reshape(len(ped_list), 2) # (#pedestrian, 2)
     )
     assert pos.shape == (len(ped_list), 2)
@@ -103,8 +103,8 @@ def init_simulation(
     )
     assert des.shape == (len(ped_list), 2)
 
-    # 使用用户自定义的目的地覆盖（如果有）
-    # 注意：user_destinations 的键是字符串类型，需要将 ped_id 转换为字符串进行比较
+    # Override destinations with user-defined values if present.
+    # `user_destinations` uses string keys, so `ped_id` must be converted before lookup.
     if hasattr(dataset, 'user_destinations') and dataset.user_destinations:
         for idx, ped_id in enumerate(ped_list):
             ped_id_str = str(ped_id)
@@ -113,15 +113,15 @@ def init_simulation(
                 des[idx, 0] = user_des['x']
                 des[idx, 1] = user_des['y']
                 _logger.info(f"Using user-defined destination for pedestrian {ped_id}: ({user_des['x']}, {user_des['y']})")
-    # 计算期望速度 spd
-    # 注意：模拟数据集可能被截断，没有足够的未来帧数据
-    # 此时使用当前速度作为期望速度的估计
+    # Compute desired speed `spd`.
+    # Simulated datasets may be truncated and therefore lack enough future frames.
+    # In that case, use the current speed as an estimate.
     spd_data_range = range(frame_idx, frame_idx + int(5 * args.fps) + 1)
     available_frames = df_ped.index.get_level_values('f').unique()
     has_future_data = any(f in available_frames for f in spd_data_range if f > frame_idx)
 
     if has_future_data:
-        # 有足够的未来帧数据，正常计算
+        # Enough future frames are available, compute normally.
         spd = (
             df_ped
             .reindex(pd.MultiIndex.from_product([
@@ -135,10 +135,10 @@ def init_simulation(
             .values[:, np.newaxis]
         )
     else:
-        # 模拟数据集被截断，使用当前速度作为期望速度
+        # The simulated dataset is truncated, so use the current speed as the desired speed estimate.
         _logger.info(f"No future data for spd calculation, using current velocity as estimated desired speed")
         spd = np.linalg.norm(vel, axis=1, keepdims=True)
-        # 设置合理的默认期望速度（如果当前速度太小）
+        # Use a reasonable default desired speed if the current speed is too small.
         default_spd = 1.0
         spd = np.where(spd < default_spd, default_spd, spd)
     assert spd.shape == (len(ped_list), 1), "spd shape mismatch"
@@ -149,10 +149,10 @@ def init_simulation(
         spd *= np.nan
 
     ## Simulation
-    S = args.sample_num  # 采样次数
-    N = args.denoise_step  # 采样步数
-    assert args.T % N == 0, f"试图使用 {N} 步采样，然而训练步数 {args.T} mod {N} 不等于 0!"
-    assert 1 <= args.step_offset <= args.T // N, f"step_offset 应该取值于 {{1, ..., {args.T // N}}}!"
+    S = args.sample_num  # Number of samples.
+    N = args.denoise_step  # Number of denoising steps.
+    assert args.T % N == 0, f"Requested {N} sampling steps, but training steps {args.T} mod {N} is not 0."
+    assert 1 <= args.step_offset <= args.T // N, f"`step_offset` must lie in {{1, ..., {args.T // N}}}."
     pos_now = torch.from_numpy(pos).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1)  # (S*1, #pedestrian, 2)
     vel_now = torch.from_numpy(vel).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1)  # (S*1, #pedestrian, 2)
     hst_now = torch.from_numpy(hst).to(device=args.device, dtype=torch.float32)[None, ...].repeat(S, 1, 1, 1)  # (S*1, #pedestrian, hist_step, 2)
@@ -190,8 +190,8 @@ def simulate_one_step(
     torch.set_grad_enabled(False)
 
     # _logger.info(f"Simulating from frame {frame} to frame {frame + args.pred_step}...")
-    S = args.sample_num  # 采样次数
-    N = args.denoise_step  # 采样步数
+    S = args.sample_num  # Number of samples.
+    N = args.denoise_step  # Number of denoising steps.
     ped_length_repeat = torch.full((S, ), len(state.ped_list), device=args.device, dtype=torch.long)  # (S,)
     veh_length_repeat = torch.full((S, ), len(state.veh_list), device=args.device, dtype=torch.long)  # (S,)
 
@@ -203,7 +203,7 @@ def simulate_one_step(
     model.set_sur_info()
 
     shape = [S, len(state.ped_list), args.pred_step, 2]  # (S*1, #pedestrian, pred_step, 2)
-    xt = torch.randn(shape, device=args.device)  # 从噪声开始
+    xt = torch.randn(shape, device=args.device)  # Start from Gaussian noise.
     stride = args.T // N
     for t in reversed(range(args.step_offset, args.T+1, stride)):
         # _logger.info(f"  Denoising step at t={t}...")
@@ -216,47 +216,47 @@ def simulate_one_step(
             veh_length=veh_length_repeat,
         )  # (S*B, #pedestrian, pred_step, 2)
 
-        ## 获取估计的 x0
+        ## Recover the estimated x0.
         x0 = diffusion.noise_to_x0(xt, denoise_t, output) if args.predict_noise else output
 
-        ## 尝试各种引导，各种 guidance 应为 0~1 左右的系数
+        ## Apply different guidance terms. The coefficients are typically around 0~1.
         x0 = x0 + guidance(args, x0, state, model, diffusion, noisy_acc, xt, denoise_t, ped_length_repeat, veh_length_repeat)
 
-        ## 去噪
+        ## Denoise.
         xt = diffusion.denoise(xt, t, x0=x0, stride=min(stride, t))
     acc_new = xt / args.scale_accelerate
     
     if args.use_sfm:
         future_vel = state.vel_now.unsqueeze(-2)
         future_pos = state.pos_now.unsqueeze(-2)
-        # 目的地导向力
+        # Destination-driven force.
         desire_vel = F.normalize(state.des_now.unsqueeze(-2) - future_pos, dim=-1) * state.spd_now.unsqueeze(-2)  # (S*B, #pedestrian, pred_step, 2)
         des_force = (desire_vel - future_vel).nan_to_num(0.0) / args.sfm_t_des  # (S*B, #pedestrian, pred_step, 2)
-        # 场景障碍物排斥力
+        # Obstacle repulsion from the scene map.
         F_map = get_force_map(r=args.sfm_r_map, A=args.sfm_a_map, B=args.sfm_b_map, device=args.device)  # (2r+1, 2r+1, 2)
         idx = future_pos[..., 0].sub(model.xmin).div(model.xmax - model.xmin).mul(model.map.shape[0]).round().long().clamp(0, model.map.shape[0] - 1)  # (S*B, #pedestrian, pred_step)
         jdx = future_pos[..., 1].sub(model.ymin).div(model.ymax - model.ymin).mul(model.map.shape[1]).round().long().clamp(0, model.map.shape[1] - 1)  # (S*B, #pedestrian, pred_step)
         patches = extract_patches_torch(model.map, idx.reshape(-1), jdx.reshape(-1), r=args.sfm_r_map).reshape(*idx.shape, 2*args.sfm_r_map+1, 2*args.sfm_r_map+1) # (S*B, #pedestrian, pred_step, 2r+1, 2r+1)
         map_force = (patches[..., None] * F_map).nan_to_num(0.0).flatten(-3, -2).sum(-2) # (S*B, #pedestrian, pred_step, 2)
-        # 其他行人排斥力
+        # Repulsion from other pedestrians.
         p = future_pos[:, None, :, :, :] - future_pos[:, :, None, :, :] # (S*B, #focal-pedestrian, #other-pedestrian, pred_step, 2)
         d = torch.norm(p, dim=-1, keepdim=True)
         n = -p / d.clamp(min=1e-6)
         F_ped = args.sfm_a_ped * torch.exp(-d / args.sfm_b_ped) * n
         ped_force = F_ped.nan_to_num(0.0).sum(dim=2) # (S*B, #pedestrian, pred_step, 2)
-        # 其它车辆排斥力 (车辆用最后一帧位置)
+        # Repulsion from vehicles, using their last-frame positions.
         p = state.veh_now[:, :, None, -1:, :] - future_pos[:, None, :, :, :] # (S*B, #vehicle, #pedestrian, pred_step, 2)
         d = torch.norm(p, dim=-1, keepdim=True)
         n = -p / d.clamp(min=1e-6)
         F_veh = args.sfm_a_veh * torch.exp(-d / args.sfm_b_veh) * n
         veh_force = F_veh.nan_to_num(0.0).sum(dim=1) # (S*B, #pedestrian, pred_step, 2)
-        # 阻尼力
+        # Damping force.
         damp_force = -args.sfm_a_damp * future_vel  # (S*B, #pedestrian, pred_step, 2)
-        # 合力
+        # Total force.
         acc_new = des_force + map_force + ped_force + veh_force + damp_force
 
     vel_new = state.vel_now.unsqueeze(-2) + acc_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
-    # 将到达目的地的行人速度设置为 0
+    # Set the velocity of pedestrians who have reached their destination to 0.
     if args.threshold_of_arrive > 0:
         _pos_new = state.pos_now.unsqueeze(-2) + vel_new.cumsum(dim=-2) / args.fps  # (S*B, #pedestrian, pred_step, 2)
         arrived = (_pos_new - state.des_now[:, :, None, :]).norm(dim=-1) < args.threshold_of_arrive  # (S*B, #pedestrian, pred_step)
@@ -266,7 +266,7 @@ def simulate_one_step(
     if state.veh_list:
         veh_new = torch.from_numpy(
             state.df_veh
-            .loc[state.frame+1:state.frame+args.pred_step]  # pandas 中的切片是闭区间，因此实际上切出来了 pred_step 帧
+            .loc[state.frame+1:state.frame+args.pred_step]  # Pandas slicing is inclusive, so this returns exactly `pred_step` frames.
             .unstack().swaplevel(axis='columns').sort_index(axis='columns')
             .reindex(
                 index=range(state.frame+1, state.frame+args.pred_step+1),
