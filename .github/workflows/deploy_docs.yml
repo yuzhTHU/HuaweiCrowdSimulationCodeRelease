@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - KDD26
     paths:
       - 'docs/**' # 只有 docs 变动时才触发
       - 'src/**'  # 或者源码变动（因为 API 文档依赖源码）

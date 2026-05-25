@@ -3,7 +3,7 @@
 # RAPID: A Scalable and Controllable Physics-Informed Diffusion Framework for Real-Time Pedestrian Trajectory Generation (KDD'2026)
 
 [![OpenReview](https://img.shields.io/badge/OpenReview-RAPID-b31b1b?style=for-the-badge)](https://openreview.net/forum?id=vEx9e2j4Pd)
-[![Documentation](https://img.shields.io/badge/Docs-Read%20Online-blue?style=for-the-badge&logo=read-the-docs&logoColor=white)](https://yuzhthu.github.io/HuaweiCrowdSimulationCode/)
+[![Documentation](https://img.shields.io/badge/Docs-Read%20Online-blue?style=for-the-badge&logo=read-the-docs&logoColor=white)](https://tsinghua-fib-lab.github.io/RAPID/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 
 </div>
