@@ -1,53 +1,53 @@
-# 华为人群模拟项目 - 设计与架构文档
+# Crowd Simulation Project - Design and Architecture Document
 
-## 1\. 项目概述 (Overview)
+## 1\. Project Overview
 
-本项目旨在基于扩散模型（Diffusion Model）实现高保真的多智能体行人轨迹模拟。系统能够接受场景地图、行人历史轨迹作为输入，预测并在网页端可视化未来的人群移动趋势。项目包含模型训练、推理采样以及基于 Web 的交互式可视化三大模块。
+This project aims to achieve high-fidelity multi-agent pedestrian trajectory simulation based on diffusion models. The system takes scene maps and pedestrian trajectory history as input, predicts future crowd motion trends, and visualizes them on the web. The project consists of three major modules: model training, inference sampling, and web-based interactive visualization.
 
-## 2\. 系统架构 (System Architecture)
+## 2\. System Architecture
 
-### 2.1 核心模块划分
+### 2.1 Core Module Breakdown
 
-  * **Dataset (`src.dataset`)**: 负责多源异构数据的标准化加载。支持 ETH, UCY, SDD, GC, WayMo, ORCA 等主流数据集。核心类 `BaseDataset` 实现了统一的滑动窗口采样、坐标归一化和数据缓存机制。
+  * **Dataset (`src.dataset`)**: Responsible for standardized loading of multi-source heterogeneous data. Supports mainstream datasets such as ETH, UCY, SDD, GC, WayMo, and ORCA. The core class `BaseDataset` implements unified sliding-window sampling, coordinate normalization, and data caching mechanisms.
   * **Model (`src.model`)**:
-      * `Model`: 基础 Transformer 模型，包含对行人、车辆、地图的 Attention 机制。
-      * `RelativeModel`: 采用相对坐标编码的改进模型，具有更好的泛化性。
-      * `NewModel`: 最新的实验性模型架构。
-  * **Diffusion (`src.diffusion`)**: 实现了 DDPM (概率扩散) 和 DDIM (隐式扩散) 两种采样策略，负责将高斯噪声逐步还原为符合物理规律的轨迹加速度。
-  * **Web (`src.web`)**: 基于 FastAPI 和 WebSockets 的可视化后端，支持实时推流模拟结果到前端。
+      * `Model`: Base Transformer model with attention mechanisms over pedestrians, vehicles, and maps.
+      * `RelativeModel`: Improved model using relative-coordinate encoding, with better generalization.
+      * `NewModel`: Latest experimental model architecture.
+  * **Diffusion (`src.diffusion`)**: Implements two sampling strategies, DDPM (probabilistic diffusion) and DDIM (implicit diffusion), to progressively restore Gaussian noise into physically plausible trajectory accelerations.
+  * **Web (`src.web`)**: Visualization backend based on FastAPI and WebSockets, supporting real-time streaming of simulation results to the frontend.
 
-### 2.2 数据流向 (Data Flow)
+### 2.2 Data Flow
 
-1.  **输入**: 原始轨迹 CSV/Txt 文件 + 场景图片。
-2.  **预处理**: `BaseDataset` 进行坐标变换 (Homography)、重采样 (Resample) 和归一化。
-3.  **训练**: `train.py` 使用滑动窗口数据训练扩散模型，预测未来 `pred_step` 帧的加速度。
-4.  **推理**: `sample.py` 或 `simulate.py` 利用训练好的模型，结合社会力引导 (Social Force Guidance) 进行多帧自回归预测 (Rollout)。
-5.  **展示**: 结果通过 WebSocket 发送至前端，使用 Plotly.js 在地图上绘制轨迹。
+1.  **Input**: Raw trajectory CSV/Txt files plus scene images.
+2.  **Preprocessing**: `BaseDataset` performs coordinate transformation (homography), resampling, and normalization.
+3.  **Training**: `train.py` trains the diffusion model using sliding-window data to predict acceleration over future `pred_step` frames.
+4.  **Inference**: `sample.py` or `simulate.py` uses the trained model together with Social Force Guidance for multi-frame autoregressive rollout.
+5.  **Visualization**: Results are sent to the frontend through WebSocket and rendered as trajectories on the map using Plotly.js.
 
-## 3\. 关键算法设计
+## 3\. Key Algorithm Design
 
-### 3.1 扩散过程
+### 3.1 Diffusion Process
 
-采用 **DDIM** 进行快速采样。模型预测的是 **加速度 (Acceleration)** 而非直接的位置，这保证了轨迹的平滑性和物理合理性。
+**DDIM** is used for fast sampling. The model predicts **acceleration** rather than position directly, which helps ensure smoothness and physical plausibility in the generated trajectories.
 
-### 3.2 引导策略 (Guidance)
+### 3.2 Guidance Strategy
 
-为了增强模拟的可控性，在去噪过程中引入了 Classifier-Free Guidance (CFG) 和基于梯度的能量引导：
+To improve controllability, the denoising process introduces Classifier-Free Guidance (CFG) and gradient-based energy guidance:
 
-  * **目的地引导**: 引导行人向预设终点移动。
-  * **避障引导**: 利用 `get_force_map` 计算地图势能场，排斥行人远离障碍物。
+  * **Destination guidance**: Guides pedestrians toward preset target locations.
+  * **Obstacle-avoidance guidance**: Uses `get_force_map` to compute a map potential field that repels pedestrians away from obstacles.
 
-## 4\. 接口说明 (API Interface)
+## 4\. API Interface
 
-### 4.1 训练接口
+### 4.1 Training Interface
 
 ```bash
-python train.py --name [实验名] --datasets [数据集列表] --loss_type [noise|accelerate]
+python train.py --name [experiment_name] --datasets [dataset_list] --loss_type [noise|accelerate]
 ```
 
-### 4.2 Web 模拟接口
+### 4.2 Web Simulation Interface
 
-Web 后端监听 `ws://0.0.0.0:12345/ws`。
+The web backend listens on `ws://0.0.0.0:12345/ws`.
 
   * **Start Action**: `{ "action": "start", "dataset_name": "ETH", "frame_idx": 100, "frame_num": 200 }`
-  * **Response**: 包含每一帧的行人 ID、类型和 (x, y) 坐标流。
+  * **Response**: Contains the streamed pedestrian IDs, types, and `(x, y)` coordinates for each frame.

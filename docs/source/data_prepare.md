@@ -1,140 +1,140 @@
-# 数据准备指南 (Data Preparation Guide)
+# Data Preparation Guide
 
-本文档旨在指导用户如何准备用于 **Crowd Simulation Model** 的输入数据。为了满足不同用户的需求，本模型设计了两种灵活的数据输入方式：
+This document explains how to prepare input data for the **Crowd Simulation Model**. To support different use cases, the model provides two flexible data input modes:
 
-1.  **原始数据模式 (Raw Data Mode)**：如果您拥有标准的轨迹表格（CSV/Pandas DataFrame），可以直接使用内置的流水线进行处理。这是最简单的上手方式。
-2.  **高级自定义模式 (Advanced/Direct Mode)**：如果您希望深度定制输入特征（例如手动指定速度、目的地或历史轨迹），您可以直接构建模型所需的张量（Tensors）。
+1.  **Raw Data Mode**: If you already have standard trajectory tables (CSV/Pandas DataFrame), you can process them directly with the built-in pipeline. This is the easiest way to get started.
+2.  **Advanced/Direct Mode**: If you want deep control over input features, such as manually specifying velocity, destination, or trajectory history, you can construct the tensors required by the model directly.
 
 -----
 
-## 1\. 原始数据模式 (Raw Data Mode)
+## 1\. Raw Data Mode
 
-在这种模式下，您只需准备**轨迹列表**和**地图信息**。模型配套的预处理代码（参考 `sample.py`）会自动完成速度计算、历史回溯和张量构建。
+In this mode, you only need to prepare **trajectory records** and **map information**. The preprocessing pipeline provided by the project (see `sample.py`) will automatically compute velocities, trace back history, and build tensors.
 
-### 1.1 轨迹数据格式
+### 1.1 Trajectory Data Format
 
-请准备一个 `pandas.DataFrame`，其中每一行代表一个智能体在某一帧的状态。必须包含以下列：
+Prepare a `pandas.DataFrame` in which each row represents the state of one agent in one frame. It must contain the following columns:
 
-| 列名 (Column) | 类型 | 说明 | 示例 |
+| Column | Type | Description | Example |
 | :--- | :--- | :--- | :--- |
-| **`f`** | int | 帧索引 (Frame Index)，需为单调递增的整数 | `0`, `1`, `2`... |
-| **`id`** | int/str | 智能体唯一标识符 | `1`, `102`, `"ped_0"` |
-| **`type`** | str | 智能体类型，必须为 `'pedestrian'` 或 `'vehicle'` | `"pedestrian"` |
-| **`x`** | float | 世界坐标系下的 X 坐标 (米) | `12.5` |
-| **`y`** | float | 世界坐标系下的 Y 坐标 (米) | `-3.4` |
+| **`f`** | int | Frame index; must be a monotonically increasing integer | `0`, `1`, `2`... |
+| **`id`** | int/str | Unique agent identifier | `1`, `102`, `"ped_0"` |
+| **`type`** | str | Agent type; must be either `'pedestrian'` or `'vehicle'` | `"pedestrian"` |
+| **`x`** | float | X coordinate in the world coordinate system (meters) | `12.5` |
+| **`y`** | float | Y coordinate in the world coordinate system (meters) | `-3.4` |
 
-**提示**：
+**Tips**:
 
-  * 数据的采样频率应与模型配置参数 `args.fps` 一致（默认 2.5Hz），否则请先进行重采样。
-  * 坐标系方向需与地图数据一致。
+  * The sampling frequency of the data should match the model configuration parameter `args.fps` (default: 2.5 Hz). Otherwise, resample it first.
+  * The coordinate system orientation must be consistent with the map data.
 
-### 1.2 地图数据格式
+### 1.2 Map Data Format
 
-地图需要被封装为 `RasterizedMap` 对象，包含栅格数据（numpy array）和物理边界信息。
+The map should be wrapped as a `RasterizedMap` object containing raster data (a NumPy array) and physical boundary information.
 
 ```python
 from src.dataset.base_dataset import RasterizedMap
 import numpy as np
 
-# 1. 准备栅格地图 (0: 可通行区域/空地, 1: 障碍物)
-# 形状为 (W, H) 的二维数组
+# 1. Prepare a rasterized map (0: traversable area/open space, 1: obstacle)
+# A 2D array of shape (W, H)
 grid_map = np.zeros((100, 100)) 
 
-# 2. 定义该地图对应的物理世界边界 (单位: 米)
+# 2. Define the physical-world boundaries corresponding to this map (unit: meters)
 map_data = RasterizedMap(
     map=grid_map,
-    xmin=0.0,  # 地图最左侧对应的 x 坐标
-    xmax=50.0, # 地图最右侧对应的 x 坐标
-    ymin=0.0,  # 地图最下方对应的 y 坐标
-    ymax=50.0  # 地图最上方对应的 y 坐标
+    xmin=0.0,  # x coordinate corresponding to the left edge of the map
+    xmax=50.0, # x coordinate corresponding to the right edge of the map
+    ymin=0.0,  # y coordinate corresponding to the bottom edge of the map
+    ymax=50.0  # y coordinate corresponding to the top edge of the map
 )
 ```
 
 -----
 
-## 2\. 数据处理流水线 (Processing Pipeline)
+## 2\. Processing Pipeline
 
-如果您提供的是上述 **原始数据**，系统会通过一个链式处理过程将其转换为模型输入。了解这一过程有助于您理解模型实际上利用了哪些信息，或者为您切换到“高级模式”做准备。
+If you provide the **raw data** described above, the system will convert it into model inputs through a chained processing pipeline. Understanding this process helps clarify what information the model actually uses and prepares you to switch to the advanced mode if needed.
 
-以下逻辑基于 `sample.py` 中的实现：
+The following logic is based on the implementation in `sample.py`:
 
-1.  **筛选 (Filtering)**：
-    根据当前模拟的起始帧 `frame_idx`，系统会筛选出当前时刻存在的行人 (`ped_list`) 和车辆 (`veh_list`)。
+1.  **Filtering**:
+    Based on the current simulation start frame `frame_idx`, the system filters out the pedestrians (`ped_list`) and vehicles (`veh_list`) present at the current time.
 
-2.  **当前位置 (`pos`)**：
-    直接提取 `frame_idx` 时刻所有行人的 `(x, y)` 坐标。
+2.  **Current position (`pos`)**:
+    Directly extract the `(x, y)` coordinates of all pedestrians at frame `frame_idx`.
 
-      * 结果形状：`(#ped, 2)`
+      * Result shape: `(#ped, 2)`
 
-3.  **当前速度 (`vel`)**：
-    通过有限差分计算：`(Pos_t - Pos_{t-1}) * FPS`。
+3.  **Current velocity (`vel`)**:
+    Computed using finite differences: `(Pos_t - Pos_{t-1}) * FPS`.
 
-      * 结果形状：`(#ped, 2)`
+      * Result shape: `(#ped, 2)`
 
-4.  **历史轨迹 (`hst`)**：
-    回溯提取过去 `args.hist_step` 帧（例如过去 8 帧）的位置数据。
+4.  **Trajectory history (`hst`)**:
+    Trace back and extract position data from the past `args.hist_step` frames (for example, the previous 8 frames).
 
-      * **注意**：在 `sample.py` 的逻辑中，`hst` 通常**不包含**当前帧 `frame_idx`，而是截止到 `frame_idx - 1`。
-      * 结果形状：`(#ped, hist_step, 2)`
+      * **Note**: In the logic of `sample.py`, `hst` usually **does not include** the current frame `frame_idx`; it typically ends at `frame_idx - 1`.
+      * Result shape: `(#ped, hist_step, 2)`
 
-5.  **车辆轨迹 (`veh`)**：
-    提取车辆的历史轨迹。与行人不同，车辆历史通常**包含**当前帧 `frame_idx`。
+5.  **Vehicle trajectories (`veh`)**:
+    Extract vehicle history trajectories. Unlike pedestrian history, vehicle history usually **includes** the current frame `frame_idx`.
 
-      * 结果形状：`(#veh, hist_step + 1, 2)`
+      * Result shape: `(#veh, hist_step + 1, 2)`
 
-6.  **目的地推断 (`des`)**：
-    系统默认选取该 ID 在整个 DataFrame 中出现的**最后时刻**的位置作为其潜在目的地。
+6.  **Destination inference (`des`)**:
+    By default, the system uses the position of each ID at its **last occurrence** in the DataFrame as its inferred destination.
 
-      * 结果形状：`(#ped, 2)`
+      * Result shape: `(#ped, 2)`
 
-7.  **期望速率 (`spd`)**：
-    计算未来一段时间（如 5 秒）内的平均移动速率标量。
+7.  **Desired speed (`spd`)**:
+    Compute the average movement-speed scalar over a future time window (for example, 5 seconds).
 
-      * 结果形状：`(#ped, 1)`
+      * Result shape: `(#ped, 1)`
 
 -----
 
-## 3\. 高级自定义模式 (Advanced/Direct Mode)
+## 3\. Advanced/Direct Mode
 
-如果您已经有预处理好的数据，或者希望测试一些假设（例如：“如果目的地在别处，模型会怎么走？”），您可以跳过 DataFrame 构建环节，直接构造 Tensor 输入模型。
+If you already have preprocessed data, or want to test specific hypotheses such as "What happens if the destination is somewhere else?", you can skip the DataFrame construction stage and feed tensors to the model directly.
 
-请准备以下 `torch.FloatTensor` 格式的变量，并确保它们在 GPU/CPU 上与模型一致。
+Prepare the following variables as `torch.FloatTensor`s, and make sure they are placed on the same GPU/CPU device as the model.
 
-**维度说明**：
+**Dimension notation**:
 
-  * `B`: Batch Size（通常为 1 或 `sample_num`）
-  * `N`: 当前场景中的行人数
-  * `M`: 当前场景中的车辆数
-  * `H`: 历史步长 (`args.hist_step`)
+  * `B`: Batch size (usually 1 or `sample_num`)
+  * `N`: Number of pedestrians in the current scene
+  * `M`: Number of vehicles in the current scene
+  * `H`: History length (`args.hist_step`)
 
-| 变量名 | 形状 (Shape) | 物理含义与约束 | 自定义建议 |
+| Variable | Shape | Physical meaning and constraints | Customization suggestions |
 | :--- | :--- | :--- | :--- |
-| **`pos`** | `(B, N, 2)` | **当前位置** $(x, y)$。 | 必须准确对应地图坐标系。 |
-| **`vel`** | `(B, N, 2)` | **当前速度** $(v_x, v_y)$，单位 m/s。 | 既然是自定义，您可以尝试修改此值来观察模型对初始冲量的反应。 |
-| **`hst`** | `(B, N, H, 2)` | **行人历史轨迹**。通常不包含当前帧。 | 如果数据缺失，可以用当前位置填充或线性插值。 |
-| **`des`** | `(B, N, 2)` | **目的地坐标**。 | **这是最常用的控制变量**。修改此变量可引导模型生成前往特定区域的轨迹。 |
-| **`spd`** | `(B, N, 1)` | **期望速率** (标量)。 | 控制代理移动的急切程度。 |
-| **`veh`** | `(B, M, H+1, 2)` | **车辆轨迹**。包含当前帧。 | 如果场景中无车，该 Tensor 可以是空的或特定填充处理。 |
-| **`map`** | `(W, H)` | **地图特征图**。 | 0 为空地，1 为障碍物。模型会根据 `xmin/xmax` 等参数将其映射到物理空间。 |
+| **`pos`** | `(B, N, 2)` | **Current positions** $(x, y)$. | Must match the map coordinate system exactly. |
+| **`vel`** | `(B, N, 2)` | **Current velocities** $(v_x, v_y)$ in m/s. | Since this mode is fully customizable, you can modify this value to observe the model's response to different initial momentum. |
+| **`hst`** | `(B, N, H, 2)` | **Pedestrian trajectory history**. Usually does not include the current frame. | If data is missing, you can fill it with the current position or use linear interpolation. |
+| **`des`** | `(B, N, 2)` | **Destination coordinates**. | **This is the most commonly used control variable**. Changing it can guide the model to generate trajectories toward specific regions. |
+| **`spd`** | `(B, N, 1)` | **Desired speed** (scalar). | Controls how urgently the agent moves. |
+| **`veh`** | `(B, M, H+1, 2)` | **Vehicle trajectories**. Includes the current frame. | If there are no vehicles in the scene, this tensor can be empty or handled with a special padding strategy. |
+| **`map`** | `(W, H)` | **Map feature map**. | 0 indicates free space and 1 indicates obstacles. The model maps it into physical space based on parameters such as `xmin/xmax`. |
 
-### 代码调用示例
+### Example Invocation
 
 ```python
 import torch
 from src.model.model import Model
 
-# 1. 初始化模型
+# 1. Initialize the model
 model = Model(args)
-# 加载权重...
+# Load weights...
 
-# 2. 准备数据 (Tensor)
-# 假设您已经手动构建了符合上述形状的 Tensor
+# 2. Prepare data (tensors)
+# Assume you have already constructed tensors with the shapes described above
 pos_tensor = ... 
 vel_tensor = ...
 # ...
 
-# 3. 注入数据到模型
-# 注意：必须先设置 Map 和 Vehicle，再设置 Pedestrian
+# 3. Inject data into the model
+# Note: you must set the map and vehicle inputs before setting pedestrian inputs
 model.set_map_embedding(
     map=map_tensor, 
     xmin=0.0, xmax=100.0, 
@@ -150,10 +150,10 @@ model.set_ped_embedding(
     spd=spd_tensor
 )
 
-# 4. 计算局部环境特征 (必须在 set_map 和 set_ped 之后调用)
+# 4. Compute local environmental features (must be called after set_map and set_ped)
 model.set_sur_info() 
 
-# 5. 开始推理 (例如在扩散循环中)
+# 5. Start inference (for example, inside the diffusion loop)
 output = model(
     noisy_acc=noisy_input, 
     denoise_t=t, 
@@ -162,4 +162,4 @@ output = model(
 )
 ```
 
-通过这种方式，您可以完全绕过数据加载器，灵活控制每一个输入变量，实现高度定制化的模拟实验。
+In this way, you can completely bypass the data loader, flexibly control every input variable, and run highly customized simulation experiments.

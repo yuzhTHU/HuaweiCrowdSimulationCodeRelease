@@ -1,4 +1,4 @@
-数据加载与处理 (Dataset)
+Dataset Loading and Processing
 ==================================
 
 .. automodule:: src.dataset

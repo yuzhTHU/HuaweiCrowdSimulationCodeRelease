@@ -1,4 +1,4 @@
-核心预测模型 (Model)
+Core Prediction Models
 ============================
 
 .. automodule:: src.model

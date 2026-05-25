@@ -1,4 +1,4 @@
-源码根目录 (Source Root)
+Source Root
 ======================================
 
 .. automodule:: src

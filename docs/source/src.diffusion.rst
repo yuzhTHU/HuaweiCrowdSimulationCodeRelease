@@ -1,4 +1,4 @@
-扩散生成算法 (Diffusion)
+Diffusion Generation Algorithms
 ====================================
 
 .. automodule:: src.diffusion

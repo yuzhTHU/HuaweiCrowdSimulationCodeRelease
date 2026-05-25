@@ -1,6 +1,6 @@
 import os
 import sys
-# 将项目根目录加入路径，以便 Sphinx 找到源码
+# Add the project root to the path so Sphinx can find the source code.
 sys.path.insert(0, os.path.abspath('../../'))
 sys.path.insert(0, os.path.abspath('../'))
 
@@ -36,11 +36,11 @@ autodoc_mock_imports = [
 ]
 
 extensions = [
-    'sphinx.ext.autodoc',      # 自动从 docstring 生成文档
-    'sphinx.ext.napoleon',     # 支持 Google/NumPy 风格的 docstring
-    'sphinx.ext.viewcode',     # 在文档中添加“查看源代码”链接
+    'sphinx.ext.autodoc',      # Automatically generate docs from docstrings.
+    'sphinx.ext.napoleon',     # Support Google/NumPy-style docstrings.
+    'sphinx.ext.viewcode',     # Add "view source code" links in the docs.
     # 'sphinx.ext.todo',
-    'myst_parser',             # 支持 Markdown (.md) 文件
+    'myst_parser',             # Support Markdown (.md) files.
 ]
 
 source_suffix = {
@@ -52,15 +52,15 @@ source_suffix = {
 templates_path = ['_templates']
 exclude_patterns = []
 
-language = 'zh_CN'
+language = 'en'
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'sphinx_book_theme'
-html_title = "人群模拟仿真系统 API 文档"
+html_title = "Crowd Simulation System API Documentation"
 
-# 自动生成配置
+# Auto-generated documentation configuration.
 autodoc_default_options = {
     'members': True,
     'member-order': 'bysource',

@@ -1,4 +1,4 @@
-通用工具组件 (Utils)
+General Utility Components
 ============================
 
 .. automodule:: src.utils
