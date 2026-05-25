@@ -65,10 +65,10 @@ class BaseDataset(D.Dataset):
                 `hist_step`, `pred_step`, and related fields.
             df_data (pd.DataFrame): DataFrame containing all trajectory data.
                 Required columns: `['f', 'id', 'x', 'y', 'type']`.
-                - f: 帧号
-                - id: 轨迹 ID
-                - x, y: 坐标
-                - type: 'pedestrian' 或 'vehicle'
+                - f: frame index
+                - id: trajectory ID
+                - x, y: coordinates
+                - type: `'pedestrian'` or `'vehicle'`
             map_data (RasterizedMap, optional): Scene map data.
         """
         self.args = args
@@ -90,9 +90,9 @@ class BaseDataset(D.Dataset):
     @classmethod
     def load_data(cls, args) -> 'BaseDataset':
         """
-        [抽象方法] 从文件路径加载数据并返回数据集实例。
+        [Abstract method] Load data from a file path and return a dataset instance.
 
-        子类必须实现此方法以处理特定的原始数据格式。
+        Subclasses must implement this method to handle dataset-specific raw formats.
 
         Args:
             args (Namespace): Global configuration.
@@ -130,13 +130,13 @@ class BaseDataset(D.Dataset):
 
         Returns:
             List[dict]: List of sample dictionaries, including:
-                - pos: 当前时刻位置 (#ped, 2)
-                - vel: 当前时刻速度 (#ped, 2)
-                - des: 目的地 (#ped, 2)
-                - spd: 期望速度 (#ped, 1)
-                - hst: 历史轨迹 (#ped, hist_step, 2)
-                - veh: 车辆历史 (#veh, hist_step+1, 2)
-                - future_acc: 未来加速度标签 (#ped, pred_step, 2)
+                - pos: current positions `(#ped, 2)`
+                - vel: current velocities `(#ped, 2)`
+                - des: destinations `(#ped, 2)`
+                - spd: desired speeds `(#ped, 1)`
+                - hst: history trajectories `(#ped, hist_step, 2)`
+                - veh: vehicle history `(#veh, hist_step+1, 2)`
+                - future_acc: future acceleration labels `(#ped, pred_step, 2)`
                 - ...
         """
         hist_step = self.args.hist_step
@@ -308,8 +308,8 @@ class BaseDataset(D.Dataset):
 
         Returns:
             dict: Batched tensors after padding and stacking.
-                包含 'pos', 'vel', 'ped_length', 'veh_length' 等键。
-                Padding 值通常为 0 (对于坐标) 或 -1 (对于 ID)。
+                Includes keys such as `'pos'`, `'vel'`, `'ped_length'`, and `'veh_length'`.
+                Padding values are usually `0` for coordinates or `-1` for IDs.
         """
         pos = pad_sequence([torch.from_numpy(item['pos']).float() for item in batch], batch_first=True, padding_value=0.0)
         vel = pad_sequence([torch.from_numpy(item['vel']).float() for item in batch], batch_first=True, padding_value=0.0)

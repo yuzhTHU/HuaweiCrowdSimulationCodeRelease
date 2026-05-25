@@ -20,9 +20,10 @@ _logger = logging.getLogger(__name__)
 
 class SDDDataset(BaseDataset):
     """
-    Stanford Drone Dataset (SDD) 数据集加载器。
-    
-    该数据集包含俯视视角的无人机航拍视频，包含行人、自行车、滑板、车辆等多种类别。
+    Stanford Drone Dataset (SDD) loader.
+
+    This dataset contains top-down drone footage with multiple categories such
+    as pedestrians, bicycles, skaters, and vehicles.
     """
 
     raw_fps = 30
@@ -30,18 +31,19 @@ class SDDDataset(BaseDataset):
     @classmethod
     def load_data(cls, args: Namespace, data_path: str) -> "SDDDataset":
         """
-        加载单个 SDD 视频场景的数据。
+        Load data for a single SDD video scene.
 
-        读取 annotations.txt，进行像素到米的坐标变换。
-        包含复杂的数据清洗逻辑（如去除异常速度、平滑轨迹）。
-        如果存在 map.png 则加载，否则创建空白地图。
+        Read `annotations.txt`, convert coordinates from pixels to meters,
+        apply nontrivial data-cleaning logic such as abnormal-speed removal and
+        trajectory smoothing, and load `map.png` if it exists; otherwise create
+        a blank map.
 
         Args:
-            args (Namespace): 全局参数。
-            data_path (str): annotations.txt 文件路径。
+            args (Namespace): Global arguments.
+            data_path (str): Path to `annotations.txt`.
 
         Returns:
-            SDDDataset: 初始化后的数据集实例。
+            SDDDataset: Initialized dataset instance.
         """
         data_path = Path(data_path)
         name = (
@@ -50,15 +52,15 @@ class SDDDataset(BaseDataset):
             + data_path.parent.name.removeprefix("video")
         )
 
-        ## 检查缓存
+        ## Check cache.
         cache_path = cls._make_cache_path(args, str(data_path), name)
         if args.cache_dataset and os.path.exists(cache_path):
             _logger.info(f"Loading cached dataset from {cache_path}")
             try:
                 dataset = cls.load_cache(cache_path)
-                if len(dataset) == 0: # 如果能读取但却是空的，重新生成一次也会是空的，不如直接报错通知这个用不了
+                if len(dataset) == 0: # If it can be read but is empty, regenerating it would still be empty, so fail early.
                     raise EmptyDatasetError(f"Cached dataset {cache_path} is empty.")
-                cls.collate_fn([dataset[0]]) # 测试能否正常使用
+                cls.collate_fn([dataset[0]]) # Sanity-check that the dataset is usable.
                 return dataset
             except Exception as e:
                 _logger.error(f"Failed to use cached dataset {cache_path}: {e}")
@@ -66,7 +68,7 @@ class SDDDataset(BaseDataset):
         if not data_path.exists():
             raise FileNotFoundError(f"Data path {data_path} not found.")
 
-        ## 读取数据
+        ## Read raw data.
         df_data = pd.read_csv(
             data_path,
             sep=" ",
@@ -87,19 +89,19 @@ class SDDDataset(BaseDataset):
             'Car': 'vehicle',
             'Bus': 'vehicle',
         })
-        df_data = df_data[['f', 'id', 'x', 'y', 'type']]  # 第一维向右，第二维向下
+        df_data = df_data[['f', 'id', 'x', 'y', 'type']]  # First dimension points right, second dimension points down.
 
-        ## 仿射变换
+        ## Apply the affine transformation.
         H = cls.get_homography_mat(data_path=data_path)
         df_data[['x', 'y']] = affine_transformation(df_data[['x', 'y']].values, H)
 
-        ## 清洗数据
+        ## Clean data.
         df_list = []
         for pid, group in df_data.groupby('id'):
             if group['type'].nunique() > 1:
                 raise ValueError(f"ID {pid} has multiple types: {group['type'].unique()}")
             if group.iloc[0]['type'] != 'pedestrian':
-                df_list.append(group.assign(id=len(df_list)))  # 重新编号
+                df_list.append(group.assign(id=len(df_list)))  # Reassign IDs.
             else:
                 traj = group[['f', 'x', 'y']].values
                 traj[:, 0] /= args.fps  # convert to seconds
@@ -120,15 +122,15 @@ class SDDDataset(BaseDataset):
                     df_list.append(pd.DataFrame(seg, columns=['f', 'x', 'y']).assign(id=len(df_list), type='pedestrian'))
         df_data = pd.concat(df_list, ignore_index=True)
 
-        ## 数据重采样
+        ## Resample data.
         df_data = cls.resample_dataframe(df_data, raw_fps=cls.raw_fps, target_fps=args.fps)
         
-        ## 读取地图
+        ## Load map.
         map_path = data_path.parent / f"map.png"
         if map_path.exists():
-            image = np.array(Image.open(map_path).convert('L')) / 255.0 # (H, W)  第一维向下，第二维向右
-            image_ = image.T # 转置，使得第一维向右，第二维向下，与 df_data 中的坐标系对齐
-            map, xmin, xmax, ymin, ymax = image_to_world(image_, H, dot_per_meter=args.dot_per_meter)  # 第一维向右，第二维向上，即 xy 坐标
+            image = np.array(Image.open(map_path).convert('L')) / 255.0 # (H, W), first dimension downward and second dimension rightward.
+            image_ = image.T # Transpose so the first dimension points right and the second points down, aligning with the dataframe coordinates.
+            map, xmin, xmax, ymin, ymax = image_to_world(image_, H, dot_per_meter=args.dot_per_meter)  # First dimension rightward and second upward, i.e. xy coordinates.
         else:
             dot_per_meter = args.dot_per_meter
             xmin, xmax = df_data['x'].min(), df_data['x'].max()
@@ -138,13 +140,13 @@ class SDDDataset(BaseDataset):
             map = np.full((len_x, len_y), np.nan)
         map_data = RasterizedMap(map=map, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
 
-        ## 标准化坐标
+        ## Normalize coordinates.
         df_data, map_data = cls.normalize_xy(df_data, map_data)
 
-        ## 处理数据集
+        ## Build dataset object.
         dataset = cls(name=name, args=args, df_data=df_data, map_data=map_data)
 
-        ## 保存缓存
+        ## Save cache.
         cache_path = cls._make_cache_path(args, str(data_path), name)
         _logger.info(f"Caching dataset to {cache_path}")
         cls.save_cache(dataset, cache_path)
@@ -153,7 +155,7 @@ class SDDDataset(BaseDataset):
 
     @classmethod
     def load_data_batch(cls, args: Namespace, data_path: str, show_tqdm=True) -> List["SDDDataset"]:
-        """批量加载 SDD 数据集。"""
+        """Batch-load SDD datasets."""
         name = '-'.join(Path(data_path).relative_to('./data').parts)
         cache_path = Path('./data/.cache') / f"{name}.pkl"
         try:
@@ -186,15 +188,17 @@ class SDDDataset(BaseDataset):
     @staticmethod
     def get_homography_mat(data_path):
         """
-        根据数据集目录结构获取对应的单应性矩阵（像素/米 比例）。
-        
-        SDD 的不同场景（如 'bookstore', 'deathCircle'）有不同的缩放比例。
+        Get the homography matrix from the dataset directory structure,
+        effectively capturing the pixel-to-meter ratio.
+
+        Different SDD scenes such as `bookstore` and `deathCircle` use
+        different scale factors.
 
         Args:
-            data_path (Path): 数据文件路径，用于推断场景名称。
+            data_path (Path): Data file path, used to infer the scene name.
 
         Returns:
-            np.ndarray: 3x3 缩放矩阵 (实际上是对角矩阵)。
+            np.ndarray: 3x3 scaling matrix, effectively diagonal in this case.
         """
         image0 = np.array(Image.open(data_path.parent / 'reference.jpg'))
         meter_per_pixel_dict = {
@@ -258,19 +262,20 @@ class SDDDataset(BaseDataset):
                         split_speed_delta=0.5, 
                         split_time_thresh=1.0):
         """
-        [静态工具方法] 轨迹清洗与平滑。
+        Static utility method for trajectory cleaning and smoothing.
 
-        对原始轨迹进行去噪、平滑（Savitzky-Golay 或 LOESS）、
-        速度和角度异常检测，并将轨迹分割成合理的片段。
+        Denoise and smooth the raw trajectory, using Savitzky-Golay or LOESS,
+        detect speed and angle anomalies, and split the trajectory into
+        reasonable segments.
 
         Args:
-            traj (np.ndarray): 原始轨迹 (N, 3)，列为 [t, x, y]。
-            median_k (int): 中值滤波窗口大小。
-            do_savgol (bool): 是否使用 Savitzky-Golay 滤波。
-            ... (其他平滑与分割阈值参数)
+            traj (np.ndarray): Raw trajectory `(N, 3)` with columns `[t, x, y]`.
+            median_k (int): Median-filter window size.
+            do_savgol (bool): Whether to use Savitzky-Golay filtering.
+            ... (other smoothing and splitting threshold parameters)
 
         Returns:
-            List[np.ndarray]: 清洗后的轨迹片段列表。
+            List[np.ndarray]: List of cleaned trajectory segments.
         """
         # 1. sort & unique
         traj = np.array(traj)
@@ -361,7 +366,7 @@ class SDDDataset(BaseDataset):
         angle_diff = circular_diff(angles, med_angle)
         # indicator of speed anomaly (use k * MAD)
         mad_eps = 1.4826 * mad_angle
-        # 将转角过大的点标记为异常
+        # Mark points with excessively large turning angles as anomalies.
         delta_theta = circular_diff(angles[:-2], angles[2:])  # length N-1
         delta_theta = np.concatenate(([0.0], delta_theta, [0.0]))  # pad to length N
         is_angle_anom = (angle_diff > angle_k * mad_eps) | np.isnan(angle_diff) | (delta_theta > theta_thresh)

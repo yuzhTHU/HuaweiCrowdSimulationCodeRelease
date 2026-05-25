@@ -36,31 +36,31 @@
     const saveRangeMax = document.getElementById('saveRangeMax');
     const saveFrameRangeVal = document.getElementById('saveFrameRangeVal');
     const confirmSaveTrajBtn = document.getElementById('confirmSaveTrajBtn');
-    let contextMenuTargetName = null; // 右键点击的目标 dataset name
+    let contextMenuTargetName = null; // Target dataset name for the right-click action.
 
-    // WebSocket 相关状态
+    // WebSocket state.
     let ws = null;
     let wsConnected = false;
     let reconnectAttempts = 0;
     let reconnectTimer = null;
     let pingIntervalId = null;
 
-    // 播放状态
+    // Playback state.
     let playTimer = null;
     let isPlaying = false;
     let playbackSpeed = parseFloat(playbackSpeedValue.textContent);
 
-    // 数据缓存与运行状态
+    // Cached data and runtime state.
     const DATA_CACHE = {};  // { name: { name, fps, map, frames: { frameNumber: { id: {type, x, y}, ... } }, destinations, currentFrame, sliderId } }
-    let ACTIVE_NAME = null; // 当前选中的 name
-    let ARGS_LOADED = null; // 当前加载的模型参数
-    let MODEL_LOADED = null; // 当前加载的模型
-    let SIMULATION_RUNNING = false; // 是否有模拟在运行中
+    let ACTIVE_NAME = null; // Currently selected name.
+    let ARGS_LOADED = null; // Currently loaded model parameters.
+    let MODEL_LOADED = null; // Currently loaded model.
+    let SIMULATION_RUNNING = false; // Whether a simulation is currently running.
 
-    // Plotly 图表实例
+    // Plotly plot instance.
     let myPlot;
 
-    // 目的地拖动状态
+    // Destination-dragging state.
     let dragData = {
         isDragging: false,
         targetPedId: null,
@@ -106,12 +106,12 @@
         if (ACTIVE_NAME) render(ACTIVE_NAME);
     });
 
-    // Auto View Control: 状态改变时立即重绘以应用设置（例如取消勾选时立即复位视图）
+    // Auto View Control: redraw immediately when the state changes so the setting takes effect right away.
     autoViewCheckbox.addEventListener('change', () => {
         if (ACTIVE_NAME) render(ACTIVE_NAME);
     });
 
-    // 日志输出
+    // Log output.
     function log(...args) {
         const t = new Date().toLocaleString();
         const s = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
@@ -120,56 +120,56 @@
         console.debug(...args);
     }
 
-    // WebSocket 连接与消息处理
+    // WebSocket connection and message handling.
     function connectWebsocket() {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = `${proto}//${location.host}/ws`;
-        log('尝试连接 WebSocket:', url);
+        log('Attempting to connect WebSocket:', url);
         ws = new WebSocket(url);
         ws.onopen = () => {
             wsConnected = true;
             reconnectAttempts = 0;
-            log('WebSocket 已连接');
+            log('WebSocket connected');
             startPing();
             // updateButtonsState();
         };
         ws.onclose = (ev) => {
             wsConnected = false;
-            log('WebSocket 已断开', ev.code, ev.reason || '');
+            log('WebSocket disconnected', ev.code, ev.reason || '');
             // updateButtonsState();
             scheduleReconnect();
             stopPing();
         };
         ws.onerror = (err) => {
-            log('WebSocket 错误', err && err.message ? err.message : err);
+            log('WebSocket error', err && err.message ? err.message : err);
             // updateButtonsState();
             scheduleReconnect();
             stopPing();
         };
         ws.onmessage = (ev) => {
             try {
-                const msg = JSON.parse(ev.data); // 后端发送的格式通常是 {status: 'ok'|'error', data: response, msg: '...'}
+                const msg = JSON.parse(ev.data); // The backend usually sends `{status: 'ok'|'error', data: response, msg: '...'}`.
                 if (msg.msg) { log('Server:', msg.msg); }
                 if (msg.data) { mergeAndHandleResponse(msg.data); }
             } catch (e) {
-                log('收到无法解析的 WebSocket 消息:', ev.data);
+                log('Received an unparseable WebSocket message:', ev.data);
             }
         };
     }
 
-    // 自动重连机制
+    // Automatic reconnect mechanism.
     function scheduleReconnect() {
         if (reconnectTimer) return;
         reconnectAttempts += 1;
-        const delay = Math.min(30000, 1000 * Math.pow(1.6, Math.min(reconnectAttempts, 10))); // 指数回退，最大30s
-        log(`WebSocket 将在 ${Math.round(delay / 1000)}s 后重试连接 (第 ${reconnectAttempts} 次)`);
+        const delay = Math.min(30000, 1000 * Math.pow(1.6, Math.min(reconnectAttempts, 10))); // Exponential backoff, capped at 30s.
+        log(`WebSocket will retry in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempts})`);
         reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
             connectWebsocket();
         }, delay);
     }
 
-    // 简单的心跳 (向服务器发送 ping，服务器会回复 pong)
+    // Simple heartbeat: send `ping` to the server and expect `pong`.
     function startPing() {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         if (pingIntervalId) clearInterval(pingIntervalId);
@@ -188,50 +188,50 @@
         }
     }
 
-    // 将后端的 response 合并缓存并创建/更新滑块与地图
+    // Merge the backend response into the cache and create/update sliders and the map.
     function mergeAndHandleResponse(response) {
         const name = response.name;
-        // 新的缓存项
+        // New cache entry.
         if (!DATA_CACHE[name]) {
             DATA_CACHE[name] = {
                 name: response.name,
                 map: null,
                 frames: {},
-                destinations: {},  // 存储目的地数据
+                destinations: {},  // Store destination data.
                 currentFrame: null,
                 sliderId: null,
                 fps: response.fps || 10,
-                has_high_res_map: false,  // 是否有高分辨率原图
+                has_high_res_map: false,  // Whether a high-resolution source image is available.
             };
         }
-        // 更新 map
+        // Update map.
         if (response.map) {
             DATA_CACHE[name].map = response.map;
         }
         if (response.fps) {
             DATA_CACHE[name].fps = response.fps;
         }
-        // 更新 high_res_map_path
+        // Update `high_res_map_path`.
         if (response.has_high_res_map !== undefined) {
             DATA_CACHE[name].has_high_res_map = response.has_high_res_map;
         }
-        // 更新 destinations (如果后端提供)
+        // Update destinations if provided by the backend.
         if (response.destinations) {
             DATA_CACHE[name].destinations = response.destinations;
         }
-        // 更新 frames 和 currentFrame
+        // Update `frames` and `currentFrame`.
         const frames = response.frames || {};
         for (const fkey of Object.keys(frames)) {
             const fnum = Number(fkey);
             DATA_CACHE[name].frames[fnum] = frames[fkey];
-            DATA_CACHE[name].currentFrame = fnum; // 更新当前帧到最新传来的帧
+            DATA_CACHE[name].currentFrame = fnum; // Update the current frame to the latest frame received.
         }
-        // 缓存高分辨率地图 URL
+        // Cache the high-resolution map URL.
         const item = DATA_CACHE[name];
         if (item.has_high_res_map) {
             item.high_res_map_url = `/api/get_high_res_map?dataset_name=${encodeURIComponent(name)}`;
         }
-        // 创建 / 更新滑块
+        // Create / update the slider.
         if (!DATA_CACHE[name].sliderId) { // 如果没有 slider，则创建
             createSliderForResponse(name);
             // 检查是否有原图，启用 checkbox

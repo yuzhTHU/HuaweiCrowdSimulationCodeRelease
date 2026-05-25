@@ -2,12 +2,13 @@ import argparse
 
 def add_minus_flags(parser: argparse.ArgumentParser):
     """
-    自动为 argparse.ArgumentParser 中含有下划线的参数添加别名。例如：
-    --fix_existing -> 添加别名 --fix-existing
-    --augment_OD_num -> 添加别名 --augment-OD-num
+    Automatically add aliases for argparse options that contain underscores.
+    For example:
+    `--fix_existing` -> add alias `--fix-existing`
+    `--augment_OD_num` -> add alias `--augment-OD-num`
     """
     for action in parser._actions:
-        # 仅处理可选参数（以 '-' 开头的参数）
+        # Only process optional arguments, i.e. those starting with `-`.
         if not action.option_strings:
             continue
         aliases_to_add = []
@@ -24,33 +25,33 @@ def add_minus_flags(parser: argparse.ArgumentParser):
 
 def add_negation_flags(parser: argparse.ArgumentParser):
     """
-    自动为 parser 中的 store_true 参数添加对应的 --no-xxx 选项。
+    Automatically add matching `--no-xxx` options for `store_true` flags.
     """
     args_to_add = []
     
-    # 建立现有 flag 索引，防止重复添加
+    # Build an index of existing flags to avoid duplicates.
     existing_flags = set()
     for action in parser._actions:
         existing_flags.update(action.option_strings)
     for action in parser._actions:
         if isinstance(action, argparse._StoreTrueAction):
-            # 为当前 action 收集所有可能的否定别名
+            # Collect all possible negated aliases for the current action.
             negation_aliases = []
             for option in action.option_strings:
                 if not option.startswith('--'): 
                     continue
-                # 生成否定形式：--use_new_model -> --no-use_new_model
+                # Generate the negated form: `--use_new_model` -> `--no-use_new_model`
                 raw_name = option.removeprefix('--')
                 neg_opt = f'--no-{raw_name}'
-                # 只有当这个 flag 还不存在时才添加
+                # Add it only if the flag does not already exist.
                 if neg_opt not in existing_flags:
                     negation_aliases.append(neg_opt)
-            # 如果生成了有效的否定别名，将它们打包准备添加
+            # If valid negated aliases were generated, queue them for addition.
             if negation_aliases:
-                # 选取第一个选项名作为帮助文档显示的名称
+                # Use the first option name as the help display name.
                 primary_name = action.option_strings[0].removeprefix('--')
                 args_to_add.append({
-                    'options': negation_aliases,  # 这里是一个列表
+                    'options': negation_aliases,  # This is a list.
                     'dest': action.dest,
                     'action': 'store_false',
                     'default': action.default,
