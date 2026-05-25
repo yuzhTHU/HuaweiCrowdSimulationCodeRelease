@@ -11,11 +11,11 @@ _logger = logging.getLogger(__name__)
 
 class AutoGPU:
     """
-    自动显存管理工具，用于选择剩余显存充足的 GPU。
+    Automatic GPU memory manager used to select a GPU with sufficient free memory.
     """
     def __init__(self):
         """
-        初始化 AutoGPU，获取当前可见的 CUDA 设备列表。
+        Initialize AutoGPU and get the currently visible CUDA device list.
         """
         visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
         if visible_devices:
@@ -29,17 +29,18 @@ class AutoGPU:
     @staticmethod
     def allocate_gpu(device, memory_MB: int, block_MB: int = None):
         """
-        [内部方法] 在指定设备上分配显存占位符。
-        
-        用于通过实际分配显存来测试显存是否确实可用，或者用于抢占显存。
-        
+        [Internal method] Allocate placeholder memory on the target device.
+
+        This is used to verify that memory is truly available by actually
+        allocating it, or to proactively reserve GPU memory.
+
         Args:
-            device (str or torch.device): 目标设备。
-            memory_MB (int): 需要分配的显存大小 (MB)。
-            block_MB (int, optional): 分块大小。如果为 None，则一次性分配。
-        
+            device (str or torch.device): Target device.
+            memory_MB (int): Amount of memory to allocate in MB.
+            block_MB (int, optional): Block size. If None, allocate in one shot.
+
         Returns:
-            torch.Tensor or List[torch.Tensor]: 占用的显存张量引用。
+            torch.Tensor or List[torch.Tensor]: References to the allocated tensors.
         """
         if block_MB is None:
             return torch.zeros(memory_MB, 1024, 256, dtype=torch.float32, device=device)
@@ -57,19 +58,20 @@ class AutoGPU:
 
     def choice_gpu(self, memory_MB, interval=600, force=True):
         """
-        选择一个具有足够剩余显存的 GPU。
-        
-        该方法不仅查询 `nvidia-smi`，还会尝试实际分配显存以确保可用性。
-        如果所有 GPU 都忙，且 force=True，则会阻塞等待。
+        Select a GPU with enough free memory.
+
+        This method not only queries `nvidia-smi`, but also tries to allocate
+        memory to verify actual availability. If all GPUs are busy and
+        `force=True`, it blocks and waits.
 
         Args:
-            memory_MB (int): 任务所需的最小显存 (MB)。
-            interval (int, optional): 轮询检查的间隔时间 (秒)。默认为 600。
-            force (bool, optional): 是否强制等待直到有 GPU 可用。
-                如果为 False 且无可用 GPU，将返回 "cpu"。默认为 True。
+            memory_MB (int): Minimum memory required by the task in MB.
+            interval (int, optional): Polling interval in seconds. Default is 600.
+            force (bool, optional): Whether to wait until a GPU becomes available.
+                If False and no GPU is available, returns "cpu". Default is True.
 
         Returns:
-            str: 选定的设备字符串，如 "cuda:0" 或 "cpu"。
+            str: Selected device string, such as "cuda:0" or "cpu".
         """
         waiting = False
         while True:
@@ -90,7 +92,7 @@ class AutoGPU:
                     del allocation
                     torch.cuda.reset_peak_memory_stats(
                         device
-                    )  # 不要让 allocation 影响 torch.cuda.max_memory_allocated
+                    )  # Keep allocation from affecting torch.cuda.max_memory_allocated
                     return device
                 except Exception:
                     torch.cuda.empty_cache()

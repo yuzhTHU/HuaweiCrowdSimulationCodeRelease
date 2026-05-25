@@ -66,17 +66,18 @@ class DDPM:
         q(x_t | x_0) = N(x_t; sqrt(alpha_bar_t) * x_0, (1 - alpha_bar_t) * I)
 
         Args:
-            x0 (torch.FloatTensor): 原始数据 (t=0)。
-                Shape: (batch_size, ...) 任意维度。
-            denoise_t (torch.LongTensor, optional): 指定的时间步 t。
-                如果为 None，则根据 args.antithetic_sampling 策略随机采样 t。
+            x0 (torch.FloatTensor): Original clean data (t=0).
+                Shape: (batch_size, ...) with arbitrary dimensions.
+            denoise_t (torch.LongTensor, optional): Specified timestep t.
+                If None, t is sampled randomly according to the
+                `args.antithetic_sampling` strategy.
                 Shape: (batch_size, )。
 
         Returns:
             tuple:
-                - xt (torch.FloatTensor): 加噪后的数据。Shape 与 x0 相同。
-                - noise (torch.FloatTensor): 添加的标准高斯噪声 epsilon。Shape 与 x0 相同。
-                - denoise_t (torch.LongTensor): 实际使用的时间步 t。Shape: (batch_size, )。
+                - xt (torch.FloatTensor): Noisy data. Same shape as x0.
+                - noise (torch.FloatTensor): Added standard Gaussian noise epsilon. Same shape as x0.
+                - denoise_t (torch.LongTensor): Actual timestep t used. Shape: (batch_size, ).
         """
         if denoise_t is not None:
             raise NotImplementedError("Specifying `denoise_t` explicitly is not implemented yet.")
@@ -99,24 +100,24 @@ class DDPM:
 
     def denoise(self, xt, denoise_t, x0=None, noise=None, stride=1):
         """
-        DDPM 反向过程：根据预测的 x0 或噪声，从 x_t 采样 x_{t-stride}。
-        
+        DDPM reverse process: sample x_{t-stride} from x_t using the predicted x0 or noise.
+
         p_theta(x_{t-1} | x_t) = N(x_{t-1}; mu_theta(x_t, t), sigma_t^2 * I)
-        
+
         Args:
-            xt (torch.FloatTensor): 当前时间步 t 的带噪数据。
+            xt (torch.FloatTensor): Noisy data at the current timestep t.
                 Shape: (batch_size, ...)
-            denoise_t (torch.LongTensor): 当前时间步 t 的索引。
+            denoise_t (torch.LongTensor): Index of the current timestep t.
                 Shape: (batch_size, )
-            x0 (torch.FloatTensor, optional): 模型预测的原始数据 x0。
-            noise (torch.FloatTensor, optional): 模型预测的噪声 epsilon。
-                注意：x0 和 noise 必须且只能提供其中一个。
-            stride (int, optional): 反向去噪的步长，默认为 1。
-                用于加速采样的跳步策略。
+            x0 (torch.FloatTensor, optional): Model-predicted original data x0.
+            noise (torch.FloatTensor, optional): Model-predicted noise epsilon.
+                Note: exactly one of x0 and noise must be provided.
+            stride (int, optional): Reverse denoising step size. Default is 1.
+                Used as a skip-step strategy to accelerate sampling.
 
         Returns:
-            torch.FloatTensor: 去噪后的上一时刻数据 x_{t-stride}。
-                Shape 与 xt 相同。
+            torch.FloatTensor: Denoised data at the previous step x_{t-stride}.
+                Same shape as xt.
         """
         if not ((x0 is None) ^ (noise is None)):
             raise ValueError("Exactly one of `x0` and `noise` must be provided.")
@@ -143,17 +144,17 @@ class DDPM:
 
     def noise_to_x0(self, xt, denoise_t, noise):
         """
-        根据当前带噪数据 xt 和预测的噪声 epsilon，推导原始数据 x0。
-        
+        Infer the original data x0 from the current noisy data xt and predicted noise epsilon.
+
         x_0 = (x_t - sqrt(1 - alpha_bar_t) * epsilon) / sqrt(alpha_bar_t)
 
         Args:
-            xt (torch.FloatTensor): 带噪数据 x_t。
-            denoise_t (torch.LongTensor or int): 时间步 t。
-            noise (torch.FloatTensor): 预测的噪声 epsilon。
+            xt (torch.FloatTensor): Noisy data x_t.
+            denoise_t (torch.LongTensor or int): Timestep t.
+            noise (torch.FloatTensor): Predicted noise epsilon.
 
         Returns:
-            torch.FloatTensor: 估计的原始数据 x0。
+            torch.FloatTensor: Estimated original data x0.
         """
         if (
             (isinstance(denoise_t, int) and (denoise_t == 0)) or
@@ -168,17 +169,17 @@ class DDPM:
 
     def x0_to_noise(self, xt, denoise_t, x0):
         """
-        根据当前带噪数据 xt 和估计的 x0，反推隐含的噪声 epsilon。
-        
+        Infer the latent noise epsilon from the current noisy data xt and estimated x0.
+
         epsilon = (x_t - sqrt(alpha_bar_t) * x_0) / sqrt(1 - alpha_bar_t)
 
         Args:
-            xt (torch.FloatTensor): 带噪数据 x_t。
-            denoise_t (torch.LongTensor or int): 时间步 t。
-            x0 (torch.FloatTensor): 估计的原始数据 x0。
+            xt (torch.FloatTensor): Noisy data x_t.
+            denoise_t (torch.LongTensor or int): Timestep t.
+            x0 (torch.FloatTensor): Estimated original data x0.
 
         Returns:
-            torch.FloatTensor: 隐含的噪声 epsilon。
+            torch.FloatTensor: Inferred latent noise epsilon.
         """
         if (
             (isinstance(denoise_t, int) and (denoise_t == 0)) or
@@ -194,14 +195,15 @@ class DDPM:
     @staticmethod
     def cosine_beta_schedule(T, s=0.008):
         """
-        生成余弦退火的 Beta 调度表。
-        
+        Generate a cosine annealing beta schedule.
+
         Args:
-            T (int): 总时间步数。
-            s (float, optional): 偏移量，防止 t=0 时 beta 太小。默认为 0.008。
+            T (int): Total number of timesteps.
+            s (float, optional): Offset used to prevent beta from becoming too
+                small at t=0. Default is 0.008.
 
         Returns:
-            torch.FloatTensor: Beta 值序列。Shape: (T,)
+            torch.FloatTensor: Sequence of beta values. Shape: (T,)
         """
         # steps = T + 1
         # x = torch.linspace(0, T, steps)
@@ -221,14 +223,14 @@ class DDPM:
     @staticmethod
     def linear_beta_schedule(T, beta_start=0.0001, beta_end=0.05):
         """
-        生成线性增长的 Beta 调度表。
+        Generate a linearly increasing beta schedule.
 
         Args:
-            T (int): 总时间步数。
-            beta_start (float, optional): 初始 Beta 值。默认为 1e-4。
-            beta_end (float, optional): 最终 Beta 值。默认为 0.05。
+            T (int): Total number of timesteps.
+            beta_start (float, optional): Initial beta value. Default is 1e-4.
+            beta_end (float, optional): Final beta value. Default is 0.05.
 
         Returns:
-            torch.FloatTensor: Beta 值序列。Shape: (T,)
+            torch.FloatTensor: Sequence of beta values. Shape: (T,)
         """
         return torch.linspace(beta_start, beta_end, T)

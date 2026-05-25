@@ -232,14 +232,14 @@
             item.high_res_map_url = `/api/get_high_res_map?dataset_name=${encodeURIComponent(name)}`;
         }
         // Create / update the slider.
-        if (!DATA_CACHE[name].sliderId) { // 如果没有 slider，则创建
+        if (!DATA_CACHE[name].sliderId) { // Create the slider if it does not exist yet.
             createSliderForResponse(name);
-            // 检查是否有原图，启用 checkbox
+            // Check whether the original image exists and enable the checkbox accordingly.
             updateHighResMapCheckbox(name);
-        } else { // 更新 slider 的 max (如果需要) 并把滑块值设置到最新 currentFrame
+        } else { // Update the slider max if needed and set it to the latest currentFrame.
             updateSliderRangeAndValue(name);
         }
-        // 重新渲染地图
+        // Re-render the map.
         render(name);
     }
 
@@ -248,18 +248,18 @@
         const item = DATA_CACHE[name];
         if (item && item.has_high_res_map) {
             showHighResMapCheckbox.disabled = false;
-            showHighResMapCheckbox.title = '可用高分辨率原图';
+            showHighResMapCheckbox.title = 'High-resolution original image available';
             highResMapOpacityRow.style.display = 'flex';
             highResMapOpacityRow.style.alignItems = 'center';
         } else {
             showHighResMapCheckbox.disabled = true;
             showHighResMapCheckbox.checked = false;
-            showHighResMapCheckbox.title = '该数据集没有原图';
+            showHighResMapCheckbox.title = 'This dataset has no original image';
             highResMapOpacityRow.style.display = 'none';
         }
     }
 
-    // UI: 创建滑块、管理滑块事件
+    // UI: create sliders and manage slider events.
     function createSliderForResponse(name) {
         const item = DATA_CACHE[name];
         const frameKeys = Object.keys(item.frames).map(k => Number(k)).sort((a, b) => a - b);
@@ -270,8 +270,8 @@
         // DOM
         const wrap = document.createElement('div');
         wrap.className = 'slider-wrap';
-        wrap.dataset.name = name; // 绑定 dataset name 用于右键菜单
-        wrap.draggable = false;  // 允许拖动  
+        wrap.dataset.name = name; // Bind the dataset name for the context menu.
+        wrap.draggable = false;  // Do not allow dragging on the wrapper itself.
 
         const header = document.createElement('div');
         header.style.display = 'flex';
@@ -281,14 +281,14 @@
         const label = document.createElement('div');
         label.className = 'slider-label';
         label.textContent = name;
-        label.draggable = true; // 允许拖动 
+        label.draggable = true; // Allow dragging from the label.
 
         const closeBtn = document.createElement('button');
         closeBtn.textContent = '✖';
         closeBtn.className = 'btn btn-sm btn-outline-danger';
         closeBtn.style.padding = '0 6px';
         closeBtn.style.lineHeight = '1';
-        closeBtn.title = '删除此滑块';
+        closeBtn.title = 'Remove this slider';
 
         header.appendChild(label);
         header.appendChild(closeBtn);
@@ -305,21 +305,21 @@
         item.sliderId = slider.id;
 
         const valueSpan = document.createElement('span');
-        valueSpan.textContent = `当前帧: ${cur} (${min}~${max})`;
+        valueSpan.textContent = `Current frame: ${cur} (${min}~${max})`;
         valueSpan.style.marginLeft = '8px';
 
         wrap.appendChild(slider);
         wrap.appendChild(valueSpan);
         slidersDiv.appendChild(wrap);
 
-        // === 删除按钮事件 ===
+        // === Remove button event ===
         closeBtn.addEventListener('click', () => {
             wrap.remove();
-            delete DATA_CACHE[name]; // 可选
+            delete DATA_CACHE[name]; // Optional.
             if (ACTIVE_NAME === name) ACTIVE_NAME = null;
         });
 
-        // === 拖动事件 ===
+        // === Drag events ===
         label.addEventListener('dragstart', (ev) => {
             ev.dataTransfer.setData('text/plain', name);
             wrap.classList.add('dragging');
@@ -328,40 +328,40 @@
         // slider.addEventListener('mousedown', (ev) => ev.stopPropagation());
         // slider.addEventListener('touchstart', (ev) => ev.stopPropagation());
 
-        // === 右键菜单事件 ===
+        // === Context menu event ===
         wrap.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             contextMenuTargetName = name;
-            // 简单的菜单定位
+            // Simple menu positioning.
             contextMenu.style.display = 'block';
             contextMenu.style.left = e.pageX + 'px';
             contextMenu.style.top = e.pageY + 'px';
         });
 
-        // === 滑动事件 ===
+        // === Slider event ===
         slider.addEventListener('input', (ev) => {
             const v = Number(ev.target.value);
             item.currentFrame = v;
-            valueSpan.textContent = `当前帧: ${v} (${min}~${max})`;
+            valueSpan.textContent = `Current frame: ${v} (${min}~${max})`;
             render(name);
         });
         slider.addEventListener('mousedown', () => render(name));
         slider.addEventListener('touchstart', () => render(name));
     }
 
-    // 全局点击关闭右键菜单
+    // Close the context menu on global click.
     document.addEventListener('click', () => {
         contextMenu.style.display = 'none';
     });
 
-    // 右键菜单项点击
+    // Context menu item click.
     ctxSaveTraj.addEventListener('click', () => {
         if (contextMenuTargetName && DATA_CACHE[contextMenuTargetName]) {
             openSaveModal(contextMenuTargetName);
         }
     });
 
-    // === 打开保存模态框逻辑 ===
+    // === Open save modal logic ===
     function openSaveModal(name) {
         saveModalDatasetName.textContent = name;
         const item = DATA_CACHE[name];
@@ -369,7 +369,7 @@
         const min = frameKeys.length ? frameKeys[0] : 0;
         const max = frameKeys.length ? frameKeys[frameKeys.length - 1] : min;
         
-        // 设置范围滑块属性
+        // Set range slider attributes.
         saveRangeMin.min = min; saveRangeMin.max = max;
         saveRangeMax.min = min; saveRangeMax.max = max;
         saveRangeMin.value = min;
@@ -377,27 +377,27 @@
         
         updateDualSliderUI(min, max);
         
-        // 激活当前 dataset 视图以便预览
+        // Activate the current dataset view for preview.
         render(name);
         
         saveTrajModal.show();
     }
 
-    // 双柄滑块逻辑
+    // Dual-handle slider logic.
     function updateDualSliderUI(min, max) {
         let vMin = parseInt(saveRangeMin.value);
         let vMax = parseInt(saveRangeMax.value);
         
-        // 限制交叉
+        // Prevent the two handles from crossing.
         if (vMin > vMax) {
-             // 简单的互斥逻辑：谁动了改谁，这里简单处理
-             // 我们在 input 事件里处理更合适
+             // Simple mutual exclusion logic: adjust whichever handle moved.
+             // It is cleaner to handle this in the input event.
         }
         
         saveFrameRangeVal.textContent = `${vMin} - ${vMax}`;
     }
 
-    // 监听双柄滑块变化
+    // Listen for dual-handle slider changes.
     function handleDualSliderInput(e) {
         const item = DATA_CACHE[contextMenuTargetName];
         let vMin = parseInt(saveRangeMin.value);
@@ -415,11 +415,12 @@
         
         saveFrameRangeVal.textContent = `${vMin} - ${vMax}`;
         
-        // 实时更新主视图
-        // 如果动的是 min，显示 min 帧；动的是 max，显示 max 帧
+        // Update the main view in real time.
+        // If the min handle moved, show the min frame; if the max handle moved, show the max frame.
         if (item) {
             item.currentFrame = (e.target === saveRangeMin) ? vMin : vMax;
-            // 更新该 dataset 对应的 slider UI（虽然在模态框里看不到，但保持状态一致）
+            // Update the main slider UI for this dataset to keep the state consistent,
+            // even though it is not visible inside the modal.
             const mainSlider = document.getElementById(item.sliderId);
             if(mainSlider) mainSlider.value = item.currentFrame;
             render(contextMenuTargetName);
@@ -429,7 +430,7 @@
     saveRangeMin.addEventListener('input', handleDualSliderInput);
     saveRangeMax.addEventListener('input', handleDualSliderInput);
 
-    // 确定保存
+    // Confirm save.
     confirmSaveTrajBtn.addEventListener('click', async () => {
         const name = saveModalDatasetName.textContent;
         const start = parseInt(saveRangeMin.value);
@@ -445,10 +446,10 @@
             compress: compress
         };
 
-        // 关闭模态框
+        // Close the modal.
         saveTrajModal.hide();
         
-        log(`正在请求保存轨迹: ${name} [${start}-${end}] -> ${dest}`);
+        log(`Requesting trajectory save: ${name} [${start}-${end}] -> ${dest}`);
 
         try {
             const res = await fetch('/api/save_trajectory', {
@@ -460,7 +461,7 @@
             if (dest === 'local') {
                 if (res.ok) {
                     const blob = await res.blob();
-                    // 从 Content-Disposition 获取文件名
+                    // Get the filename from Content-Disposition.
                     const disposition = res.headers.get('Content-Disposition');
                     let filename = `trajectory.csv${compress ? '.tz' : ''}`;
                     if (disposition && disposition.indexOf('attachment') !== -1) {
@@ -469,7 +470,7 @@
                             filename = matches[1].replace(/['"]/g, '');
                         }
                     }
-                    // 触发下载
+                    // Trigger the download.
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
@@ -478,28 +479,28 @@
                     a.click();
                     a.remove();
                     window.URL.revokeObjectURL(url);
-                    log('下载已开始。');
+                    log('Download started.');
                 } else {
                     const err = await res.json();
-                    alert('下载失败: ' + (err.msg || 'Unknown error'));
+                    alert('Download failed: ' + (err.msg || 'Unknown error'));
                 }
             } else {
                 const msg = await res.json();
                 if (msg.status === 'ok') {
-                    log('保存成功:', msg.msg);
-                    alert('保存成功: ' + msg.msg);
+                    log('Save succeeded:', msg.msg);
+                    alert('Save succeeded: ' + msg.msg);
                 } else {
-                    alert('保存失败: ' + msg.msg);
+                    alert('Save failed: ' + msg.msg);
                 }
             }
         } catch (e) {
             console.error(e);
-            alert('请求发送失败');
+            alert('Failed to send request');
         }
     });
 
 
-    // === 全局：为 slidersDiv 启用拖拽排序 ===
+    // === Global: enable drag-and-drop sorting for slidersDiv ===
     slidersDiv.addEventListener('dragover', (ev) => {
         ev.preventDefault();
         const dragging = document.querySelector('.dragging');
@@ -540,41 +541,41 @@
         const label = wrap.querySelector('.slider-label');
         if (label) label.textContent = `${name}`;
         const span = wrap.querySelector('span');
-        if (span) span.textContent = `当前帧: ${cur} (${min}~${max})`;
+        if (span) span.textContent = `Current frame: ${cur} (${min}~${max})`;
     }
 
-    // UI: 高亮当前活动滑块
+    // UI: highlight the currently active slider.
     function highlightSlider() {
         const item = DATA_CACHE[ACTIVE_NAME];
         if(!item) return;
         const sliderWraps = slidersDiv.querySelectorAll('.slider-wrap');
         sliderWraps.forEach(wrap => {
             if (wrap.contains(document.getElementById(item.sliderId))) {
-                // 当前滑块高亮
+                // Highlight the current slider.
                 wrap.style.border = '2px solid #007bff';
                 wrap.style.backgroundColor = '#e7f1ff';
             } else {
-                // 取消高亮
+                // Remove highlight.
                 wrap.style.border = '1px solid #dee2e6';
                 wrap.style.backgroundColor = '#ffffff';
             }
         });
     }
 
-    // 渲染函数：根据 ACTIVE_NAME 渲染地图和轨迹
+    // Render function: render the map and trajectories based on ACTIVE_NAME.
     function render(name) {
         if (ACTIVE_NAME !== name) {
             ACTIVE_NAME = name;
-            log(`切换至数据集：${name}`);
+            log(`Switched to dataset: ${name}`);
             highlightSlider();
         }
         renderTrace();
     }
 
-    // 渲染实体轨迹 (Plotly)
+    // Render entity trajectories (Plotly).
     function renderTrace() {
         if (!ACTIVE_NAME || !DATA_CACHE[ACTIVE_NAME]) {
-            Plotly.react(mapDiv, [], { title: "暂无数据" });
+            Plotly.react(mapDiv, [], { title: "No data available" });
             return;
         }
         const plotData = [];
@@ -584,7 +585,7 @@
         const trailSec = Number(trailSlider.value);
         const trailFrames = Math.round(trailSec * fps);
         // if (!entities) {
-        //     Plotly.react(mapDiv, [], { title: `${ACTIVE_NAME} - 当前帧无数据` });
+        //     Plotly.react(mapDiv, [], { title: `${ACTIVE_NAME} - No data for the current frame` });
         //     return;
         // }
 
@@ -636,18 +637,18 @@
         
         const currentEntities = item.frames[currentFrame] || [];
 
-        // 1. 找到当前帧所有活动的个体，为每个个体维护一个 trace
+        // 1. Find all active entities in the current frame and maintain a trace for each one.
         const activeTraces = {};
         for (const e in currentEntities) {
             activeTraces[e] = { x: [], y: [] };
         }
 
-        // 2. 从当前帧向历史枚举指定长度的帧
+        // 2. Enumerate backward from the current frame over the specified trail length.
         const startF = Math.max(0, currentFrame - trailFrames);
         for (let f = currentFrame; f >= startF; f--) {
             const frameData = item.frames[f];
             if (!frameData) continue;
-            // 3. 对于选定的历史帧，检查活动个体在这一帧是否出现
+            // 3. For each selected historical frame, check whether active entities appear in that frame.
             for (const e in frameData) {
                 if (activeTraces[e]) {
                     activeTraces[e].x.push(frameData[e].x);
@@ -656,7 +657,7 @@
             }
         }
 
-        // 4. 枚举完后，将每个个体的 trace 添加到绘图
+        // 4. After enumeration, add each entity trace to the plot.
         for (const e in currentEntities) {
             const trace = activeTraces[e];
             if (trace.x.length > 1) {
@@ -758,9 +759,9 @@
             });
         }
 
-        // 计算行人点在当前缩放下的像素大小（固定 0.3m 直径）
+        // Compute pedestrian marker size in pixels at the current zoom level (fixed 0.3m diameter).
         const PEDESTRIAN_DIAMETER_METERS = 0.3;
-        let pedMarkerSize = 6;  // 默认最小像素大小
+        let pedMarkerSize = 6;  // Default minimum pixel size.
         if (myPlot) {
             const xaxis = myPlot._fullLayout?.xaxis;
             const yaxis = myPlot._fullLayout?.yaxis;
@@ -773,7 +774,7 @@
             }
         }
 
-        // Pedestrian Dots (固定 0.3m 直径，随缩放变化)
+        // Pedestrian dots (fixed 0.3m diameter, changes with zoom).
         if (pedX.length > 0) {
             plotData.push({
                 x: pedX,
@@ -824,7 +825,7 @@
                     line: {
                         color: 'rgba(128, 128, 128, 0.6)',
                         width: 1.5,
-                        dash: 'solid'  // 灰色实线
+                        dash: 'solid'  // Gray solid line.
                     },
                     hoverinfo: 'none',
                     name: 'To Destination',
@@ -837,12 +838,12 @@
                 plotData.push({
                     x: desX,
                     y: desY,
-                    ids: Object.keys(item.destinations),  // 使用目的地的 ID
+                    ids: Object.keys(item.destinations),  // Use destination IDs.
                     mode: 'markers',
                     marker: {
                         size: 12,
                         color: 'rgb(255, 0, 0)',
-                        symbol: 'x'  // 红色叉号
+                        symbol: 'x'  // Red cross marker.
                     },
                     text: desText,
                     hoverinfo: 'text',
@@ -870,45 +871,45 @@
                 source: item.high_res_map_url,
                 xref: 'x',
                 yref: 'y',
-                x: mapInfo.xmin,          // 图像左边界
-                y: mapInfo.ymax,          // 图像上边界（使用 yanchor: 'top'）
+                x: mapInfo.xmin,          // Left boundary of the image.
+                y: mapInfo.ymax,          // Upper boundary of the image (with yanchor: 'top').
                 sizex: mapInfo.xmax - mapInfo.xmin,
                 sizey: mapInfo.ymax - mapInfo.ymin,
-                xanchor: 'left',          // 锚点在左边缘
-                yanchor: 'top',           // 锚点在上边缘（关键：使 y 坐标对应图像顶部）
+                xanchor: 'left',          // Anchor at the left edge.
+                yanchor: 'top',           // Anchor at the top edge, so the y coordinate matches the top of the image.
                 sizing: 'stretch',
                 opacity: opacity,
-                layer: 'below'            // 显示在轨迹下方
+                layer: 'below'            // Display below the trajectories.
             }];
         } else {
-            layout.images = [];  // 未勾选时清除图片
+            layout.images = [];  // Clear the image when unchecked.
         }
         
         // const smooth = true;
         // if (smooth) {
         //     layout.transition = {
-        //         duration: 1000 / fps / playbackSpeed, // 动画时长等于帧间隔，例如 2.5fps -> 400ms
-        //         easing: 'linear'      // 线性移动，模拟匀速运动
+        //         duration: 1000 / fps / playbackSpeed, // Animation duration equals the frame interval, e.g. 2.5fps -> 400ms
+        //         easing: 'linear'      // Linear motion, simulating constant velocity
         //     };
         // } else {
-        //     layout.transition = { duration: 0 }; // 手动拖拽时立即响应
+        //     layout.transition = { duration: 0 }; // Respond immediately during manual dragging.
         // }
 
         if (myPlot) {
             Plotly.react(myPlot, plotData, layout);
-            // 永远禁用 Plotly 的拖动缩放，使用自定义的鼠标事件
+            // Always disable Plotly drag-zoom and use custom mouse events instead.
             Plotly.relayout(myPlot, { 'dragmode': false });
         } else {
             Plotly.newPlot(mapDiv, plotData, layout, {
                 responsive: true,
                 scrollZoom: true,
-                dragmode: false  // 禁用拖动缩放
+                dragmode: false  // Disable drag-zoom.
             })
             .then((plotElement) => {
                 myPlot = plotElement;
-                // 监听缩放事件，重新渲染以更新行人点大小
+                // Listen for zoom events and re-render to update pedestrian marker size.
                 myPlot.on('plotly_relayout', (eventData) => {
-                    // 只在 xaxis.range 或 yaxis.range 变化时重新渲染（表示缩放/平移）
+                    // Re-render only when xaxis.range or yaxis.range changes, indicating zoom or pan.
                     if (eventData['xaxis.range'] || eventData['yaxis.range'] ||
                         eventData['xaxis.range[0]'] || eventData['xaxis.range[1]'] ||
                         eventData['yaxis.range[0]'] || eventData['yaxis.range[1]']) {
@@ -919,14 +920,14 @@
         }
     }
 
-    // 拉取 dataset_list / model_list 并填充下拉框
+    // Fetch dataset_list / model_list and populate the dropdowns.
     async function loadLists() {
         try {
             const [dsr, mr] = await Promise.all([
                 fetch('/api/dataset_list').then(r => r.json()).catch(e => ({})),
                 fetch('/api/model_list').then(r => r.json()).catch(e => ({}))
             ]);
-            // dataset_list 返回的是一个对象 index->full_name
+            // dataset_list returns an object mapping index -> full_name.
             datasetSelect.innerHTML = '';
             for (const k of Object.keys(dsr)) {
                 const opt = document.createElement('option');
@@ -941,24 +942,24 @@
                 opt.textContent = mr[k];
                 modelSelect.appendChild(opt);
             }
-            log('已加载 dataset_list 和 model_list');
+            log('Loaded dataset_list and model_list');
         } catch (e) {
-            log('加载 dataset/model 列表失败:', e);
+            log('Failed to load dataset/model lists:', e);
         }
     }
 
-    // 从后端获取的 KEEP_ARGS 顺序
+    // KEEP_ARGS ordering fetched from the backend.
     let KEEP_ARGS_ORDER = null;
 
-    // 加载 dataset
+    // Load dataset.
     loadDatasetBtn.addEventListener('click', async () => {
         const idx = datasetSelect.value;
-        if (idx == null) { alert('请先选择数据集'); return; }
-        if (ARGS_LOADED == null) { alert('请先加载模型'); return; }
+        if (idx == null) { alert('Please select a dataset first'); return; }
+        if (ARGS_LOADED == null) { alert('Please load a model first'); return; }
         try {
-            // 将 name 设为一个唯一标识，后端会把它作为 key 保存在 DATASET_DICT[name]
+            // Set name to a unique identifier; the backend uses it as the key in DATASET_DICT[name].
             const name = datasetSelect.options[datasetSelect.selectedIndex].text || 'dataset';
-            log(`正在加载数据集 ${name} (idx=${idx}) ...`);
+            log(`Loading dataset ${name} (idx=${idx}) ...`);
             const res = await fetch(`/api/load_dataset?idx=${encodeURIComponent(idx)}&name=${encodeURIComponent(name)}`)
             const msg = await res.json();
             if (msg.status === 'ok') {
@@ -966,65 +967,65 @@
                     log('Server:', msg.msg || 'Dataset loaded.');
                     mergeAndHandleResponse(msg.response);
                 } else {
-                    log('警告: load_dataset 返回格式未包含 response 字段，请检查后端。', msg);
+                    log('Warning: load_dataset response does not include the response field. Please check the backend.', msg);
                 }
             } else {
-                log('加载数据集失败:', msg.msg || JSON.stringify(msg));
+                log('Failed to load dataset:', msg.msg || JSON.stringify(msg));
             }
         } catch (e) {
-            log('加载数据集请求失败:', e);
+            log('Dataset load request failed:', e);
         }
     });
 
-    // 加载 model
+    // Load model.
     loadModelBtn.addEventListener('click', async () => {
         const idx = modelSelect.value;
-        if (idx == null) { log('请先选择模型'); return; }
+        if (idx == null) { log('Please select a model first'); return; }
         try {
             const name = modelSelect.options[modelSelect.selectedIndex].text || 'model';
-            log(`正在加载模型权重 ${name} (idx=${idx}) ...`);
+            log(`Loading model weights ${name} (idx=${idx}) ...`);
             const res = await fetch(`/api/load_model?idx=${encodeURIComponent(idx)}`);
             const msg = await res.json();
             if (msg.status === 'ok') {
                 log('Server:', msg.msg || 'Model loaded.');
                 MODEL_LOADED = name;
                 ARGS_LOADED = msg.response;
-                KEEP_ARGS_ORDER = msg.keep_args_order || null;  // 保存参数顺序
-                log('当前模型参数:', ARGS_LOADED);
+                KEEP_ARGS_ORDER = msg.keep_args_order || null;  // Save the parameter order.
+                log('Current model parameters:', ARGS_LOADED);
                 editParamsBtn.classList.remove('d-none');
                 renderParamsEditor(ARGS_LOADED);
             } else {
-                log('加载模型失败:', msg.msg || msg);
+                log('Failed to load model:', msg.msg || msg);
             }
         } catch (e) {
-            log('加载模型请求失败:', e);
+            log('Model load request failed:', e);
         }
     });
 
-    // 渲染参数列表函数（按 KEEP_ARGS_ORDER 顺序显示）
+    // Render the parameter list in KEEP_ARGS_ORDER order.
     function renderParamsEditor(args) {
         paramsList.innerHTML = '';
 
-        // 使用 KEEP_ARGS_ORDER 定义的顺序，没有的 key 放在最后
+        // Use the order defined by KEEP_ARGS_ORDER, and place missing keys at the end.
         const orderedKeys = [];
         const remainingKeys = [];
 
         if (KEEP_ARGS_ORDER && Array.isArray(KEEP_ARGS_ORDER)) {
-            // 按 KEEP_ARGS_ORDER 顺序收集存在的 key
+            // Collect existing keys in KEEP_ARGS_ORDER order.
             for (const key of KEEP_ARGS_ORDER) {
                 if (key in args) {
                     orderedKeys.push(key);
                 }
             }
-            // 收集剩余的 key（不在 KEEP_ARGS_ORDER 中的）
+            // Collect the remaining keys that are not in KEEP_ARGS_ORDER.
             for (const key of Object.keys(args)) {
                 if (!orderedKeys.includes(key)) {
                     remainingKeys.push(key);
                 }
             }
-            remainingKeys.sort();  // 剩余的按字母排序
+            remainingKeys.sort();  // Sort the remaining keys alphabetically.
         } else {
-            // 没有顺序信息时按字母排序（向后兼容）
+            // Fall back to alphabetical order when no ordering info is available.
             Object.keys(args).sort().forEach(k => orderedKeys.push(k));
         }
 
@@ -1032,7 +1033,7 @@
 
         allKeys.forEach(key => {
             const val = args[key];
-            // 跳过复杂对象，只允许编辑基础类型
+            // Skip complex objects and only allow editing primitive types.
             if (val !== null && typeof val === 'object') return;
             const row = document.createElement('div');
             row.className = 'mb-2 row g-1 align-items-center';
@@ -1040,7 +1041,7 @@
             const labelCol = document.createElement('div');
             labelCol.className = 'col-5 text-break';
             labelCol.textContent = key;
-            labelCol.title = key; // hover 显示完整 key
+            labelCol.title = key; // Show the full key on hover.
             
             const inputCol = document.createElement('div');
             inputCol.className = 'col-7';
@@ -1048,16 +1049,16 @@
             const input = document.createElement('input');
             input.className = 'form-control form-control-sm param-input';
             input.dataset.key = key;
-            input.dataset.original = val; // 存储原始值
+            input.dataset.original = val; // Store the original value.
             input.value = val;
             
-            // 根据类型设置 input 属性
+            // Configure input attributes based on type.
             if (typeof val === 'number') {
                 input.type = 'number';
-                input.step = 'any'; // 允许小数
+                input.step = 'any'; // Allow decimals.
             } else if (typeof val === 'boolean') {
-                // 对于布尔值，可以做成下拉框或者 checkbox，这里简单用 text 模拟，或者 input type=text
-                // 为了 fancy 一点，我们用 select
+                // For booleans, this could be a dropdown or checkbox.
+                // Use a select here for a slightly better UI.
                 const select = document.createElement('select');
                 select.className = 'form-select form-select-sm param-input';
                 select.dataset.key = key;
@@ -1072,10 +1073,10 @@
                 select.appendChild(optFalse);
                 select.value = val.toString();
                 
-                // 替换 input 为 select
+                // Replace the input with a select.
                 inputCol.appendChild(select);
                 
-                // Select 事件
+                // Select event.
                 select.addEventListener('change', (e) => {
                     const currentVal = (e.target.value === 'true');
                     const originalVal = (e.target.dataset.original === 'true');
@@ -1091,20 +1092,20 @@
                 row.appendChild(labelCol);
                 row.appendChild(inputCol);
                 paramsList.appendChild(row);
-                return; // 结束当前循环
+                return; // End the current loop iteration.
             } else {
                 input.type = 'text';
             }
             
-            // Input 事件：检测修改并标红
+            // Input event: detect modifications and highlight them in red.
             input.addEventListener('input', (e) => {
                 const currentVal = e.target.value;
                 const originalVal = String(e.target.dataset.original);
                 
-                // 简单比较字符串
+                // Simple string comparison.
                 if (currentVal !== originalVal) {
-                    e.target.classList.add('text-danger', 'fw-bold'); // Bootstrap 红色 + 加粗
-                    e.target.style.borderColor = '#dc3545'; // 边框也变红
+                    e.target.classList.add('text-danger', 'fw-bold'); // Bootstrap red + bold.
+                    e.target.style.borderColor = '#dc3545'; // Make the border red as well.
                 } else {
                     e.target.classList.remove('text-danger', 'fw-bold');
                     e.target.style.borderColor = '';
@@ -1128,15 +1129,16 @@
             let val = el.value;
             const originalStr = String(el.dataset.original);
             
-            // 类型转换
+            // Type conversion.
             if (el.tagName === 'SELECT') {
                 val = (val === 'true');
             } else if (el.type === 'number') {
                 val = Number(val);
             }
             
-            // 只有修改过的才需要特别关注
-            // 注意：null 被渲染为 input 时可能变成空字符串，这不算修改
+            // Only modified fields need special handling.
+            // Note: when null is rendered as an input, it may become an empty string,
+            // which should not count as a modification.
             const isNullToEmpty = (originalStr === 'null' && val === '');
             if (String(val) !== originalStr && !isNullToEmpty) {
                 hasChanges = true;
@@ -1145,7 +1147,7 @@
         });
             
         if (!hasChanges) {
-            alert("未检测到任何参数修改。");
+            alert("No parameter changes detected.");
             return;
         }
         
@@ -1158,14 +1160,14 @@
             const msg = await res.json();
             
             if (msg.status === 'ok') {
-                log('参数保存成功:', msg.msg);
+                log('Parameters saved successfully:', msg.msg);
                 
-                // 更新本地缓存 ARGS_LOADED
+                // Update the local ARGS_LOADED cache.
                 ARGS_LOADED = { ...ARGS_LOADED, ...newArgs };
                 
-                // 重置 UI 状态（去掉红色）
+                // Reset the UI state and remove the red highlights.
                 inputs.forEach(el => {
-                    // 更新 dataset.original 为当前新值
+                    // Update dataset.original to the current value.
                     if (el.tagName === 'SELECT') {
                         el.dataset.original = (el.value === 'true');
                     } else {
@@ -1174,42 +1176,42 @@
                     el.classList.remove('text-danger', 'fw-bold');
                     el.style.borderColor = '';
                 });
-                // 将这个按钮标记为不可点击的
+                // Mark this button as not clickable.
                 // saveParamsBtn.disabled = true;
                     
-                // 关闭折叠面板
+                // Close the collapsible panel.
                 const bsCollapse = new bootstrap.Collapse(document.getElementById('paramsCollapse'), {toggle: false});
                 bsCollapse.hide();
                 
             } else {
-                alert('保存失败: ' + msg.msg);
+                alert('Save failed: ' + msg.msg);
             }
         } catch (e) {
             console.error(e);
-            alert('保存请求发送失败');
+            alert('Failed to send save request');
         }
     });
 
-    // 开始模拟 / 结束模拟
+    // Start simulation / stop simulation.
     startSimBtn.addEventListener('click', async () => {
         if (!wsConnected) {
-            alert('WebSocket 未连接，无法开始模拟!');
+            alert('WebSocket is not connected, cannot start simulation!');
             return;
         }
         if (!ACTIVE_NAME || !DATA_CACHE[ACTIVE_NAME]) {
-            alert('请先加载数据后再开始模拟!');
+            alert('Please load data before starting the simulation!');
             return;
         }
         if (!MODEL_LOADED) {
-            alert('请先加载模型后再开始模拟!');
+            alert('Please load a model before starting the simulation!');
             return;
         }
 
-        // 等待所有目的地更新请求完成
+        // Wait for all destination update requests to complete.
         if (destinationUpdatePromises.length > 0) {
-            log('等待目的地更新请求完成...');
+            log('Waiting for destination update requests to complete...');
             await Promise.all(destinationUpdatePromises);
-            log('所有目的地更新已完成');
+            log('All destination updates completed');
         }
 
         const datasetName = ACTIVE_NAME;
@@ -1217,25 +1219,25 @@
         const startFrame = item.currentFrame != null ? Number(item.currentFrame) : Number(Object.keys(item.frames)[0] || 0);
         const totalFrame = Math.round(Number(simDurationValue.textContent) * item.fps);
         try {
-            log(`发送指令以开始模拟: 从 ${datasetName} 的第 ${startFrame} 帧开始...`);
+            log(`Sending command to start simulation: starting from frame ${startFrame} of ${datasetName}...`);
             ws.send(JSON.stringify({ action: 'start', dataset_name: datasetName, frame_idx: startFrame, frame_num: totalFrame }));
             SIMULATION_RUNNING = true;
         } catch (e) {
-            log('发送开始模拟指令失败:', e);
+            log('Failed to send start simulation command:', e);
         }
     });
 
     stopSimBtn.addEventListener('click', () => {
         try {
             ws.send(JSON.stringify({ action: 'stop' }));
-            log('发送指令以停止模拟...');
+            log('Sending command to stop simulation...');
             SIMULATION_RUNNING = false;
         } catch (e) {
-            log('发送停止模拟指令失败:', e);
+            log('Failed to send stop simulation command:', e);
         }
     });
 
-    // === 播放/暂停功能 ===
+    // === Play/pause functionality ===
     function togglePlay() {
         if (isPlaying) {
             stopPlayback();
@@ -1246,18 +1248,19 @@
 
     function startPlayback() {
         if (!ACTIVE_NAME || !DATA_CACHE[ACTIVE_NAME]) {
-            alert("请先加载数据");
+            alert("Please load data first");
             return;
         }
 
         const item = DATA_CACHE[ACTIVE_NAME];
-        // 如果当前已经在最后一帧，且没有开启循环，则重置到第一帧再开始
+        // If the current frame is already the last one and looping is disabled,
+        // reset to the first frame before starting.
         const slider = document.getElementById(item.sliderId);
         if (slider) {
             const maxFrame = parseInt(slider.max);
             const currentFrame = item.currentFrame;
             if (currentFrame >= maxFrame && !loopCheckbox.checked) {
-                // 如果在末尾且不循环，重置到开头
+                // If we are at the end and looping is disabled, reset to the beginning.
                 item.currentFrame = parseInt(slider.min);
                 render(ACTIVE_NAME);
                 updateSliderRangeAndValue(ACTIVE_NAME);
@@ -1265,12 +1268,12 @@
         }
 
         isPlaying = true;
-        playPauseBtn.textContent = "暂停";
+        playPauseBtn.textContent = "Pause";
         playPauseBtn.classList.replace('btn-success', 'btn-warning');
 
-        // 获取 FPS，默认为 10
+        // Get FPS, defaulting to 10.
         const fps = item.fps || 10;
-        const interval = 1000 / fps / playbackSpeed; // 毫秒间隔
+        const interval = 1000 / fps / playbackSpeed; // Interval in milliseconds.
 
         if (playTimer) clearInterval(playTimer);
         playTimer = setInterval(playNextFrame, interval);
@@ -1278,7 +1281,7 @@
 
     function stopPlayback() {
         isPlaying = false;
-        playPauseBtn.textContent = "播放";
+        playPauseBtn.textContent = "Play";
         playPauseBtn.classList.replace('btn-warning', 'btn-success');
         if (playTimer) {
             clearInterval(playTimer);
@@ -1308,50 +1311,52 @@
 
         if (next > max) {
             if (loopCheckbox.checked) {
-                next = min; // 循环：回到起点
+                next = min; // Looping: go back to the start.
             } else {
-                stopPlayback(); // 不循环：停止
+                stopPlayback(); // No loop: stop playback.
                 return;
             }
         }
 
-        // 更新状态
+        // Update state.
         item.currentFrame = next;
         
-        // 更新滑块 UI (不重新创建，直接修改值以提高性能)
+        // Update the slider UI directly instead of recreating it, for better performance.
         slider.value = next;
-        // 更新滑块旁边的文本 (span)
+        // Update the text next to the slider.
         const wrap = slider.parentElement;
         const valueSpan = wrap.querySelector('span');
         if (valueSpan) {
-            valueSpan.textContent = `当前帧: ${next} (${min}~${max})`;
+            valueSpan.textContent = `Current frame: ${next} (${min}~${max})`;
         }
 
-        // 渲染地图
+        // Render the map.
         render(ACTIVE_NAME);
     }
 
-    // 事件监听
+    // Event listeners.
     playPauseBtn.addEventListener('click', togglePlay);
 
-    // 当用户手动拖动滑块时，如果正在播放，建议暂时停止或保持播放？
-    // 这里保持播放逻辑：用户拖到哪，就从哪继续播。
-    // 但我们需要确保 item.currentFrame 与 slider.value 同步，这在 createSliderForResponse 的 input 事件中已经处理了。
+    // When the user manually drags the slider during playback, should playback pause or continue?
+    // Keep playback continuous here: playback continues from the frame the user drags to.
+    // We still need to keep item.currentFrame synchronized with slider.value,
+    // which is already handled in the input event of createSliderForResponse.
 
-    // ======== 目的地拖动功能 ========
+    // ======== Destination dragging functionality ========
 
-    // 添加地图容器的鼠标事件监听（使用 capture 阶段确保不被 Plotly 拦截）
+    // Add mouse event listeners to the map container, using the capture phase
+    // to ensure they are not intercepted by Plotly.
     mapDiv.addEventListener('mousedown', (e) => handleMapMouseDown(e), true);
     mapDiv.addEventListener('mousemove', (e) => handleMapMouseMove(e), true);
     mapDiv.addEventListener('mouseup', (e) => handleMapMouseUp(e), true);
     mapDiv.addEventListener('mouseleave', (e) => handleMapMouseUp(e), true);
 
-    // 处理地图鼠标按下事件
+    // Handle mouse-down events on the map.
     function handleMapMouseDown(e) {
-        // 只有在显示目的地且没有正在播放时才允许拖动
+        // Only allow dragging when destinations are visible and playback is not running.
         if (!showDestinationsCheckbox.checked || isPlaying) return;
 
-        // 检测是否点击了目的地标记
+        // Check whether a destination marker was clicked.
         const rect = mapDiv.getBoundingClientRect();
         const pixelX = e.clientX - rect.left;
         const pixelY = e.clientY - rect.top;
@@ -1367,15 +1372,15 @@
             e.preventDefault();
             e.stopPropagation();
             mapDiv.style.cursor = 'grabbing';
-            log(`👆 点击了行人 ${pedId} 的目的地，开始拖动`);
+            log(`👆 Clicked the destination of pedestrian ${pedId}; start dragging`);
         }
     }
 
-    // 处理地图鼠标移动事件
+    // Handle mouse-move events on the map.
     function handleMapMouseMove(e) {
         if (!dragData.isDragging) return;
 
-        // 阻止 Plotly 的默认行为
+        // Prevent Plotly's default behavior.
         e.preventDefault();
         e.stopPropagation();
 
@@ -1383,10 +1388,10 @@
         const pixelX = e.clientX - rect.left;
         const pixelY = e.clientY - rect.top;
 
-        // 计算新位置（需要将像素坐标转换为数据坐标）
+        // Compute the new position by converting pixel coordinates to data coordinates.
         const coords = pixelToDataCoords(pixelX, pixelY);
         if (coords) {
-            // 更新本地目的地数据并重绘
+            // Update local destination data and re-render.
             const item = DATA_CACHE[ACTIVE_NAME];
             if (item && item.destinations && item.destinations[dragData.targetPedId]) {
                 item.destinations[dragData.targetPedId] = coords;
@@ -1395,7 +1400,7 @@
         }
     }
 
-    // 处理地图鼠标释放事件
+    // Handle mouse-up events on the map.
     function handleMapMouseUp(e) {
         if (dragData.isDragging) {
             const rect = mapDiv.getBoundingClientRect();
@@ -1406,14 +1411,14 @@
             if (coords) {
                 sendDestinationUpdate(dragData.targetPedId, coords);
             }
-            log(`👇 释放鼠标，目的地已更新`);
+            log(`👇 Mouse released; destination updated`);
             dragData = { isDragging: false, targetPedId: null };
-            // 恢复 cursor 样式
+            // Restore cursor style.
             mapDiv.style.cursor = '';
         }
     }
 
-    // 坐标转换：像素坐标 -> 数据坐标
+    // Coordinate conversion: pixel coordinates -> data coordinates.
     function pixelToDataCoords(pixelX, pixelY) {
         if (!myPlot) return null;
 
@@ -1422,10 +1427,10 @@
 
         if (!xaxis || !yaxis || !xaxis.range || !yaxis.range) return null;
 
-        // 使用 Plotly 内部计算的绘图区域尺寸
+        // Use the plot area size computed internally by Plotly.
         const gs = myPlot._fullLayout._size;
         if (!gs) {
-            // 尝试从 SVG 中查找绘图区域 rect
+            // Try to locate the plot-area rectangle from the SVG.
             const plotRect = myPlot.querySelector('.nsewdrag.drag[data-subplot="xy"]');
             if (!plotRect) return null;
 
@@ -1464,7 +1469,7 @@
         return { x: dataX, y: dataY };
     }
 
-    // 查找鼠标位置附近的行人目的地
+    // Find the pedestrian destination near the mouse position.
     function findPedestrianAtPosition(pixelX, pixelY) {
         const coords = pixelToDataCoords(pixelX, pixelY);
         if (!coords) return null;
@@ -1498,10 +1503,10 @@
         return closestPedId;
     }
 
-    // 目的地更新请求队列
+    // Destination update request queue.
     let destinationUpdatePromises = [];
 
-    // 发送目的地更新请求
+    // Send a destination update request.
     async function sendDestinationUpdate(pedestrianId, newCoords) {
         const item = DATA_CACHE[ACTIVE_NAME];
         if (!item) return;
@@ -1515,7 +1520,7 @@
             }
         };
 
-        // 创建 Promise 并添加到队列
+        // Create the Promise and add it to the queue.
         const updatePromise = fetch('/api/update_destination', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1524,38 +1529,38 @@
         .then(res => res.json())
         .then(msg => {
             if (msg.status === 'ok') {
-                log(`🎯 目的地更新成功: Pedestrian ${pedestrianId} -> (${newCoords.x.toFixed(2)}, ${newCoords.y.toFixed(2)})`);
+                log(`🎯 Destination update succeeded: Pedestrian ${pedestrianId} -> (${newCoords.x.toFixed(2)}, ${newCoords.y.toFixed(2)})`);
             } else {
-                log('❌ 目的地更新失败:', msg.msg);
-                alert('更新失败: ' + msg.msg);
+                log('❌ Destination update failed:', msg.msg);
+                alert('Update failed: ' + msg.msg);
                 render(ACTIVE_NAME);
             }
         })
         .catch(e => {
             console.error(e);
-            alert('更新请求发送失败: ' + e.message);
+            alert('Failed to send update request: ' + e.message);
             render(ACTIVE_NAME);
         });
 
-        // 添加到等待队列
+        // Add to the pending queue.
         destinationUpdatePromises.push(updatePromise);
 
-        // 等待当前请求完成，然后从队列中移除
+        // Wait for the current request to finish, then remove it from the queue.
         await updatePromise;
         destinationUpdatePromises = destinationUpdatePromises.filter(p => p !== updatePromise);
     }
 
-    // ------- 初始化 -------
+    // ------- Initialization -------
     async function init() {
         connectWebsocket();
         loadLists();
         renderTrace();
     }
 
-    // 启动
+    // Start.
     init();
 
-    // 页面卸载时关闭 ws
+    // Close the WebSocket when the page unloads.
     window.addEventListener('beforeunload', () => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             try { ws.close(); } catch (e) { }

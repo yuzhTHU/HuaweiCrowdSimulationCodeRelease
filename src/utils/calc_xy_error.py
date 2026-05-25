@@ -3,19 +3,19 @@ import torch
 
 def calc_xy_error(traj_diff, ped_pos, veh_pos, veh_vel):
     """
-    计算基于车辆方向的法向和切向误差
+    Compute normal and tangential errors relative to the vehicle direction.
     
     Args:
-        traj_diff: (N, T, 2) 预测轨迹误差向量
-        ped_pos:   (N, 2) 行人初始位置
-        veh_pos:   (N, 2) 最近车辆位置 (若无效则为 NaN)
-        veh_vel:   (N, 2) 最近车辆速度 (若无效则为 NaN)
-        
+        traj_diff: (N, T, 2) Predicted trajectory error vectors.
+        ped_pos:   (N, 2) Initial pedestrian positions.
+        veh_pos:   (N, 2) Nearest vehicle positions (NaN if invalid).
+        veh_vel:   (N, 2) Nearest vehicle velocities (NaN if invalid).
+
     Returns:
-        avg_norm_err: 平均法向误差
-        avg_tang_err: 平均切向误差
+        avg_norm_err: Average normal error.
+        avg_tang_err: Average tangential error.
     """
-    # 场景无车辆的无效数据
+    # Invalid data for scenes without vehicles.
     valid_data_mask = ~veh_pos.isnan().any(dim=-1) # (N,)
 
     # Compute the ray direction vector.
