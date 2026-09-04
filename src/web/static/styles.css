@@ -52,6 +52,37 @@
 
     button { white-space: nowrap; }
 
+    .data-action-row .btn {
+      padding-left: 0.4rem;
+      padding-right: 0.4rem;
+      font-size: 0.74rem;
+    }
+
+    #syncCarlaBtn.active {
+      color: #212529;
+      background-color: #ffc107;
+      border-color: #ffc107;
+      box-shadow: 0 0 0 .2rem rgba(255, 193, 7, .25);
+    }
+
+    .upload-drop-zone {
+      padding: 2rem 1rem;
+      border: 2px dashed #adb5bd;
+      border-radius: .5rem;
+      text-align: center;
+      cursor: pointer;
+      background: #f8f9fa;
+      transition: border-color .15s, background-color .15s;
+    }
+
+    .upload-drop-zone:hover,
+    .upload-drop-zone:focus,
+    .upload-drop-zone.drag-over {
+      border-color: #0d6efd;
+      background: #eef5ff;
+      outline: none;
+    }
+
     .slider-container {
       margin-top: 8px;
     }
