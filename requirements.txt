@@ -8,6 +8,7 @@ torch
 ipykernel
 seaborn
 fastapi
+python-multipart
 uvicorn[standard]
 websockets
 sphinx

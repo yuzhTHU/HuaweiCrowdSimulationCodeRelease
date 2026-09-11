@@ -1,7 +1,9 @@
 """ uvicorn app:app --host 0.0.0.0 --port 12345 """
 import io
 import json
+import uuid
 import torch
+import shutil
 import asyncio
 import tarfile
 import logging
@@ -13,7 +15,7 @@ from copy import deepcopy
 from datetime import datetime
 from pydantic import BaseModel
 from argparse import Namespace
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +27,9 @@ from src.utils.auto_gpu import AutoGPU
 from src.utils.json_compatible import json_compatible
 from src.tasks import init_simulation, simulate_one_step
 from src.utils.use_npu import USE_NPU, npu_attention_fallback
+from src.web.carla_bridge import CarlaBridge
+from src.web.waymo_processing import process_waymo_files
+from src.web.upload_processing import load_custom_dataset, prepare_custom_upload, safe_filename
 
 _logger = logging.getLogger("src")
 init_logger('src')
@@ -81,6 +86,7 @@ DATASET_DICT = {} # 缓存加载的真实数据集以及模拟的仿真数据集
 MANAGER_DICT = {} # 缓存每个 WebSocket 连接对应的仿真任务
 MODEL = None
 ARGS = None
+CARLA_BRIDGE = CarlaBridge()
 
 # 确保保存目录存在
 SAVE_DIR = Path("./logs/app/saved_trajectories")
@@ -119,6 +125,72 @@ async def dataset_list():
     return JSONResponse(content=json_compatible(DATASET_LIST['full_name'].to_dict()))
 
 
+def _register_uploaded_dataset(dataset_type: str, name: str, path: Path) -> int:
+    global DATASET_LIST
+    index = 0 if DATASET_LIST.empty else int(DATASET_LIST.index.max()) + 1
+    DATASET_LIST.loc[index] = {
+        'dataset': dataset_type,
+        'name': name,
+        'path': str(path),
+        'full_name': f'[Upload] {name}',
+    }
+    return index
+
+
+@app.post("/api/upload_dataset")
+async def upload_dataset(files: list[UploadFile] = File(...), is_waymo: bool = Form(False)):
+    """Persist uploaded files and register their processed datasets in the selector."""
+    if not files:
+        return JSONResponse({"status": "error", "msg": "No files were uploaded."}, status_code=400)
+    upload_id = datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8]
+    upload_root = Path("./data/upload") / upload_id
+    raw_root = upload_root / "raw"
+    raw_root.mkdir(parents=True)
+    saved = []
+    try:
+        for item in files:
+            target = raw_root / safe_filename(item.filename)
+            with target.open("wb") as output:
+                while chunk := await item.read(1024 * 1024):
+                    output.write(chunk)
+            saved.append(target)
+
+        if is_waymo:
+            data_paths = await asyncio.to_thread(process_waymo_files, saved, upload_root / "processed")
+            if not data_paths:
+                raise ValueError("No Waymo scenarios were found in the uploaded files.")
+            registrations = []
+            for path in data_paths:
+                index = _register_uploaded_dataset("WayMoDataset", path.parent.name, path)
+                registrations.append({"index": index, "name": path.parent.name})
+        else:
+            csv_files = [path for path in saved if path.name.lower().endswith((".csv", ".csv.gz"))]
+            if not csv_files:
+                raise ValueError("Upload at least one .csv or .csv.gz trajectory file.")
+            companions = {path.name.lower(): path for path in saved}
+            registrations = []
+            for source in csv_files:
+                dataset_name = source.name[:-7] if source.name.lower().endswith('.csv.gz') else source.stem
+                target_dir = upload_root / "processed" / safe_filename(dataset_name)
+                target_dir.mkdir(parents=True, exist_ok=True)
+                for companion in ("map.png", "map_range.txt"):
+                    if companion in companions:
+                        shutil.copy2(companions[companion], target_dir / companion)
+                data_path = await asyncio.to_thread(prepare_custom_upload, target_dir, source)
+                index = _register_uploaded_dataset("UploadedDataset", dataset_name, data_path)
+                registrations.append({"index": index, "name": dataset_name})
+        return JSONResponse({
+            "status": "ok", "datasets": registrations,
+            "msg": f"Uploaded {len(saved)} file(s); prepared {len(registrations)} dataset(s).",
+        })
+    except Exception as exc:
+        _logger.exception("Dataset upload failed")
+        return JSONResponse({"status": "error", "msg": str(exc)}, status_code=400)
+    finally:
+        for item in files:
+            await item.close()
+
+
 @app.get("/api/model_list")
 async def model_list():
     """ 获取所有可用的模型列表 """
@@ -155,6 +227,8 @@ async def load_dataset(idx: int, name: str):
         dataset = GCDataset.load_data(ARGS, row['path'])
     elif row['dataset'] == 'ORCADataset':
         dataset = ORCADataset.load_data(ARGS, row['path'])
+    elif row['dataset'] == 'UploadedDataset':
+        dataset = load_custom_dataset(ARGS, row['path'])
     else:
         raise ValueError(f"Unknown dataset type: {row['dataset']}")
     global DATASET_DICT
@@ -303,6 +377,42 @@ class UpdateDestinationReq(BaseModel):
     dataset_name: str
     pedestrian_id: str
     destination: dict  # {x: float, y: float}
+
+
+class CarlaConnectionReq(BaseModel):
+    host: str
+    port: int
+
+
+class CarlaSyncReq(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/carla/status")
+async def carla_status():
+    return JSONResponse({"status": "ok", **CARLA_BRIDGE.status})
+
+
+@app.post("/api/carla/connect")
+async def connect_carla(req: CarlaConnectionReq):
+    host = req.host.strip()
+    if not host or not 1 <= req.port <= 65535:
+        return JSONResponse({"status": "error", "msg": "Invalid CARLA IP address or port."}, status_code=400)
+    try:
+        await asyncio.to_thread(CARLA_BRIDGE.connect, host, req.port)
+        return JSONResponse({"status": "ok", "msg": "Successfully linked to CARLA", **CARLA_BRIDGE.status})
+    except Exception as exc:
+        _logger.warning("Could not connect to CARLA at %s:%s: %s", host, req.port, exc)
+        return JSONResponse({"status": "error", "msg": "Failed: CARLA not found", **CARLA_BRIDGE.status})
+
+
+@app.post("/api/carla/sync")
+async def set_carla_sync(req: CarlaSyncReq):
+    try:
+        CARLA_BRIDGE.set_sync(req.enabled)
+        return JSONResponse({"status": "ok", **CARLA_BRIDGE.status})
+    except RuntimeError as exc:
+        return JSONResponse({"status": "error", "msg": str(exc), **CARLA_BRIDGE.status}, status_code=409)
 
 
 @app.post("/api/save_trajectory")
@@ -479,6 +589,16 @@ async def sendclient_worker(ws: WebSocket, dataset_name: str, frame_idx: int, sa
             DATASET_DICT[save_name].df_data = pd.concat([DATASET_DICT[save_name].df_data, df_new_frame], ignore_index=True)
             # 只取 sample=0 的数据用于前端可视化（避免同一帧同一 id 有多个位置）
             df_vis = df_new_frame[df_new_frame['sample'] == 0] if 'sample' in df_new_frame.columns else df_new_frame
+            if CARLA_BRIDGE.status['sync_enabled']:
+                try:
+                    for _, carla_frame in df_vis.groupby('f', sort=True):
+                        await asyncio.to_thread(CARLA_BRIDGE.sync_frame, carla_frame)
+                except Exception as exc:
+                    await ws.send_json({
+                        'status': 'error',
+                        'msg': f'CARLA synchronization stopped: {exc}',
+                        'carla': CARLA_BRIDGE.status,
+                    })
             response = {
                 'name': save_name, 'map': None, 'frames': {
                     f: group.set_index('id').sort_index()[['type', 'x', 'y']].to_dict(orient='index')

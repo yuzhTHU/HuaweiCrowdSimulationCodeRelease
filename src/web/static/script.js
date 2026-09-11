@@ -25,6 +25,21 @@
     const highResMapOpacitySlider = document.getElementById('highResMapOpacitySlider');
     const highResMapOpacityValue = document.getElementById('highResMapOpacityValue');
     const highResMapOpacityRow = document.getElementById('highResMapOpacityRow');
+    const waymoFormatCheckbox = document.getElementById('waymoFormatCheckbox');
+    const uploadFormatHint = document.getElementById('uploadFormatHint');
+    const uploadDropZone = document.getElementById('uploadDropZone');
+    const uploadFileInput = document.getElementById('uploadFileInput');
+    const uploadFileList = document.getElementById('uploadFileList');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const confirmUploadBtn = document.getElementById('confirmUploadBtn');
+    const connectCarlaBtn = document.getElementById('connectCarlaBtn');
+    const syncCarlaBtn = document.getElementById('syncCarlaBtn');
+    const carlaStatus = document.getElementById('carlaStatus');
+    const carlaHostInput = document.getElementById('carlaHostInput');
+    const carlaPortInput = document.getElementById('carlaPortInput');
+    const carlaModalStatus = document.getElementById('carlaModalStatus');
+    const confirmCarlaBtn = document.getElementById('confirmCarlaBtn');
+    let selectedUploadFiles = [];
 
     // Context Menu & Modal Elements
     const contextMenu = document.getElementById('contextMenu');
@@ -120,6 +135,136 @@
         console.debug(...args);
     }
 
+    function setUploadFiles(files) {
+        selectedUploadFiles = Array.from(files || []);
+        uploadFileList.textContent = selectedUploadFiles.length
+            ? selectedUploadFiles.map(file => file.name).join(', ')
+            : 'No files selected.';
+        confirmUploadBtn.disabled = selectedUploadFiles.length === 0;
+        uploadStatus.textContent = '';
+    }
+
+    uploadDropZone.addEventListener('click', () => uploadFileInput.click());
+    uploadDropZone.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            uploadFileInput.click();
+        }
+    });
+    uploadFileInput.addEventListener('change', () => setUploadFiles(uploadFileInput.files));
+    for (const eventName of ['dragenter', 'dragover']) {
+        uploadDropZone.addEventListener(eventName, event => {
+            event.preventDefault();
+            uploadDropZone.classList.add('drag-over');
+        });
+    }
+    for (const eventName of ['dragleave', 'drop']) {
+        uploadDropZone.addEventListener(eventName, event => {
+            event.preventDefault();
+            uploadDropZone.classList.remove('drag-over');
+        });
+    }
+    uploadDropZone.addEventListener('drop', event => setUploadFiles(event.dataTransfer.files));
+    waymoFormatCheckbox.addEventListener('change', () => {
+        if (waymoFormatCheckbox.checked) {
+            uploadFormatHint.textContent = 'Upload one or more Waymo Motion TFRecord files. Every scenario will be converted to data.csv.gz, demo.png, map_range.txt, and map.png.';
+            // Waymo shard names often end in "tfrecord-00000-of-01000", so do not apply an extension filter.
+            uploadFileInput.accept = '';
+        } else {
+            uploadFormatHint.textContent = 'Upload a CSV or CSV.GZ file containing the five columns f, x, y, id, type. Optional map.png and map_range.txt files are supported.';
+            uploadFileInput.accept = '.csv,.gz,.png,.txt';
+        }
+    });
+
+    confirmUploadBtn.addEventListener('click', async () => {
+        if (!selectedUploadFiles.length) return;
+        const body = new FormData();
+        selectedUploadFiles.forEach(file => body.append('files', file));
+        body.append('is_waymo', waymoFormatCheckbox.checked ? 'true' : 'false');
+        confirmUploadBtn.disabled = true;
+        uploadStatus.className = 'small mt-2 text-primary';
+        uploadStatus.textContent = waymoFormatCheckbox.checked ? 'Uploading and processing Waymo data…' : 'Uploading…';
+        try {
+            const response = await fetch('/api/upload_dataset', {method: 'POST', body});
+            const message = await response.json();
+            if (!response.ok || message.status !== 'ok') throw new Error(message.msg || 'Upload failed.');
+            for (const dataset of message.datasets || []) {
+                const option = document.createElement('option');
+                option.value = dataset.index;
+                option.textContent = `[Upload] ${dataset.name}`;
+                datasetSelect.appendChild(option);
+                datasetSelect.value = String(dataset.index);
+            }
+            uploadStatus.className = 'small mt-2 text-success';
+            uploadStatus.textContent = message.msg;
+            log('Server:', message.msg);
+        } catch (error) {
+            uploadStatus.className = 'small mt-2 text-danger';
+            uploadStatus.textContent = error.message;
+            log('Dataset upload failed:', error.message);
+        } finally {
+            confirmUploadBtn.disabled = false;
+        }
+    });
+
+    function updateCarlaControls(status) {
+        const connected = Boolean(status.connected);
+        const syncing = connected && Boolean(status.sync_enabled);
+        syncCarlaBtn.disabled = !connected;
+        syncCarlaBtn.classList.toggle('active', syncing);
+        syncCarlaBtn.setAttribute('aria-pressed', syncing ? 'true' : 'false');
+        carlaStatus.textContent = connected ? '已连接到 CARLA' : '未找到 CARLA';
+        carlaStatus.className = `small mb-2 ${connected ? 'text-success' : 'text-muted'}`;
+        connectCarlaBtn.classList.toggle('btn-outline-secondary', !connected);
+        connectCarlaBtn.classList.toggle('btn-outline-success', connected);
+    }
+
+    confirmCarlaBtn.addEventListener('click', async () => {
+        const host = carlaHostInput.value.trim();
+        const port = Number(carlaPortInput.value);
+        if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+            carlaModalStatus.className = 'small mt-3 text-danger';
+            carlaModalStatus.textContent = 'Please enter a valid IP address and port.';
+            return;
+        }
+        confirmCarlaBtn.disabled = true;
+        carlaModalStatus.className = 'small mt-3 text-primary';
+        carlaModalStatus.textContent = 'Connecting…';
+        try {
+            const response = await fetch('/api/carla/connect', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({host, port})
+            });
+            const message = await response.json();
+            updateCarlaControls(message);
+            carlaModalStatus.className = `small mt-3 ${message.status === 'ok' ? 'text-success' : 'text-danger'}`;
+            carlaModalStatus.textContent = message.status === 'ok' ? '已连接到 CARLA' : '未找到 CARLA';
+            log(carlaModalStatus.textContent, `${host}:${port}`);
+        } catch (error) {
+            updateCarlaControls({connected: false, sync_enabled: false});
+            carlaModalStatus.className = 'small mt-3 text-danger';
+            carlaModalStatus.textContent = '未找到 CARLA';
+        } finally {
+            confirmCarlaBtn.disabled = false;
+        }
+    });
+
+    syncCarlaBtn.addEventListener('click', async () => {
+        const enabled = !syncCarlaBtn.classList.contains('active');
+        try {
+            const response = await fetch('/api/carla/sync', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled})
+            });
+            const message = await response.json();
+            updateCarlaControls(message);
+            if (!response.ok) throw new Error(message.msg || 'Unable to change CARLA synchronization.');
+            log(`CARLA synchronization ${message.sync_enabled ? 'enabled' : 'disabled'}.`);
+        } catch (error) {
+            log('CARLA synchronization failed:', error.message);
+        }
+    });
+
+    fetch('/api/carla/status').then(response => response.json()).then(updateCarlaControls).catch(() => {});
+
     // WebSocket connection and message handling.
     function connectWebsocket() {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -151,6 +296,7 @@
                 const msg = JSON.parse(ev.data); // The backend usually sends `{status: 'ok'|'error', data: response, msg: '...'}`.
                 if (msg.msg) { log('Server:', msg.msg); }
                 if (msg.data) { mergeAndHandleResponse(msg.data); }
+                if (msg.carla) { updateCarlaControls(msg.carla); }
             } catch (e) {
                 log('Received an unparseable WebSocket message:', ev.data);
             }
